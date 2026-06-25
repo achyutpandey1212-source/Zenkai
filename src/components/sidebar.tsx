@@ -9,8 +9,8 @@ import {
   Compass, 
   BookOpen, 
   Settings,
-  ChevronLeft,
-  ChevronRight
+  Sun,
+  Moon
 } from "lucide-react";
 
 export type ScreenType = "home" | "chat" | "tasks" | "identity" | "reflection" | "settings";
@@ -18,9 +18,11 @@ export type ScreenType = "home" | "chat" | "tasks" | "identity" | "reflection" |
 interface SidebarProps {
   currentScreen: ScreenType;
   onScreenChange: (screen: ScreenType) => void;
+  isDarkMode: boolean;
+  onToggleTheme: () => void;
 }
 
-export default function Sidebar({ currentScreen, onScreenChange }: SidebarProps) {
+export default function Sidebar({ currentScreen, onScreenChange, isDarkMode, onToggleTheme }: SidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const menuItems = [
@@ -112,8 +114,35 @@ export default function Sidebar({ currentScreen, onScreenChange }: SidebarProps)
         })}
       </nav>
 
-      {/* Bottom Section - User Info / Collapsed indicator */}
-      <div className="px-4">
+      {/* Bottom Section - Theme Toggle & User Info */}
+      <div className="px-3 space-y-4">
+        <button
+          onClick={onToggleTheme}
+          className="w-full flex items-center rounded-lg p-3 text-sm font-medium transition-all duration-200 text-muted-foreground hover:bg-background/50 hover:text-foreground group relative"
+        >
+          <div className="flex items-center justify-center">
+            {isDarkMode ? (
+              <Sun size={20} className="text-accent group-hover:scale-110 transition-transform duration-200" />
+            ) : (
+              <Moon size={20} className="text-muted-foreground group-hover:text-foreground group-hover:scale-110 transition-transform duration-200" />
+            )}
+          </div>
+          <span
+            className={`ml-4 font-sans tracking-wide whitespace-nowrap transition-opacity duration-200 ${
+              isExpanded ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
+          >
+            {isDarkMode ? "Light Mode" : "Dark Mode"}
+          </span>
+
+          {/* Tooltip for collapsed state */}
+          {!isExpanded && (
+            <div className="absolute left-16 scale-0 rounded-md bg-foreground text-background p-2 text-xs font-semibold shadow-md transition-all duration-100 origin-left group-hover:scale-100">
+              {isDarkMode ? "Light Mode" : "Dark Mode"}
+            </div>
+          )}
+        </button>
+
         <div className="flex items-center gap-3 p-2 rounded-lg bg-background/30 overflow-hidden">
           <div className="h-8 w-8 rounded-full bg-accent/20 flex items-center justify-center text-accent font-heading font-bold text-sm shrink-0">
             A

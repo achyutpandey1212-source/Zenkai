@@ -73,10 +73,10 @@ export default function Chat() {
   ];
 
   return (
-    <div className="relative min-h-screen w-full flex flex-col md:flex-row bg-background">
+    <div className="relative h-screen max-h-screen w-full flex flex-col md:flex-row bg-background overflow-hidden">
       
       {/* Left side: Companion Status Panel (Stays fixed & premium) */}
-      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-border/60 flex flex-col items-center justify-center p-8 bg-secondary/30 shrink-0">
+      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-border/60 flex flex-col items-center justify-center p-8 bg-secondary/30 shrink-0 h-auto md:h-full">
         <div className="relative flex flex-col items-center gap-6">
           {/* Subtle Glow */}
           <div className="absolute -inset-6 rounded-full bg-accent/5 blur-2xl opacity-75" />
@@ -87,6 +87,7 @@ export default function Chat() {
               src="/assets/orbs/companion_orb.png"
               alt="Companion Orb"
               fill
+              sizes="144px"
               className="object-contain"
             />
           </div>
@@ -103,7 +104,7 @@ export default function Chat() {
       </div>
 
       {/* Right side: Chat Thread */}
-      <div className="flex-1 flex flex-col h-[calc(100vh-200px)] md:h-screen max-w-4xl mx-auto w-full relative">
+      <div className="flex-1 flex flex-col h-full max-w-4xl mx-auto w-full relative overflow-hidden">
         
         {/* Header */}
         <header className="px-8 py-6 border-b border-border/40 flex justify-between items-center bg-background/80 backdrop-blur-md z-10">

@@ -28,16 +28,23 @@ export default function Home({ onNavigateToChat }: HomeProps) {
   };
 
   return (
-    <div className="relative min-h-screen w-full flex flex-col justify-between p-12 overflow-hidden bg-background">
+    <div className="relative h-screen max-h-screen w-full flex flex-col justify-between p-8 md:p-12 overflow-hidden bg-background">
       
-      {/* Temple Background on the right side */}
-      <div className="absolute right-0 top-0 h-full w-full md:w-1/2 pointer-events-none select-none z-0">
+      {/* Temple Background on the right side with smooth fade mask */}
+      <div 
+        className="absolute right-0 top-0 h-full w-full md:w-1/2 pointer-events-none select-none z-0"
+        style={{
+          maskImage: "linear-gradient(to left, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%)",
+          WebkitMaskImage: "linear-gradient(to left, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%)"
+        }}
+      >
         <Image
           src="/assets/temples/temple_1_focus.png"
           alt="Temple of Focus"
           fill
           priority
-          className="object-contain object-right-bottom opacity-75 dark:opacity-40 transition-opacity duration-1000"
+          sizes="(max-width: 768px) 100vw, 50vw"
+          className="object-contain object-right-bottom opacity-75 dark:opacity-30 transition-opacity duration-1000"
         />
       </div>
 
@@ -73,6 +80,7 @@ export default function Home({ onNavigateToChat }: HomeProps) {
               alt="Companion Orb"
               fill
               priority
+              sizes="256px"
               className="object-contain drop-shadow-[0_10px_20px_rgba(201,168,106,0.15)] group-hover:drop-shadow-[0_15px_30px_rgba(201,168,106,0.3)] transition-all duration-500"
             />
           </div>
