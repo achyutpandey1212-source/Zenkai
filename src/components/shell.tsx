@@ -8,16 +8,21 @@ import Tasks from "./screens/tasks";
 import Identity from "./screens/identity";
 import Reflection from "./screens/reflection";
 import Settings from "./screens/settings";
+import Onboarding, { OnboardingData } from "./onboarding";
 
 export default function Shell() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>("home");
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
-  // Initialize theme on mount and listen to changes
+  // Initialize theme on mount, check onboarding status, and listen to changes
   useEffect(() => {
     if (typeof window !== "undefined") {
       const root = window.document.documentElement;
       setIsDarkMode(root.classList.contains("dark"));
+
+      const completed = localStorage.getItem("onboardingCompleted") === "true";
+      setOnboardingCompleted(completed);
 
       const handleThemeChange = () => {
         setIsDarkMode(root.classList.contains("dark"));
@@ -27,6 +32,12 @@ export default function Shell() {
       return () => window.removeEventListener("theme-change", handleThemeChange);
     }
   }, []);
+
+  const handleOnboardingComplete = (onboardingData: OnboardingData) => {
+    localStorage.setItem("onboardingCompleted", "true");
+    localStorage.setItem("onboarding_profile", JSON.stringify(onboardingData));
+    setOnboardingCompleted(true);
+  };
 
   // Sync theme with DOM and localStorage
   useEffect(() => {
@@ -64,6 +75,14 @@ export default function Shell() {
         return <Home onNavigateToChat={() => setCurrentScreen("chat")} />;
     }
   };
+
+  if (onboardingCompleted === null) {
+    return <div className="h-screen w-full bg-background" />;
+  }
+
+  if (!onboardingCompleted) {
+    return <Onboarding onComplete={handleOnboardingComplete} />;
+  }
 
   return (
     <div className="h-screen max-h-screen overflow-hidden bg-background flex text-foreground transition-colors duration-300">

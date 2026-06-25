@@ -10,6 +10,24 @@ interface HomeProps {
 export default function Home({ onNavigateToChat }: HomeProps) {
   const [query, setQuery] = useState("");
   const [orbActive, setOrbActive] = useState(false);
+  const [userName, setUserName] = useState("Achyut");
+  const [longTermGoal, setLongTermGoal] = useState("Software Engineer");
+
+  // Load onboarding profile details
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const profileStr = localStorage.getItem("onboarding_profile");
+      if (profileStr) {
+        try {
+          const profile = JSON.parse(profileStr);
+          if (profile.name) setUserName(profile.name);
+          if (profile.longTermGoal) setLongTermGoal(profile.longTermGoal);
+        } catch (e) {
+          console.error("Error parsing onboarding profile", e);
+        }
+      }
+    }
+  }, []);
 
   // Periodic rotation or floating trigger
   useEffect(() => {
@@ -55,11 +73,11 @@ export default function Home({ onNavigateToChat }: HomeProps) {
             Good Morning,
           </span>
           <span className="font-signature text-7xl text-accent mt-1 leading-none">
-            Achyut
+            {userName}
           </span>
         </div>
         <p className="font-sans text-lg text-muted-foreground max-w-md leading-relaxed">
-          I have already planned the day for you. You have <span className="text-foreground font-semibold">3 priorities</span> today.
+          I've already started planning today around your goal of becoming a <span className="text-foreground font-semibold">{longTermGoal}</span>. Let's make progress.
         </p>
       </header>
 
