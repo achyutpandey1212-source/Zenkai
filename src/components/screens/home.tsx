@@ -65,7 +65,7 @@ export default function Home({ onNavigateToChat }: HomeProps) {
 
       {/* Center Section: Floating Companion Orb (Shifted upwards vertically) */}
       <div className="flex-1 flex items-center justify-start pt-6 md:pt-12 flex-col z-10">
-        <div className="relative group cursor-pointer flex flex-col items-center gap-4">
+        <div className="relative group cursor-pointer flex flex-col items-center gap-4 md:-translate-y-12">
           {/* Subtle Background Glow */}
           <div className="absolute -inset-10 rounded-full bg-accent/10 blur-3xl opacity-60 group-hover:opacity-85 transition-opacity duration-1000" />
           
