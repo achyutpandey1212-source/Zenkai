@@ -4,9 +4,11 @@ import React, { useEffect, useState } from "react";
 import { Sun, Moon } from "lucide-react";
 
 export default function ThemeToggle() {
+  const [mounted, setMounted] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const root = window.document.documentElement;
     setIsDarkMode(root.classList.contains("dark"));
   }, []);
@@ -17,7 +19,6 @@ export default function ThemeToggle() {
       root.classList.remove("dark");
       localStorage.setItem("theme", "light");
       setIsDarkMode(false);
-      // Dispatch a custom event to sync with other components like Shell
       window.dispatchEvent(new Event("theme-change"));
     } else {
       root.classList.add("dark");
@@ -26,6 +27,11 @@ export default function ThemeToggle() {
       window.dispatchEvent(new Event("theme-change"));
     }
   };
+
+  if (!mounted) {
+    // Return a matching placeholder size to prevent layout shift and hydration mismatch
+    return <div className="w-10 h-10" />;
+  }
 
   return (
     <button
