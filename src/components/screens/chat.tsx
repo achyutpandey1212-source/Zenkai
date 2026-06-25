@@ -75,8 +75,8 @@ export default function Chat() {
   return (
     <div className="relative h-screen max-h-screen w-full flex flex-col md:flex-row bg-background overflow-hidden">
       
-      {/* Left side: Companion Status Panel (Stays fixed & premium) */}
-      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-border/60 flex flex-col items-center justify-center p-8 bg-secondary/30 shrink-0 h-auto md:h-full">
+      {/* Left side: Companion Status Panel (Stays fixed & premium, hidden on mobile) */}
+      <div className="hidden md:flex md:w-80 border-b md:border-b-0 md:border-r border-border/60 flex-col items-center justify-center p-8 bg-secondary/30 shrink-0 h-auto md:h-full">
         <div className="relative flex flex-col items-center gap-6">
           {/* Subtle Glow */}
           <div className="absolute -inset-6 rounded-full bg-accent/5 blur-2xl opacity-75" />
@@ -107,10 +107,22 @@ export default function Chat() {
       <div className="flex-1 flex flex-col h-full max-w-4xl mx-auto w-full relative overflow-hidden">
         
         {/* Header */}
-        <header className="px-8 py-6 border-b border-border/40 flex justify-between items-center bg-background/80 backdrop-blur-md z-10">
+        <header className="px-6 py-4 md:px-8 md:py-6 border-b border-border/40 flex justify-between items-center bg-background/80 backdrop-blur-md z-10 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="h-2 w-2 rounded-full bg-accent animate-pulse" />
-            <span className="font-heading text-lg font-medium text-foreground italic">Dialogue with Partner</span>
+            {/* Mobile-only avatar */}
+            <div className="relative w-8 h-8 md:hidden shrink-0">
+              <Image
+                src="/assets/orbs/companion_orb.png"
+                alt="Companion Orb"
+                fill
+                sizes="32px"
+                className="object-contain"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-accent animate-pulse" />
+              <span className="font-heading text-base md:text-lg font-medium text-foreground italic">Dialogue with Zenkai</span>
+            </div>
           </div>
         </header>
 
@@ -155,14 +167,14 @@ export default function Chat() {
         <footer className="p-8 border-t border-border/40 bg-background/80 backdrop-blur-md space-y-4">
           
           {/* Suggested Actions */}
-          <div className="flex flex-wrap gap-2 justify-center">
+          <div className="flex flex-row overflow-x-auto whitespace-nowrap scrollbar-none gap-2 py-1.5 px-2 justify-start md:justify-center w-full max-w-full shrink-0">
             {quickActions.map((action) => (
               <button
                 key={action}
                 onClick={() => handleQuickAction(action)}
-                className="px-4 py-2 rounded-full border border-border bg-background hover:bg-secondary text-xs text-muted-foreground hover:text-foreground font-sans transition-all duration-200 flex items-center gap-1.5"
+                className="px-3.5 py-1.5 rounded-full border border-border/80 bg-background/30 hover:bg-secondary text-[11px] text-muted-foreground hover:text-foreground font-sans transition-all duration-200 flex items-center gap-1.5 shrink-0"
               >
-                <Sparkles size={12} className="text-accent" />
+                <Sparkles size={10} className="text-accent" />
                 {action}
               </button>
             ))}
