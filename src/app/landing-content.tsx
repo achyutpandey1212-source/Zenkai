@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Sparkles, Eye, Brain, Compass, Shield, ArrowRight } from "lucide-react";
+import ThemeToggle from "@/components/theme-toggle";
 
 export default function LandingContent() {
   const [orbActive, setOrbActive] = useState(false);
@@ -62,6 +63,7 @@ export default function LandingContent() {
           </span>
         </div>
         <div className="flex items-center gap-6">
+          <ThemeToggle />
           <Link
             href="/login"
             className="font-sans text-xs tracking-wider uppercase font-semibold text-muted-foreground hover:text-foreground transition-colors"

@@ -13,14 +13,31 @@ export default function Shell() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>("home");
   const [isDarkMode, setIsDarkMode] = useState(false);
 
-  // Sync theme with DOM
+  // Initialize theme on mount and listen to changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const root = window.document.documentElement;
+      setIsDarkMode(root.classList.contains("dark"));
+
+      const handleThemeChange = () => {
+        setIsDarkMode(root.classList.contains("dark"));
+      };
+
+      window.addEventListener("theme-change", handleThemeChange);
+      return () => window.removeEventListener("theme-change", handleThemeChange);
+    }
+  }, []);
+
+  // Sync theme with DOM and localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
       const root = window.document.documentElement;
       if (isDarkMode) {
         root.classList.add("dark");
+        localStorage.setItem("theme", "dark");
       } else {
         root.classList.remove("dark");
+        localStorage.setItem("theme", "light");
       }
     }
   }, [isDarkMode]);

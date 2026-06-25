@@ -11,6 +11,7 @@ import {
   signInAnonymously 
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import ThemeToggle from "@/components/theme-toggle";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -92,6 +93,11 @@ export default function LoginForm() {
 
   return (
     <div className="min-h-screen w-full flex flex-col justify-center items-center p-8 bg-background relative overflow-hidden select-none">
+      {/* Top right theme toggle */}
+      <div className="absolute top-6 right-8 z-20">
+        <ThemeToggle />
+      </div>
+
       {/* Subtle background glow */}
       <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-accent/5 blur-3xl pointer-events-none" />
       <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-accent/5 blur-3xl pointer-events-none" />
