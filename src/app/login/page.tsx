@@ -1,9 +1,9 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifySession } from "@/lib/auth-service";
-import LandingContent from "./landing-content";
+import LoginForm from "./login-form";
 
-export default async function IndexPage() {
+export default async function LoginPage() {
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("session")?.value;
 
@@ -14,5 +14,5 @@ export default async function IndexPage() {
     }
   }
 
-  return <LandingContent />;
+  return <LoginForm />;
 }

@@ -2,12 +2,28 @@
 
 import React, { useState } from "react";
 import { Shield, Sparkles, User, Bell } from "lucide-react";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 export default function Settings() {
   const [autonomy, setAutonomy] = useState<"minimal" | "balanced" | "proactive">("balanced");
   const [commStyle, setCommStyle] = useState<"quiet" | "direct" | "collaborative">("collaborative");
   const [morningBrief, setMorningBrief] = useState(true);
   const [nightReflection, setNightReflection] = useState(true);
+  const [signOutLoading, setSignOutLoading] = useState(false);
+
+  const handleSignOut = async () => {
+    setSignOutLoading(true);
+    try {
+      await signOut(auth);
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.href = "/login";
+    } catch (error) {
+      console.error("Error signing out:", error);
+    } finally {
+      setSignOutLoading(false);
+    }
+  };
 
   return (
     <div className="h-full w-full overflow-y-auto p-8 md:p-16 flex flex-col items-center bg-background">
@@ -156,26 +172,28 @@ export default function Settings() {
         <section className="space-y-6">
           <span className="font-sans text-[10px] tracking-[0.2em] text-accent/80 font-bold uppercase flex items-center gap-1.5">
             <Shield size={12} className="text-accent" />
-            Privacy Boundaries
+            Privacy & Account
           </span>
 
           <div className="bg-card border border-border p-6 rounded-xl space-y-4">
             <div className="flex flex-col md:flex-row gap-3">
               <button
                 type="button"
-                className="flex-1 py-3 px-4 rounded-lg font-sans text-xs font-medium border border-border/80 hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-all duration-200"
+                onClick={handleSignOut}
+                disabled={signOutLoading}
+                className="flex-1 py-3 px-4 rounded-lg font-sans text-xs font-semibold border border-transparent bg-primary text-primary-foreground hover:bg-accent hover:text-accent-foreground transition-all duration-200 cursor-pointer disabled:opacity-50"
+              >
+                {signOutLoading ? "Signing Out..." : "Sign Out"}
+              </button>
+              <button
+                type="button"
+                className="flex-1 py-3 px-4 rounded-lg font-sans text-xs font-medium border border-border/80 hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-all duration-200 cursor-pointer"
               >
                 Export My Data
               </button>
               <button
                 type="button"
-                className="flex-1 py-3 px-4 rounded-lg font-sans text-xs font-medium border border-red-500/20 dark:border-red-500/40 hover:bg-red-500/10 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 dark:shadow-[0_0_15px_rgba(239,68,68,0.25)] hover:text-red-700 transition-all duration-200"
-              >
-                Clear Reflections
-              </button>
-              <button
-                type="button"
-                className="flex-1 py-3 px-4 rounded-lg font-sans text-xs font-medium border border-red-500/20 dark:border-red-500/40 hover:bg-red-500/10 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 dark:shadow-[0_0_15px_rgba(239,68,68,0.25)] hover:text-red-700 transition-all duration-200"
+                className="flex-1 py-3 px-4 rounded-lg font-sans text-xs font-medium border border-red-500/20 dark:border-red-500/40 hover:bg-red-500/10 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 dark:shadow-[0_0_15px_rgba(239,68,68,0.25)] hover:text-red-700 transition-all duration-200 cursor-pointer"
               >
                 Delete Memories
               </button>
