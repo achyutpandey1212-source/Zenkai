@@ -10,7 +10,7 @@ export default function Settings() {
   const [nightReflection, setNightReflection] = useState(true);
 
   return (
-    <div className="min-h-screen w-full p-8 md:p-16 flex flex-col items-center bg-background">
+    <div className="h-full w-full overflow-y-auto p-8 md:p-16 flex flex-col items-center bg-background">
       
       <div className="max-w-2xl w-full flex flex-col gap-12 mt-8">
         
@@ -41,7 +41,7 @@ export default function Settings() {
               <label className="font-sans text-xs font-semibold text-foreground tracking-wide block">
                 Autonomy Preference
               </label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
                 {(["minimal", "balanced", "proactive"] as const).map((level) => (
                   <button
                     key={level}
@@ -69,7 +69,7 @@ export default function Settings() {
               <label className="font-sans text-xs font-semibold text-foreground tracking-wide block">
                 Communication Style
               </label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
                 {(["quiet", "direct", "collaborative"] as const).map((style) => (
                   <button
                     key={style}
@@ -169,13 +169,13 @@ export default function Settings() {
               </button>
               <button
                 type="button"
-                className="flex-1 py-3 px-4 rounded-lg font-sans text-xs font-medium border border-destructive/20 hover:bg-destructive/10 text-destructive/80 hover:text-destructive transition-all duration-200"
+                className="flex-1 py-3 px-4 rounded-lg font-sans text-xs font-medium border border-red-500/20 dark:border-red-500/40 hover:bg-red-500/10 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 dark:shadow-[0_0_15px_rgba(239,68,68,0.25)] hover:text-red-700 transition-all duration-200"
               >
                 Clear Reflections
               </button>
               <button
                 type="button"
-                className="flex-1 py-3 px-4 rounded-lg font-sans text-xs font-medium border border-destructive/20 hover:bg-destructive/10 text-destructive/80 hover:text-destructive transition-all duration-200"
+                className="flex-1 py-3 px-4 rounded-lg font-sans text-xs font-medium border border-red-500/20 dark:border-red-500/40 hover:bg-red-500/10 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 dark:shadow-[0_0_15px_rgba(239,68,68,0.25)] hover:text-red-700 transition-all duration-200"
               >
                 Delete Memories
               </button>

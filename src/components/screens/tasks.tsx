@@ -55,7 +55,7 @@ export default function Tasks() {
   const completedCount = tasks.filter(t => t.completed).length;
 
   return (
-    <div className="min-h-screen w-full p-8 md:p-16 flex flex-col items-center bg-background">
+    <div className="h-full w-full overflow-y-auto p-8 md:p-16 flex flex-col items-center bg-background">
       
       {/* Centered layout */}
       <div className="max-w-2xl w-full flex flex-col gap-12 mt-8">

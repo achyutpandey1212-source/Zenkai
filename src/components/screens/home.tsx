@@ -28,7 +28,7 @@ export default function Home({ onNavigateToChat }: HomeProps) {
   };
 
   return (
-    <div className="relative h-screen max-h-screen w-full flex flex-col justify-between p-8 md:p-12 overflow-hidden bg-background">
+    <div className="relative h-screen max-h-screen w-full flex flex-col justify-between p-8 pb-20 md:p-12 md:pb-16 overflow-hidden bg-background">
       
       {/* Temple Background on the right side with smooth fade mask */}
       <div 
@@ -44,7 +44,7 @@ export default function Home({ onNavigateToChat }: HomeProps) {
           fill
           priority
           sizes="(max-width: 768px) 100vw, 50vw"
-          className="object-contain object-right-bottom opacity-75 dark:opacity-30 transition-opacity duration-1000"
+          className="object-cover object-right-bottom opacity-75 dark:opacity-30 transition-opacity duration-1000"
         />
       </div>
 
@@ -63,15 +63,15 @@ export default function Home({ onNavigateToChat }: HomeProps) {
         </p>
       </header>
 
-      {/* Center Section: Floating Companion Orb */}
-      <div className="flex-1 flex items-center justify-center z-10 py-12">
+      {/* Center Section: Floating Companion Orb (Shifted upwards vertically) */}
+      <div className="flex-1 flex items-center justify-start pt-6 md:pt-12 flex-col z-10">
         <div className="relative group cursor-pointer flex flex-col items-center gap-4">
           {/* Subtle Background Glow */}
           <div className="absolute -inset-10 rounded-full bg-accent/10 blur-3xl opacity-60 group-hover:opacity-85 transition-opacity duration-1000" />
           
           {/* Orb Container with Float and Periodical Swirl */}
           <div 
-            className={`relative w-64 h-64 transition-transform duration-[4000ms] ease-in-out ${
+            className={`relative w-44 h-44 md:w-60 md:h-60 transition-transform duration-[4000ms] ease-in-out ${
               orbActive ? "translate-y-2 rotate-6 scale-105" : "-translate-y-2 -rotate-6 scale-95"
             }`}
           >
@@ -92,7 +92,7 @@ export default function Home({ onNavigateToChat }: HomeProps) {
       </div>
 
       {/* Bottom Section: Ask Zenkai Input */}
-      <footer className="z-10 w-full max-w-2xl mx-auto mb-8">
+      <footer className="z-10 w-full max-w-2xl mx-auto mb-2 md:mb-4">
         <form onSubmit={handleSubmit} className="relative flex items-center">
           <input
             type="text"

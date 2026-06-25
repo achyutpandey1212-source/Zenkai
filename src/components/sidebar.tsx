@@ -37,13 +37,13 @@ export default function Sidebar({ currentScreen, onScreenChange, isDarkMode, onT
   return (
     <aside
       className={`fixed left-0 top-0 z-40 h-screen bg-secondary border-r border-border flex flex-col justify-between py-8 transition-all duration-300 ease-in-out ${
-        isExpanded ? "w-60" : "w-20"
+        isExpanded ? "w-48 md:w-60" : "w-16 md:w-20"
       }`}
       onMouseEnter={() => setIsExpanded(true)}
       onMouseLeave={() => setIsExpanded(false)}
     >
       {/* Top Section - Logo */}
-      <div className="flex flex-col items-center px-4">
+      <div className="flex flex-col items-center px-2 md:px-4">
         <div className="h-10 w-full relative flex items-center justify-center">
           {isExpanded ? (
             <div className="flex items-center gap-2 animate-fade-in">
@@ -96,7 +96,7 @@ export default function Sidebar({ currentScreen, onScreenChange, isDarkMode, onT
               </div>
               
               <span
-                className={`ml-4 font-sans tracking-wide whitespace-nowrap transition-opacity duration-200 ${
+                className={`ml-3 md:ml-4 font-sans tracking-wide whitespace-nowrap transition-opacity duration-200 ${
                   isExpanded ? "opacity-100" : "opacity-0 pointer-events-none"
                 }`}
               >
@@ -105,7 +105,7 @@ export default function Sidebar({ currentScreen, onScreenChange, isDarkMode, onT
 
               {/* Tooltip for collapsed state */}
               {!isExpanded && (
-                <div className="absolute left-16 scale-0 rounded-md bg-foreground text-background p-2 text-xs font-semibold shadow-md transition-all duration-100 origin-left group-hover:scale-100">
+                <div className="absolute left-14 md:left-16 scale-0 rounded-md bg-foreground text-background p-2 text-xs font-semibold shadow-md transition-all duration-100 origin-left group-hover:scale-100">
                   {item.label}
                 </div>
               )}
@@ -128,7 +128,7 @@ export default function Sidebar({ currentScreen, onScreenChange, isDarkMode, onT
             )}
           </div>
           <span
-            className={`ml-4 font-sans tracking-wide whitespace-nowrap transition-opacity duration-200 ${
+            className={`ml-3 md:ml-4 font-sans tracking-wide whitespace-nowrap transition-opacity duration-200 ${
               isExpanded ? "opacity-100" : "opacity-0 pointer-events-none"
             }`}
           >
@@ -137,7 +137,7 @@ export default function Sidebar({ currentScreen, onScreenChange, isDarkMode, onT
 
           {/* Tooltip for collapsed state */}
           {!isExpanded && (
-            <div className="absolute left-16 scale-0 rounded-md bg-foreground text-background p-2 text-xs font-semibold shadow-md transition-all duration-100 origin-left group-hover:scale-100">
+            <div className="absolute left-14 md:left-16 scale-0 rounded-md bg-foreground text-background p-2 text-xs font-semibold shadow-md transition-all duration-100 origin-left group-hover:scale-100">
               {isDarkMode ? "Light Mode" : "Dark Mode"}
             </div>
           )}

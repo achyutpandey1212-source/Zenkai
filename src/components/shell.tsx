@@ -49,7 +49,7 @@ export default function Shell() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex text-foreground transition-colors duration-300">
+    <div className="h-screen max-h-screen overflow-hidden bg-background flex text-foreground transition-colors duration-300">
       {/* Navigation Left Sidebar */}
       <Sidebar 
         currentScreen={currentScreen} 
@@ -59,8 +59,8 @@ export default function Shell() {
       />
       
       {/* Main Content Area */}
-      <main className="flex-1 min-h-screen pl-20 transition-all duration-300">
-        <div className="w-full h-full min-h-screen relative">
+      <main className="flex-1 h-screen max-h-screen overflow-hidden pl-16 md:pl-20 transition-all duration-300">
+        <div className="w-full h-full relative overflow-hidden">
           {renderScreen()}
         </div>
       </main>
