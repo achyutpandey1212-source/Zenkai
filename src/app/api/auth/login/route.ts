@@ -25,12 +25,8 @@ export async function POST(request: Request) {
     const decodedToken = await adminAuth.verifyIdToken(idToken);
     const { uid, name, email, picture } = decodedToken;
 
-    if (!email) {
-      return NextResponse.json(
-        { success: false, error: "Email is required for authentication" },
-        { status: 400 }
-      );
-    }
+    const userEmail = email || `anonymous-${uid}@zenkai.local`;
+    const userName = name || (email ? email.split("@")[0] : "Guest");
 
     await dbConnect();
 
@@ -41,8 +37,8 @@ export async function POST(request: Request) {
       // First-time login: create new user
       user = await User.create({
         firebaseUid: uid,
-        name: name || email.split("@")[0],
-        email: email,
+        name: userName,
+        email: userEmail,
         photoURL: picture || "",
         createdAt: new Date(),
         lastLogin: new Date(),
