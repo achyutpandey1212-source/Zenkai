@@ -74,20 +74,22 @@ export class GeminiService {
   }
 
   /**
-   * Generates a streaming response from Gemini for the Companion Agent, injecting relevant long-term memory context.
+   * Generates a streaming response from Gemini for the Companion Agent, injecting relevant long-term memory, identity and reflection context.
    *
    * @param message The user's new message text
    * @param history The conversation history mapped to Gemini's format
    * @param memoryPromptText Formatted memory context to inject
    * @param identityPromptText Formatted identity context to inject
    * @param profilePromptText Formatted profile context to inject
+   * @param reflectionPromptText Formatted reflection context to inject
    */
   static async generateCompanionStreamWithMemory(
     message: string,
     history: { role: "user" | "model"; content: string }[],
     memoryPromptText: string,
     identityPromptText: string,
-    profilePromptText: string = ""
+    profilePromptText: string = "",
+    reflectionPromptText: string = ""
   ) {
     const ai = this.getClient();
 
@@ -103,7 +105,7 @@ export class GeminiService {
       parts: [{ text: message }],
     });
 
-    // Weave the profile, memory and identity prompt text into system instruction.
+    // Weave the profile, memory, identity and reflection prompt text into system instruction.
     const systemPromptWithMemory = `
 ${COMPANION_SYSTEM_PROMPT.trim()}
 
@@ -113,11 +115,13 @@ ${memoryPromptText}
 
 ${identityPromptText}
 
-IMPORTANT MEMORY USAGE DIRECTIVES:
-- Never say "I searched my memory", "According to my database", "I recall from our past conversations", or "My records say".
-- Never quote memories in a robotic, dry, or formal way.
-- Instead, speak naturally. Weave the context into your responses as if you simply remember the user, just like a close human friend or mentor would.
-- Keep the user's goals and preferences in mind when formulating suggestions and feedback.
+${reflectionPromptText}
+
+IMPORTANT MEMORY & REFLECTION USAGE DIRECTIVES:
+- Never say "I searched my memory", "According to my database", "I recall from our past conversations", "My records say", or "My reflections indicate".
+- Never quote memories or reflections in a robotic, dry, or formal way.
+- Instead, speak naturally. Weave the context into your responses as if you simply remember the user and understand their traits/patterns, just like a close human friend or mentor would.
+- Keep the user's goals, preferences, and recurring behavioral patterns in mind when formulating suggestions and feedback.
 `.trim();
 
     // Request stream

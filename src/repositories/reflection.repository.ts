@@ -1,13 +1,27 @@
 import { dbConnect } from "@/lib/mongodb";
-import { Reflection, IReflection, ReflectionType } from "@/models/Reflection";
+import { Reflection, IReflection, ReflectionType, ReflectionStatus, IReflectionVersion } from "@/models/Reflection";
 import { Types } from "mongoose";
 
 export type ReflectionCreateInput = {
   firebaseUid: string;
   reflectionType: ReflectionType;
+  title?: string;
   content: string;
   summary: string;
+  category?: string;
   confidence?: number;
+  importance?: number;
+  supportingMemoryIds?: string[];
+  supportingIdentityTraitIds?: string[];
+  lastValidatedAt?: Date;
+  status?: ReflectionStatus;
+  version?: number;
+  evidenceCount?: number;
+  stability?: number;
+  llmReasoning?: string;
+  evolutionReason?: string;
+  confidenceHistory?: { confidence: number; timestamp: Date; reason?: string }[];
+  versions?: IReflectionVersion[];
 };
 
 export type ReflectionUpdateInput = Partial<
@@ -26,6 +40,29 @@ export const ReflectionRepository = {
     return Reflection.find({ firebaseUid: uid })
       .sort({ createdAt: -1 })
       .lean() as Promise<IReflection[]>;
+  },
+
+  /**
+   * Get active reflections for a user.
+   */
+  async findActiveByUser(uid: string): Promise<IReflection[]> {
+    await dbConnect();
+    return Reflection.find({ firebaseUid: uid, status: "active" })
+      .sort({ createdAt: -1 })
+      .lean() as Promise<IReflection[]>;
+  },
+
+  /**
+   * Find a reflection by name and category for a user.
+   */
+  async findByNameAndCategory(
+    uid: string,
+    title: string,
+    category: string
+  ): Promise<IReflection | null> {
+    await dbConnect();
+    return Reflection.findOne({ firebaseUid: uid, title, category })
+      .lean() as Promise<IReflection | null>;
   },
 
   /**

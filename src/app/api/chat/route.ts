@@ -7,6 +7,8 @@ import { MemoryAgent } from "@/agents/memory-agent";
 import { IdentityRepository } from "@/repositories/identity.repository";
 import { IdentityAgent } from "@/agents/identity-agent";
 import { ProfileRepository } from "@/repositories/profile.repository";
+import { ReflectionRepository } from "@/repositories/reflection.repository";
+import { ReflectionAgent } from "@/agents/reflection-agent";
 
 // Mark this route as dynamic
 export const dynamic = "force-dynamic";
@@ -75,12 +77,15 @@ export async function POST(request: Request) {
     // 5. Persist the new user message to MongoDB
     await MessageRepository.addMessage(conversationId, "user", message);
 
-    // 6. Retrieve relevant long-term memories, active identity traits, and format for prompt
+    // 6. Retrieve relevant long-term memories, active identity traits, active reflections and format for prompt
     const memoryContext = await MemoryAgent.retrieveForContext(user.firebaseUid, message);
     const memoryPromptText = MemoryAgent.formatMemoriesForPrompt(memoryContext.memories);
     
     const activeTraits = await IdentityRepository.findActiveByUser(user.firebaseUid);
     const identityPromptText = IdentityAgent.formatIdentityForPrompt(activeTraits);
+
+    const activeReflections = await ReflectionRepository.findActiveByUser(user.firebaseUid);
+    const reflectionPromptText = ReflectionAgent.formatReflectionsForPrompt(activeReflections);
 
     // Retrieve onboarding profile to provide foundational goals/profession context
     const profile = await ProfileRepository.findByFirebaseUid(user.firebaseUid);
@@ -98,13 +103,14 @@ ${profile.biggestChallenge ? `- **Biggest Challenge**: ${profile.biggestChalleng
 `.trim();
     }
 
-    // 7. Call Gemini streaming API with profile, memory and identity context
+    // 7. Call Gemini streaming API with profile, memory, identity, and reflection context
     const geminiStream = await GeminiService.generateCompanionStreamWithMemory(
       message,
       history,
       memoryPromptText,
       identityPromptText,
-      profilePromptText
+      profilePromptText,
+      reflectionPromptText
     );
 
     // 8. Create a ReadableStream to stream chunks back to client
@@ -135,26 +141,30 @@ ${profile.biggestChallenge ? `- **Biggest Challenge**: ${profile.biggestChalleng
           if (accumulatedText.trim()) {
             const assistantMsg = await MessageRepository.addMessage(conversationId, "assistant", accumulatedText);
             
-            // Post-chat Memory Evaluation (Non-blocking background task)
-            MemoryAgent.evaluateAndStore(user.firebaseUid, message, accumulatedText, conversationId, assistantMsg._id.toString())
-              .then((newMemory) => {
+            // Post-chat background execution pipeline
+            (async () => {
+              try {
+                // a. Memory Evaluation & Storage
+                const newMemory = await MemoryAgent.evaluateAndStore(user.firebaseUid, message, accumulatedText, conversationId, assistantMsg._id.toString());
                 if (newMemory) {
                   console.log(`[MemoryAgent] Successfully admitted new memory: ${newMemory._id}`);
-                  // Post-memory Identity Evaluation (Non-blocking background task)
-                  IdentityAgent.evaluateAndEvolve(user.firebaseUid)
-                    .then((evolved) => {
-                      if (evolved) {
-                        console.log(`[IdentityAgent] Successfully evolved identity traits for: ${user.firebaseUid}`);
-                      }
-                    })
-                    .catch((err) => {
-                      console.error("[IdentityAgent] Error in background evolution:", err);
-                    });
                 }
-              })
-              .catch((err) => {
-                console.error("[MemoryAgent] Error in background evaluation/store:", err);
-              });
+                
+                // b. Identity Evolution
+                const evolvedTraits = await IdentityAgent.evaluateAndEvolve(user.firebaseUid);
+                if (evolvedTraits) {
+                  console.log(`[IdentityAgent] Successfully evolved identity traits for: ${user.firebaseUid}`);
+                }
+
+                // c. Reflection Evaluation & Storage
+                const evolvedReflections = await ReflectionAgent.evaluateAndEvolve(user.firebaseUid);
+                if (evolvedReflections) {
+                  console.log(`[ReflectionAgent] Successfully evolved reflections for: ${user.firebaseUid}`);
+                }
+              } catch (err) {
+                console.error("[Background Pipeline] Error during post-chat evaluation sequence:", err);
+              }
+            })();
           }
 
           controller.close();
