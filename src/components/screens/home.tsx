@@ -13,20 +13,38 @@ export default function Home({ onNavigateToChat }: HomeProps) {
   const [userName, setUserName] = useState("Achyut");
   const [longTermGoal, setLongTermGoal] = useState("Software Engineer");
 
-  // Load onboarding profile details
+  // Load profile data from MongoDB via API (not localStorage).
+  // This ensures the correct user's data is always shown, even when
+  // multiple accounts share the same browser.
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const profileStr = localStorage.getItem("onboarding_profile");
-      if (profileStr) {
-        try {
-          const profile = JSON.parse(profileStr);
-          if (profile.name) setUserName(profile.name);
-          if (profile.longTermGoal) setLongTermGoal(profile.longTermGoal);
-        } catch (e) {
-          console.error("Error parsing onboarding profile", e);
+    async function loadProfile() {
+      try {
+        const res = await fetch("/api/user/profile");
+        if (res.ok) {
+          const data = await res.json();
+          const profile = data.profile;
+          if (profile?.longTermGoal) setLongTermGoal(profile.longTermGoal);
         }
+      } catch {
+        // Silently fall back to defaults — non-critical
       }
     }
+
+    // Also read the authenticated user's name from /api/auth/me
+    async function loadUserName() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user?.name) setUserName(data.user.name);
+        }
+      } catch {
+        // Silently fall back to default
+      }
+    }
+
+    loadProfile();
+    loadUserName();
   }, []);
 
   // Periodic rotation or floating trigger

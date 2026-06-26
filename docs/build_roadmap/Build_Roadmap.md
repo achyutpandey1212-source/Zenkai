@@ -232,7 +232,7 @@ Persistence works.
 
 Build
 
-Tables:
+Collections:
 
 users
 

@@ -15,14 +15,30 @@ export default function Shell() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
-  // Initialize theme on mount, check onboarding status, and listen to changes
+  // On mount: read onboardingCompleted from MongoDB (via /api/auth/me)
+  // This ensures each Firebase account has its own onboarding status —
+  // not shared via localStorage across accounts on the same browser.
   useEffect(() => {
+    async function checkOnboardingStatus() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          setOnboardingCompleted(data.user?.onboardingCompleted === true);
+        } else {
+          // If not authenticated, the layout already redirected — default to false
+          setOnboardingCompleted(false);
+        }
+      } catch {
+        setOnboardingCompleted(false);
+      }
+    }
+
+    checkOnboardingStatus();
+
     if (typeof window !== "undefined") {
       const root = window.document.documentElement;
       setIsDarkMode(root.classList.contains("dark"));
-
-      const completed = localStorage.getItem("onboardingCompleted") === "true";
-      setOnboardingCompleted(completed);
 
       const handleThemeChange = () => {
         setIsDarkMode(root.classList.contains("dark"));
@@ -33,9 +49,23 @@ export default function Shell() {
     }
   }, []);
 
-  const handleOnboardingComplete = (onboardingData: OnboardingData) => {
-    localStorage.setItem("onboardingCompleted", "true");
-    localStorage.setItem("onboarding_profile", JSON.stringify(onboardingData));
+  const handleOnboardingComplete = async (onboardingData: OnboardingData) => {
+    try {
+      // Persist onboarding data to MongoDB
+      const res = await fetch("/api/onboarding/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(onboardingData),
+      });
+
+      if (!res.ok) {
+        console.error("Failed to save onboarding data:", await res.text());
+      }
+    } catch (err) {
+      console.error("Onboarding persistence error:", err);
+    }
+
+    // Update state regardless so the user isn't blocked if a network error occurs
     setOnboardingCompleted(true);
   };
 
