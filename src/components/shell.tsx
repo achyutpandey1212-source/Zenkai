@@ -23,7 +23,12 @@ interface ShellProps {
 
 export default function Shell({ initialUser }: ShellProps) {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>("home");
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return window.document.documentElement.classList.contains("dark");
+    }
+    return false;
+  });
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
   // Lifted User info states
@@ -62,11 +67,6 @@ export default function Shell({ initialUser }: ShellProps) {
 
     if (typeof window !== "undefined") {
       const root = window.document.documentElement;
-      const isDark = root.classList.contains("dark");
-      Promise.resolve().then(() => {
-        setIsDarkMode(isDark);
-      });
-
       const handleThemeChange = () => {
         setIsDarkMode(root.classList.contains("dark"));
       };

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
+import ThemeToggle from "./theme-toggle";
 
 interface OnboardingProps {
   onComplete: (data: OnboardingData) => void;
@@ -107,6 +108,11 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
   return (
     <div className="h-screen w-full bg-background flex flex-col justify-between p-6 md:p-12 relative overflow-hidden select-none text-foreground transition-colors duration-300">
+      {/* Theme Toggle in top-right corner */}
+      <div className="absolute right-6 top-6 z-50">
+        <ThemeToggle />
+      </div>
+
       {/* Background Decorative Temple Art (extremely subtle) */}
       <div className="absolute inset-0 opacity-5 pointer-events-none select-none z-0">
         <Image
