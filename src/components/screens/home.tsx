@@ -26,11 +26,35 @@ const quickActions = [
 
 interface ProactiveData {
   currentGoal: string | null;
-  nextMilestone: string | null;
-  priorities: { id: string; title: string; status: string; priority: number; estimatedDuration: string }[];
+  activeMilestone: {
+    _id: string;
+    title: string;
+    progress: number;
+    category: string;
+    startDate: string;
+    endDate: string;
+    estimatedDuration: string;
+  } | null;
+  upcomingHardConstraint: {
+    _id: string;
+    title: string;
+    category: string;
+    startDate: string;
+    endDate: string;
+  } | null;
+  planProgress: number;
+  priorities: {
+    id: string;
+    title: string;
+    status: string;
+    priority: number;
+    suggestedDate?: string;
+    timeBlock?: string;
+    estimatedDuration: string;
+  }[];
   recentReflection: { title: string; summary: string; category: string } | null;
 }
-
+ 
 export default function Home({
   messages,
   sendMessage,
@@ -47,26 +71,51 @@ export default function Home({
   const [loadingProactive, setLoadingProactive] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
+ 
   // Fetch proactive details from endpoint
-  useEffect(() => {
-    async function fetchProactiveData() {
-      try {
-        const res = await fetch("/api/plans/proactive");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.proactiveData) {
-            setProactiveData(data.proactiveData);
-          }
+  const fetchProactiveData = async () => {
+    try {
+      const res = await fetch("/api/plans/proactive");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.proactiveData) {
+          setProactiveData(data.proactiveData);
         }
-      } catch (err) {
-        console.error("Failed to load proactive data:", err);
-      } finally {
-        setLoadingProactive(false);
       }
+    } catch (err) {
+      console.error("Failed to load proactive data:", err);
+    } finally {
+      setLoadingProactive(false);
     }
+  };
+
+  useEffect(() => {
     fetchProactiveData();
   }, []);
+
+  const handleToggleTask = async (taskId: string, currentStatus: string) => {
+    const newStatus = currentStatus === "completed" ? "todo" : "completed";
+    try {
+      if (proactiveData) {
+        setProactiveData({
+          ...proactiveData,
+          priorities: proactiveData.priorities.map((t) =>
+            t.id === taskId ? { ...t, status: newStatus } : t
+          ),
+        });
+      }
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        await fetchProactiveData();
+      }
+    } catch (err) {
+      console.error("Failed to update task on home screen:", err);
+    }
+  };
 
   // Delayed transition from greeting → chat if prior messages exist
   useEffect(() => {
@@ -190,24 +239,43 @@ export default function Home({
         {!isChatActive && !loadingProactive && proactiveData && (
           <div className="w-full flex flex-col gap-6 mt-8 animate-fade-in transition-all duration-500">
             
-            {/* Top Row: Current Goal + Resume */}
+            {/* Top Row: Current Goal & Active Milestone / Hard Constraints */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               
-              {/* Goal Card */}
+              {/* Goal & Milestone Card */}
               {proactiveData.currentGoal ? (
                 <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col justify-between gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
-                      <Compass size={11} /> Current Aspiration
-                    </span>
-                    <h3 className="font-heading text-lg font-light text-foreground">
-                      {proactiveData.currentGoal}
-                    </h3>
-                    {proactiveData.nextMilestone && (
-                      <p className="font-sans text-xs text-muted-foreground">
-                        Next Milestone: <span className="font-semibold text-foreground/80">{proactiveData.nextMilestone}</span>
-                      </p>
-                    )}
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
+                        <Compass size={11} /> Current Aspiration
+                      </span>
+                      <span className="font-sans text-[9px] text-muted-foreground/80 font-semibold">
+                        {proactiveData.planProgress}% overall
+                      </span>
+                    </div>
+                    
+                    <div className="flex flex-col gap-1">
+                      <h3 className="font-heading text-lg font-light text-foreground leading-tight">
+                        {proactiveData.currentGoal}
+                      </h3>
+                      {proactiveData.activeMilestone && (
+                        <div className="flex flex-col gap-0.5 mt-2 border-t border-border/10 pt-2">
+                          <span className="font-sans text-[8px] text-accent/60 uppercase tracking-widest">
+                            Active Milestone Focus
+                          </span>
+                          <span className="font-sans text-xs font-semibold text-foreground/90">
+                            {proactiveData.activeMilestone.title}
+                          </span>
+                          <div className="flex items-center justify-between text-[9px] text-muted-foreground/60 mt-0.5 font-sans">
+                            <span>{proactiveData.activeMilestone.category} | {proactiveData.activeMilestone.progress}% done</span>
+                            {proactiveData.activeMilestone.startDate && (
+                              <span>{proactiveData.activeMilestone.startDate} — {proactiveData.activeMilestone.endDate}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   
                   {onNavigate && (
@@ -226,24 +294,42 @@ export default function Home({
                 </div>
               )}
 
-              {/* Reflection Card */}
-              {proactiveData.recentReflection ? (
-                <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col gap-2">
-                  <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
-                    <BookOpen size={11} /> Recent Reflection
-                  </span>
-                  <span className="font-sans text-[10px] font-medium text-foreground/75 italic">
-                    {proactiveData.recentReflection.category}
-                  </span>
-                  <p className="font-sans text-xs text-muted-foreground/90 leading-relaxed italic">
-                    "{proactiveData.recentReflection.summary}"
-                  </p>
-                </div>
-              ) : (
-                <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col justify-center items-center text-center">
-                  <span className="font-sans text-[10px] text-muted-foreground">No reflections accumulated yet.</span>
-                </div>
-              )}
+              {/* Reflection & Hard Constraints Card */}
+              <div className="flex flex-col gap-5">
+                {/* Upcoming Hard Constraint (If exists) */}
+                {proactiveData.upcomingHardConstraint ? (
+                  <div className="bg-red-500/5 border border-red-500/20 p-4 rounded-xl flex flex-col gap-1.5">
+                    <span className="font-sans text-[8px] font-semibold text-red-400 uppercase tracking-widest flex items-center gap-1.5">
+                      🎓 Upcoming Hard Constraint
+                    </span>
+                    <h4 className="font-sans text-xs font-semibold text-foreground/90">
+                      {proactiveData.upcomingHardConstraint.title}
+                    </h4>
+                    <span className="font-sans text-[9px] text-muted-foreground/75">
+                      Starts: {proactiveData.upcomingHardConstraint.startDate}
+                    </span>
+                  </div>
+                ) : null}
+
+                {/* Reflection Card */}
+                {proactiveData.recentReflection ? (
+                  <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col gap-2 flex-1 justify-center">
+                    <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen size={11} /> Recent Reflection
+                    </span>
+                    <span className="font-sans text-[10px] font-medium text-foreground/75 italic">
+                      {proactiveData.recentReflection.category}
+                    </span>
+                    <p className="font-sans text-xs text-muted-foreground/90 leading-relaxed italic">
+                      "{proactiveData.recentReflection.summary}"
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col justify-center items-center text-center flex-1">
+                    <span className="font-sans text-[10px] text-muted-foreground">No reflections accumulated yet.</span>
+                  </div>
+                )}
+              </div>
 
             </div>
 
@@ -251,27 +337,54 @@ export default function Home({
             {proactiveData.priorities.length > 0 && (
               <div className="bg-card border border-border/50 p-6 rounded-2xl flex flex-col gap-4 shadow-sm">
                 <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
-                  <CheckSquare size={11} /> Today's Top Priorities
+                  <CheckSquare size={11} /> Today's Planned Tasks
                 </span>
                 
                 <div className="space-y-3">
-                  {proactiveData.priorities.map((task) => (
-                    <div key={task.id} className="flex items-center justify-between border-b border-border/10 pb-2.5 last:border-0 last:pb-0">
-                      <span className="font-sans text-xs text-foreground tracking-wide font-medium">
-                        {task.title}
-                      </span>
-                      <div className="flex items-center gap-3">
-                        {task.estimatedDuration && (
-                          <span className="font-sans text-[9px] text-muted-foreground/60 flex items-center gap-1">
-                            <Clock size={10} /> {task.estimatedDuration}
+                  {proactiveData.priorities.map((task) => {
+                    const isCompleted = task.status === "completed";
+                    return (
+                      <div
+                        key={task.id}
+                        onClick={() => handleToggleTask(task.id, task.status)}
+                        className="flex items-start justify-between border-b border-border/10 pb-2.5 last:border-0 last:pb-0 cursor-pointer group transition-all"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <button
+                            type="button"
+                            className={`h-4 w-4 rounded-full flex items-center justify-center shrink-0 border transition-all mt-0.5 ${
+                              isCompleted
+                                ? "bg-accent border-accent text-foreground"
+                                : "border-muted-foreground/30 text-transparent group-hover:border-accent"
+                            }`}
+                          >
+                            {isCompleted && (
+                              <svg className="w-2.5 h-2.5 text-primary-foreground stroke-[3px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+                          <span className={`font-sans text-xs text-foreground tracking-wide font-medium transition-all ${
+                            isCompleted ? "line-through text-muted-foreground opacity-65" : "text-foreground group-hover:text-accent/90"
+                          }`}>
+                            {task.title}
                           </span>
-                        )}
-                        <span className="font-sans text-[9px] font-bold text-accent/80 uppercase">
-                          Priority {task.priority}
-                        </span>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 ml-3">
+                          {task.suggestedDate && (
+                            <span className="font-sans text-[9px] text-accent/80 font-medium">
+                              {task.timeBlock ? `${task.timeBlock}` : `${task.suggestedDate}`}
+                            </span>
+                          )}
+                          {task.estimatedDuration && (
+                            <span className="font-sans text-[9px] text-muted-foreground/60 flex items-center gap-1">
+                              <Clock size={10} /> {task.estimatedDuration}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

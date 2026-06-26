@@ -34,7 +34,7 @@ Return a JSON object matching the requested schema.
 
 const PLANNER_SYSTEM_PROMPT = `
 You are the Strategy and Execution Planning Agent for Zenkai.
-Your mission is to build, merge, or evolve a structured roadmap for the user.
+Your mission is to build, merge, or evolve a structured, chronological roadmap for the user.
 
 A plan is represented as a 4-tier hierarchy:
 Plan -> Milestones -> Goals -> Tasks
@@ -50,15 +50,34 @@ Every level contains:
 - priority: integer where 1 is highest priority.
 - estimatedDuration: string indicating duration (e.g., "4 weeks", "10 hours", "2 days").
 
-CORE DIRECTIVES FOR EVOLUTION & MERGING:
-- Zenkai plans are living systems. Do NOT recreate them from scratch if a plan already exists.
-- You will be provided with any existing plans in JSON.
-- If the user's message represents an update or expansion of an existing plan, you MUST preserve the exact "id" fields for all unchanged or updated Plans, Milestones, Goals, and Tasks.
-- Omit the "id" field ONLY for brand new items.
-- If the user wants to abandon or change goals (e.g. "I no longer want to build a startup, I want to prepare for exams"), set the status of the abandoned plan to "archived". Do not delete it from history.
-- Ground your plans in the user's context (onboarding profile, memories, active identity traits, and reflections). For example, check their peak focus times, availability, or career goals.
+CHRONOLOGICAL TIMELINE DIRECTIVES:
+- Every milestone must occupy an actual place on the timeline, marked with:
+  - startDate: "YYYY-MM-DD"
+  - endDate: "YYYY-MM-DD"
+- Every task must contain:
+  - suggestedDate: "YYYY-MM-DD"
+  - timeBlock: optional time slot string (e.g. "09:00 AM - 10:30 AM" or empty)
+- Every milestone must be categorized into exactly one of the following activity categories:
+  - Exam, Study, Hackathon, Meetup, Content Creation, Startup, Coding, Reading, Fitness, Interview, Personal
 
-Return a JSON object containing the plan tree.
+SMART CONSTRAINTS (IMPORTANCE & FLEXIBILITY):
+- Classify events as Hard Constraints (e.g. Exams, Job Interviews, Medical appointments) or Soft Constraints (e.g. Meetups, Hackathons, Study sessions, Fitness, Content Creation, etc.).
+- Hard constraints have: importance: 10, flexibility: 0. They cannot move.
+- Soft constraints have flexible dates and lower importance (e.g. importance: 4-8, flexibility: 5-9).
+- You must schedule study and flexible milestones around hard constraints. For example, if there is an exam on July 6th, and a buildathon on July 5th-6th, digital communication exam preparation must be scheduled *before* the buildathon, and post-exam goals (like YouTube content creation) must start *strictly after* the exam period ends on July 9th.
+
+CORE DIRECTIVES FOR EVOLUTION & MERGING:
+- Zenkai plans are living systems. Do NOT recreate them from scratch.
+- If evolving an existing plan, PRESERVE the exact database "id" (re-mapped to "id" field in JSON) for existing Plans, Milestones, Goals, and Tasks. Omit the "id" field ONLY for brand new items.
+- If the user cancels or removes an event (e.g. "I am no longer attending the AIC meetup"), find its milestone and set its status to "cancelled". Do NOT remove it from the list — let it stay in the payload as "cancelled" so history preserves it.
+- In addition to the "plan" tree, you must return:
+  - plannerReasoning: Explaining how you resolved conflicts, rescheduled tasks, and respected hard/soft constraints.
+  - changeSummary: A concise description of the revision (e.g., "Cancelled AIC Developers Meet and rescheduled YouTube sprint").
+  - detectedConstraints: Summary of identified hard and soft constraints.
+  - mergeStrategy: Summary of how you preserved progress while updating dates.
+  - timelineRecalculation: Explanation of chronological date shifts.
+
+Return a JSON object containing the plan tree and these diagnostic details.
 `;
 
 export class PlanningAgent {
@@ -270,7 +289,7 @@ Remember:
                 required: ["title", "status", "priority", "estimatedDuration", "type", "milestones"],
               },
             },
-            required: ["plan"],
+            required: ["plan", "plannerReasoning", "changeSummary", "detectedConstraints", "mergeStrategy", "timelineRecalculation"],
           },
         },
       });
@@ -278,7 +297,14 @@ Remember:
       const responseText = response.text;
       if (!responseText) return false;
 
-      const result = JSON.parse(responseText) as { plan: any };
+      const result = JSON.parse(responseText) as {
+        plan: any;
+        plannerReasoning: string;
+        changeSummary: string;
+        detectedConstraints: string;
+        mergeStrategy: string;
+        timelineRecalculation: string;
+      };
       const normalizedPlan = result.plan;
       const executionTimeMs = Date.now() - startTime;
 
@@ -289,6 +315,10 @@ Remember:
         rawGeminiOutput: responseText,
         normalizedPlan: JSON.stringify(normalizedPlan, null, 2),
         executionTimeMs,
+        plannerReasoning: result.plannerReasoning,
+        detectedConstraints: result.detectedConstraints,
+        mergeStrategy: result.mergeStrategy,
+        timelineRecalculation: result.timelineRecalculation,
       };
 
       if (normalizedPlan.id && Types.ObjectId.isValid(normalizedPlan.id)) {
@@ -350,6 +380,11 @@ Remember:
                 status: milestone.status,
                 priority: milestone.priority,
                 estimatedDuration: milestone.estimatedDuration,
+                startDate: milestone.startDate || "",
+                endDate: milestone.endDate || "",
+                category: milestone.category || "Personal",
+                importance: milestone.importance || 5,
+                flexibility: milestone.flexibility || 5,
               },
             },
             { new: true }
@@ -365,7 +400,13 @@ Remember:
             priority: milestone.priority || 1,
             estimatedDuration: milestone.estimatedDuration,
             progress: 0,
+            startDate: milestone.startDate || "",
+            endDate: milestone.endDate || "",
+            category: milestone.category || "Personal",
+            importance: milestone.importance || 5,
+            flexibility: milestone.flexibility || 5,
           });
+          milestoneIdsInPayload.add(milestoneDoc._id.toString());
         }
 
         const milestoneId = milestoneDoc._id;
@@ -402,6 +443,7 @@ Remember:
               estimatedDuration: goal.estimatedDuration,
               progress: 0,
             });
+            goalIdsInPayload.add(goalDoc._id.toString());
           }
 
           const goalId = goalDoc._id;
@@ -421,6 +463,8 @@ Remember:
                     priority: task.priority,
                     estimatedDuration: task.estimatedDuration,
                     dependencies: task.dependencies || [],
+                    suggestedDate: task.suggestedDate || "",
+                    timeBlock: task.timeBlock || "",
                   },
                 },
                 { new: true }
@@ -436,7 +480,10 @@ Remember:
                 priority: task.priority || 1,
                 estimatedDuration: task.estimatedDuration,
                 dependencies: task.dependencies || [],
+                suggestedDate: task.suggestedDate || "",
+                timeBlock: task.timeBlock || "",
               });
+              taskIdsInPayload.add(taskDoc._id.toString());
             }
           }
         }
@@ -464,8 +511,36 @@ Remember:
       });
 
       // 4. Trigger progress recalculation for the entire plan structure to sync numbers
-      // We can take any task of the plan and trigger progress update, or run a general plan recalculator.
       await this.recalculatePlanProgress(planId.toString());
+
+      // 5. Version Control: Capture full snapshot of updated plan and push to history
+      const updatedPlanTree = await Plan.findById(planId).lean();
+      const updatedMilestones = await Milestone.find({ planId }).sort({ priority: 1 }).lean();
+      const milestoneTrees = [];
+      for (const m of updatedMilestones) {
+        const goals = await Goal.find({ milestoneId: m._id }).sort({ priority: 1 }).lean();
+        const goalTrees = [];
+        for (const g of goals) {
+          const tasks = await Task.find({ goalId: g._id }).sort({ priority: 1 }).lean();
+          goalTrees.push({ ...g, tasks });
+        }
+        milestoneTrees.push({ ...m, goals: goalTrees });
+      }
+      const fullSnapshot = {
+        ...updatedPlanTree,
+        milestones: milestoneTrees
+      };
+
+      const changeSummary = result.changeSummary || (normalizedPlan.id ? "Updated plan" : "Original plan");
+      await Plan.findByIdAndUpdate(planId, {
+        $push: {
+          history: {
+            timestamp: new Date(),
+            changeSummary,
+            snapshot: JSON.stringify(fullSnapshot),
+          },
+        },
+      });
 
       return true;
     } catch (error) {

@@ -19,6 +19,8 @@ export interface ITask extends Document {
   dependencies?: string[];     // list of task titles or IDs this task depends on
   scheduledFor?: Date;
   completedAt?: Date;
+  suggestedDate?: string;      // YYYY-MM-DD suggested execution date
+  timeBlock?: string;          // optional time slot, e.g. "09:00 AM - 10:30 AM"
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +42,8 @@ const TaskSchema = new Schema<ITask>(
     dependencies: [{ type: String }],
     scheduledFor: { type: Date },
     completedAt: { type: Date },
+    suggestedDate: { type: String, default: "" },
+    timeBlock: { type: String, default: "" },
   },
   {
     timestamps: true,

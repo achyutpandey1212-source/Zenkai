@@ -2,6 +2,12 @@ import mongoose, { Schema, Model, Document } from "mongoose";
 
 export type PlanStatus = "active" | "completed" | "archived";
 
+export interface IPlanHistory {
+  timestamp: Date;
+  changeSummary: string;
+  snapshot: string; // JSON string representing the plan tree snapshot at this revision
+}
+
 export interface IPlan extends Document {
   firebaseUid: string;
   title: string;
@@ -16,7 +22,12 @@ export interface IPlan extends Document {
     rawGeminiOutput: string;
     normalizedPlan: string;
     executionTimeMs: number;
+    plannerReasoning?: string;
+    detectedConstraints?: string;
+    mergeStrategy?: string;
+    timelineRecalculation?: string;
   };
+  history?: IPlanHistory[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,7 +51,18 @@ const PlanSchema = new Schema<IPlan>(
       rawGeminiOutput: { type: String },
       normalizedPlan: { type: String },
       executionTimeMs: { type: Number },
+      plannerReasoning: { type: String },
+      detectedConstraints: { type: String },
+      mergeStrategy: { type: String },
+      timelineRecalculation: { type: String },
     },
+    history: [
+      {
+        timestamp: { type: Date, default: Date.now },
+        changeSummary: { type: String, required: true },
+        snapshot: { type: String, required: true },
+      },
+    ],
   },
   {
     timestamps: true,
