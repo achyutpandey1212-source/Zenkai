@@ -83,7 +83,8 @@ export class GeminiService {
   static async generateCompanionStreamWithMemory(
     message: string,
     history: { role: "user" | "model"; content: string }[],
-    memoryPromptText: string
+    memoryPromptText: string,
+    identityPromptText: string
   ) {
     const ai = this.getClient();
 
@@ -99,11 +100,13 @@ export class GeminiService {
       parts: [{ text: message }],
     });
 
-    // Weave the memory prompt text into system instruction.
+    // Weave the memory and identity prompt text into system instruction.
     const systemPromptWithMemory = `
 ${COMPANION_SYSTEM_PROMPT.trim()}
 
 ${memoryPromptText}
+
+${identityPromptText}
 
 IMPORTANT MEMORY USAGE DIRECTIVES:
 - Never say "I searched my memory", "According to my database", "I recall from our past conversations", or "My records say".

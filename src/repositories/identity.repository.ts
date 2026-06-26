@@ -11,7 +11,10 @@ export type IdentityTraitCreateInput = {
   firebaseUid: string;
   trait: string;
   category: IdentityTraitCategory;
+  description?: string;
   confidence?: number;
+  stability?: number;
+  version?: number;
   status?: IdentityTraitStatus;
   evidence?: string;
 };
@@ -31,6 +34,26 @@ export const IdentityRepository = {
     await dbConnect();
     return IdentityTrait.find({ firebaseUid: uid, status: "active" })
       .sort({ confidence: -1 })
+      .lean() as Promise<IIdentityTrait[]>;
+  },
+
+  /**
+   * Get all candidate (emerging/hypothesis) identity traits for a user.
+   */
+  async findCandidatesByUser(uid: string): Promise<IIdentityTrait[]> {
+    await dbConnect();
+    return IdentityTrait.find({ firebaseUid: uid, status: "candidate" })
+      .sort({ confidence: -1 })
+      .lean() as Promise<IIdentityTrait[]>;
+  },
+
+  /**
+   * Get all traits for a user (including deprecated for timeline).
+   */
+  async findAllByUser(uid: string): Promise<IIdentityTrait[]> {
+    await dbConnect();
+    return IdentityTrait.find({ firebaseUid: uid })
+      .sort({ updatedAt: -1 })
       .lean() as Promise<IIdentityTrait[]>;
   },
 
@@ -57,7 +80,19 @@ export const IdentityRepository = {
   },
 
   /**
-   * Create a new identity trait (starts as candidate).
+   * Find a trait by user, trait name, and category.
+   */
+  async findByNameAndCategory(
+    uid: string,
+    trait: string,
+    category: IdentityTraitCategory
+  ): Promise<IIdentityTrait | null> {
+    await dbConnect();
+    return IdentityTrait.findOne({ firebaseUid: uid, trait, category }).lean() as Promise<IIdentityTrait | null>;
+  },
+
+  /**
+   * Create a new identity trait.
    */
   async create(data: IdentityTraitCreateInput): Promise<IIdentityTrait> {
     await dbConnect();
@@ -74,7 +109,11 @@ export const IdentityRepository = {
   ): Promise<IIdentityTrait | null> {
     await dbConnect();
     if (!Types.ObjectId.isValid(id)) return null;
-    return IdentityTrait.findByIdAndUpdate(id, { $set: data }, { new: true }).lean() as Promise<IIdentityTrait | null>;
+    return IdentityTrait.findByIdAndUpdate(
+      id,
+      { $set: data },
+      { new: true }
+    ).lean() as Promise<IIdentityTrait | null>;
   },
 
   /**
@@ -87,7 +126,7 @@ export const IdentityRepository = {
   },
 
   /**
-   * Deprecate a trait (soft-delete).
+   * Deprecate a trait (soft-delete/archive).
    */
   async deprecate(id: string): Promise<void> {
     await dbConnect();

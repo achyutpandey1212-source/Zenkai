@@ -4,6 +4,8 @@ import { verifySession } from "@/lib/auth-service";
 import { MessageRepository } from "@/repositories/message.repository";
 import { GeminiService } from "@/services/gemini.service";
 import { MemoryAgent } from "@/agents/memory-agent";
+import { IdentityRepository } from "@/repositories/identity.repository";
+import { IdentityAgent } from "@/agents/identity-agent";
 
 // Mark this route as dynamic
 export const dynamic = "force-dynamic";
@@ -72,12 +74,15 @@ export async function POST(request: Request) {
     // 5. Persist the new user message to MongoDB
     await MessageRepository.addMessage(conversationId, "user", message);
 
-    // 6. Retrieve relevant long-term memories and format for prompt
+    // 6. Retrieve relevant long-term memories, active identity traits, and format for prompt
     const memoryContext = await MemoryAgent.retrieveForContext(user.firebaseUid, message);
     const memoryPromptText = MemoryAgent.formatMemoriesForPrompt(memoryContext.memories);
+    
+    const activeTraits = await IdentityRepository.findActiveByUser(user.firebaseUid);
+    const identityPromptText = IdentityAgent.formatIdentityForPrompt(activeTraits);
 
-    // 7. Call Gemini streaming API with memory context
-    const geminiStream = await GeminiService.generateCompanionStreamWithMemory(message, history, memoryPromptText);
+    // 7. Call Gemini streaming API with memory and identity context
+    const geminiStream = await GeminiService.generateCompanionStreamWithMemory(message, history, memoryPromptText, identityPromptText);
 
     // 8. Create a ReadableStream to stream chunks back to client
     const encoder = new TextEncoder();
@@ -112,6 +117,16 @@ export async function POST(request: Request) {
               .then((newMemory) => {
                 if (newMemory) {
                   console.log(`[MemoryAgent] Successfully admitted new memory: ${newMemory._id}`);
+                  // Post-memory Identity Evaluation (Non-blocking background task)
+                  IdentityAgent.evaluateAndEvolve(user.firebaseUid)
+                    .then((evolved) => {
+                      if (evolved) {
+                        console.log(`[IdentityAgent] Successfully evolved identity traits for: ${user.firebaseUid}`);
+                      }
+                    })
+                    .catch((err) => {
+                      console.error("[IdentityAgent] Error in background evolution:", err);
+                    });
                 }
               })
               .catch((err) => {

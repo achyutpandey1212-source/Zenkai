@@ -19,9 +19,12 @@ export interface IIdentityTrait extends Document {
   firebaseUid: string;            // FK → users.firebaseUid
   trait: string;                  // e.g. "Builder", "Deep Thinker"
   category: IdentityTraitCategory;
+  description: string;            // description of the trait
   confidence: number;             // 0.0 – 1.0
+  stability: number;              // 0.0 – 1.0
+  version: number;                // version number of updates
   status: IdentityTraitStatus;
-  evidence?: string;              // brief justification
+  evidence?: string;              // brief justification or bullet points
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,7 +44,10 @@ const IdentityTraitSchema = new Schema<IIdentityTrait>(
       ],
       required: true,
     },
+    description: { type: String, default: "" },
     confidence: { type: Number, default: 0.5, min: 0, max: 1 },
+    stability: { type: Number, default: 0.1, min: 0, max: 1 },
+    version: { type: Number, default: 1 },
     status: {
       type: String,
       enum: ["candidate", "active", "deprecated"],
