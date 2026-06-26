@@ -13,7 +13,11 @@ interface Task {
   notes: string;
 }
 
-export default function Tasks() {
+interface TasksProps {
+  userName: string;
+}
+
+export default function Tasks({ userName }: TasksProps) {
   const [tasks, setTasks] = useState<Task[]>([
     {
       id: 1,
@@ -26,7 +30,7 @@ export default function Tasks() {
     },
     {
       id: 2,
-      title: "Review Database Schema",
+      title: userName ? `Review Database Schema with ${userName}` : "Review Database Schema",
       timeSlot: "2:00 PM — 3:30 PM",
       duration: "1.5h",
       category: "Collaboration",
@@ -45,25 +49,15 @@ export default function Tasks() {
   ]);
 
   useEffect(() => {
-    async function loadUserName() {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.user?.name) {
-            setTasks(prev =>
-              prev.map(t =>
-                t.id === 2 ? { ...t, title: `Review Database Schema with ${data.user.name}` } : t
-              )
-            );
-          }
-        }
-      } catch {
-        // Silently fallback
-      }
+    if (userName) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTasks(prev =>
+        prev.map(t =>
+          t.id === 2 ? { ...t, title: `Review Database Schema with ${userName}` } : t
+        )
+      );
     }
-    loadUserName();
-  }, []);
+  }, [userName]);
 
   const toggleTask = (id: number) => {
     setTasks(prev =>

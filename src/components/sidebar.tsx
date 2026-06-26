@@ -26,6 +26,8 @@ interface SidebarProps {
   activeConversationId?: string;
   onSelectConversation: (id: string) => void;
   onNewChat: () => void;
+  userName?: string;
+  userEmail?: string;
 }
 
 export default function Sidebar({ 
@@ -35,7 +37,9 @@ export default function Sidebar({
   onToggleTheme,
   activeConversationId,
   onSelectConversation,
-  onNewChat
+  onNewChat,
+  userName = "",
+  userEmail = ""
 }: SidebarProps) {
   interface SidebarConversation {
     _id: string;
@@ -48,27 +52,6 @@ export default function Sidebar({
   const [conversations, setConversations] = useState<SidebarConversation[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
-  const [userName, setUserName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-
-  // Load user information on mount
-  useEffect(() => {
-    async function loadUser() {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.user) {
-            setUserName(data.user.name || "");
-            setUserEmail(data.user.email || "");
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load user in Sidebar:", err);
-      }
-    }
-    loadUser();
-  }, []);
 
   // Load conversation history on mount and when activeConversationId changes
   useEffect(() => {

@@ -10,6 +10,7 @@ interface ChatProps {
   orbState: OrbState;
   statusMessage: string;
   setOrbState: React.Dispatch<React.SetStateAction<OrbState>>;
+  userName: string;
 }
 
 export default function Chat({
@@ -18,27 +19,11 @@ export default function Chat({
   orbState,
   statusMessage,
   setOrbState,
+  userName,
 }: ChatProps) {
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [userName, setUserName] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Load username
-  useEffect(() => {
-    async function loadUserName() {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.user?.name) setUserName(data.user.name);
-        }
-      } catch {
-        // Silently fall back
-      }
-    }
-    loadUserName();
-  }, []);
 
   // Auto-scroll on message updates
   useEffect(() => {

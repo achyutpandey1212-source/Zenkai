@@ -1,25 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Quote, Sparkles, TrendingUp, AlertCircle } from "lucide-react";
 
-export default function Reflection() {
-  const [userName, setUserName] = useState("");
+interface ReflectionProps {
+  userName: string;
+}
 
-  useEffect(() => {
-    async function loadUserName() {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.user?.name) setUserName(data.user.name);
-        }
-      } catch {
-        // Silently fallback
-      }
-    }
-    loadUserName();
-  }, []);
+export default function Reflection({ userName }: ReflectionProps) {
   const wins = [
     "Successfully initialized Next.js 15 project skeleton and TailwindCSS config.",
     "Integrated the custom design system rules for 'expensive silence'.",

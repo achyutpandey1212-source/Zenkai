@@ -13,10 +13,22 @@ import MemoryDebug from "./screens/memory-debug";
 
 import { OrbState } from "./ui/companion-orb";
 
-export default function Shell() {
+interface ShellProps {
+  initialUser?: {
+    name: string;
+    email: string;
+    firebaseUid: string;
+  } | null;
+}
+
+export default function Shell({ initialUser }: ShellProps) {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>("home");
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
+
+  // Lifted User info states
+  const [userName, setUserName] = useState(initialUser?.name || "");
+  const [userEmail, setUserEmail] = useState(initialUser?.email || "");
 
   // Lifted Chat & Companion States
   const [activeConversation, setActiveConversation] = useState<{ _id: string; title?: string } | null>(null);
@@ -35,6 +47,8 @@ export default function Shell() {
         if (res.ok) {
           const data = await res.json();
           setOnboardingCompleted(data.user?.onboardingCompleted === true);
+          if (data.user?.name) setUserName(data.user.name);
+          if (data.user?.email) setUserEmail(data.user.email);
         } else {
           // If not authenticated, the layout already redirected — default to false
           setOnboardingCompleted(false);
@@ -89,6 +103,9 @@ export default function Shell() {
   }, [onboardingCompleted]);
 
   const handleOnboardingComplete = async (onboardingData: OnboardingData) => {
+    if (onboardingData.name) {
+      setUserName(onboardingData.name);
+    }
     try {
       // Persist onboarding data to MongoDB
       const res = await fetch("/api/onboarding/complete", {
@@ -288,7 +305,7 @@ export default function Shell() {
             statusMessage={statusMessage}
             hasStartedChat={hasStartedChat}
             setOrbState={setOrbState}
-            onNavigateToChat={() => setCurrentScreen("chat")}
+            userName={userName}
           />
         );
       case "chat":
@@ -299,14 +316,15 @@ export default function Shell() {
             orbState={orbState}
             statusMessage={statusMessage}
             setOrbState={setOrbState}
+            userName={userName}
           />
         );
       case "tasks":
-        return <Tasks />;
+        return <Tasks userName={userName} />;
       case "identity":
         return <Identity />;
       case "reflection":
-        return <Reflection />;
+        return <Reflection userName={userName} />;
       case "settings":
         return <Settings />;
       case "memory":
@@ -320,7 +338,7 @@ export default function Shell() {
             statusMessage={statusMessage}
             hasStartedChat={hasStartedChat}
             setOrbState={setOrbState}
-            onNavigateToChat={() => setCurrentScreen("chat")}
+            userName={userName}
           />
         );
     }
@@ -345,6 +363,8 @@ export default function Shell() {
         activeConversationId={activeConversation?._id}
         onSelectConversation={handleSelectConversation}
         onNewChat={handleNewChat}
+        userName={userName}
+        userEmail={userEmail}
       />
       
       {/* Main Content Area */}

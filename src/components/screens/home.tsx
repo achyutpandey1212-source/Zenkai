@@ -11,7 +11,7 @@ interface HomeProps {
   statusMessage: string;
   hasStartedChat: boolean;
   setOrbState: React.Dispatch<React.SetStateAction<OrbState>>;
-  onNavigateToChat: () => void;
+  userName: string;
 }
 
 export default function Home({
@@ -21,10 +21,10 @@ export default function Home({
   statusMessage,
   hasStartedChat,
   setOrbState,
-  onNavigateToChat,
+  userName,
 }: HomeProps) {
   const [query, setQuery] = useState("");
-  const [userName, setUserName] = useState("");
+  const [isChatActive, setIsChatActive] = useState(false);
   const [longTermGoal, setLongTermGoal] = useState("Software Engineer");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -43,29 +43,28 @@ export default function Home({
         // Silently fall back to defaults
       }
     }
-
-    async function loadUserName() {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.user?.name) setUserName(data.user.name);
-        }
-      } catch {
-        // Silently fall back to default
-      }
-    }
-
     loadProfile();
-    loadUserName();
   }, []);
+
+  // Delayed transition from greeting to chat if previous messages exist
+  useEffect(() => {
+    if (hasStartedChat) {
+      const timer = setTimeout(() => {
+        setIsChatActive(true);
+      }, 3000); // 3 seconds window
+      return () => clearTimeout(timer);
+    } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsChatActive(false);
+    }
+  }, [hasStartedChat]);
 
   // Scroll to bottom of message list on updates
   useEffect(() => {
-    if (hasStartedChat) {
+    if (isChatActive) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, hasStartedChat]);
+  }, [messages, isChatActive]);
 
   // Adjust textarea height automatically
   useEffect(() => {
@@ -89,6 +88,9 @@ export default function Home({
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!query.trim()) return;
+
+    // Immediately expand and show the chat thread
+    setIsChatActive(true);
 
     const textToSend = query;
     setQuery("");
@@ -131,12 +133,12 @@ export default function Home({
         
         {/* Top Section: Greeting / Transformed Greeting */}
         <header className={`max-w-xl self-start flex flex-col relative w-full transition-all duration-1000 ease-in-out ${
-          hasStartedChat ? "mt-2 min-h-0" : "mt-4 min-h-[120px]"
+          isChatActive ? "mt-2 min-h-0" : "mt-4 min-h-[120px]"
         }`}>
           {/* Initial Greeting state */}
           <div 
             className={`flex flex-col gap-3 transition-all duration-1000 ease-in-out transform ${
-              hasStartedChat 
+              isChatActive 
                 ? "opacity-0 -translate-y-6 pointer-events-none absolute" 
                 : "opacity-100 translate-y-0"
             }`}
@@ -157,7 +159,7 @@ export default function Home({
           {/* Transformed Active Conversation state */}
           <div 
             className={`transition-all duration-1000 ease-in-out transform ${
-              hasStartedChat 
+              isChatActive 
                 ? "opacity-100 translate-y-0" 
                 : "opacity-0 translate-y-6 pointer-events-none absolute"
             }`}
@@ -171,14 +173,14 @@ export default function Home({
         {/* Center Section: Floating Companion Orb & Status messages */}
         <div 
           className={`flex flex-col items-center justify-center transition-all duration-1000 ease-in-out ${
-            hasStartedChat 
+            isChatActive 
               ? "h-20 md:h-24 py-1" 
               : "h-[45vh] md:h-[50vh] py-6 md:py-12"
           }`}
         >
           <CompanionOrb 
             state={orbState} 
-            size={hasStartedChat ? "xs" : "lg"} 
+            size={isChatActive ? "xs" : "lg"} 
             className="transition-all duration-1000"
           />
 
@@ -198,7 +200,7 @@ export default function Home({
         {/* growing/sliding conversation container */}
         <div 
           className={`flex-1 w-full max-w-2xl mx-auto overflow-hidden flex flex-col transition-all duration-1000 ease-in-out ${
-            hasStartedChat 
+            isChatActive 
               ? "opacity-100 translate-y-0 mt-2 mb-2" 
               : "opacity-0 translate-y-12 max-h-0 h-0 pointer-events-none"
           }`}
