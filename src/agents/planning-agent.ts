@@ -336,7 +336,7 @@ Remember:
               diagnostics,
             },
           },
-          { new: true }
+          { returnDocument: "after" }
         );
       } else {
         // Create new plan
@@ -387,7 +387,7 @@ Remember:
                 flexibility: milestone.flexibility || 5,
               },
             },
-            { new: true }
+            { returnDocument: "after" }
           );
           milestoneIdsInPayload.add(milestone.id);
         } else {
@@ -428,7 +428,7 @@ Remember:
                   estimatedDuration: goal.estimatedDuration,
                 },
               },
-              { new: true }
+              { returnDocument: "after" }
             );
             goalIdsInPayload.add(goal.id);
           } else {
@@ -467,7 +467,7 @@ Remember:
                     timeBlock: task.timeBlock || "",
                   },
                 },
-                { new: true }
+                { returnDocument: "after" }
               );
               taskIdsInPayload.add(task.id);
             } else {

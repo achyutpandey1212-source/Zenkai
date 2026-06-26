@@ -51,7 +51,7 @@ export async function PATCH(
     const updatedTask = await Task.findOneAndUpdate(
       { _id: new Types.ObjectId(id), firebaseUid: user.firebaseUid },
       { $set: updateFields },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!updatedTask) {

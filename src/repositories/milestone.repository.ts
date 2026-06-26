@@ -41,7 +41,7 @@ export const MilestoneRepository = {
   async update(id: string, data: MilestoneUpdateInput): Promise<IMilestone | null> {
     await dbConnect();
     if (!Types.ObjectId.isValid(id)) return null;
-    return Milestone.findByIdAndUpdate(id, { $set: data }, { new: true }).lean() as Promise<IMilestone | null>;
+    return Milestone.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean() as Promise<IMilestone | null>;
   },
 
   async delete(id: string): Promise<void> {

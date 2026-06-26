@@ -46,7 +46,7 @@ export const ProfileRepository = {
     const profile = await Profile.findOneAndUpdate(
       { firebaseUid: data.firebaseUid },
       { $set: data },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { returnDocument: "after", upsert: true, setDefaultsOnInsert: true }
     ).lean();
     return profile as IProfile;
   },
@@ -59,7 +59,7 @@ export const ProfileRepository = {
     return Profile.findOneAndUpdate(
       { firebaseUid: uid },
       { $set: data },
-      { new: true }
+      { returnDocument: "after" }
     ).lean() as Promise<IProfile | null>;
   },
 

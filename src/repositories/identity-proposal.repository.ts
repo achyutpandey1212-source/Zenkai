@@ -63,7 +63,7 @@ export const IdentityProposalRepository = {
     return IdentityProposal.findByIdAndUpdate(
       id,
       { $set: { status } },
-      { new: true }
+      { returnDocument: "after" }
     ).lean() as Promise<IIdentityProposal | null>;
   },
 
@@ -80,7 +80,7 @@ export const IdentityProposalRepository = {
     return IdentityProposal.findByIdAndUpdate(
       id,
       { $set: { confidence, reason } },
-      { new: true }
+      { returnDocument: "after" }
     ).lean() as Promise<IIdentityProposal | null>;
   },
 

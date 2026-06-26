@@ -60,7 +60,7 @@ export const MessageRepository = {
     return Conversation.findByIdAndUpdate(
       id,
       { $set: { title } },
-      { new: true }
+      { returnDocument: "after" }
     ).lean() as Promise<IConversation | null>;
   },
 

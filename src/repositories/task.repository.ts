@@ -95,7 +95,7 @@ export const TaskRepository = {
   async update(id: string, data: TaskUpdateInput): Promise<ITask | null> {
     await dbConnect();
     if (!Types.ObjectId.isValid(id)) return null;
-    return Task.findByIdAndUpdate(id, { $set: data }, { new: true }).lean() as Promise<ITask | null>;
+    return Task.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean() as Promise<ITask | null>;
   },
 
   /**

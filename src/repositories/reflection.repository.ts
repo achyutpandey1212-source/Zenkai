@@ -112,7 +112,7 @@ export const ReflectionRepository = {
   ): Promise<IReflection | null> {
     await dbConnect();
     if (!Types.ObjectId.isValid(id)) return null;
-    return Reflection.findByIdAndUpdate(id, { $set: data }, { new: true }).lean() as Promise<IReflection | null>;
+    return Reflection.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean() as Promise<IReflection | null>;
   },
 
   /**

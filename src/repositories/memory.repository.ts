@@ -79,7 +79,7 @@ export const MemoryRepository = {
   async update(id: string, data: MemoryUpdateInput): Promise<IMemory | null> {
     await dbConnect();
     if (!Types.ObjectId.isValid(id)) return null;
-    return Memory.findByIdAndUpdate(id, { $set: data }, { new: true }).lean() as Promise<IMemory | null>;
+    return Memory.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean() as Promise<IMemory | null>;
   },
 
   /**
@@ -170,7 +170,7 @@ export const MemoryRepository = {
         $inc: { retrievalCount: 1 },
         $set: { lastRetrievedAt: new Date() }
       },
-      { new: true }
+      { returnDocument: "after" }
     ).lean() as Promise<IMemory | null>;
   },
 
@@ -183,7 +183,7 @@ export const MemoryRepository = {
     return Memory.findByIdAndUpdate(
       id,
       { $set: { lastRetrievedAt: new Date() } },
-      { new: true }
+      { returnDocument: "after" }
     ).lean() as Promise<IMemory | null>;
   },
 };

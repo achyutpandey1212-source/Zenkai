@@ -112,7 +112,7 @@ export const IdentityRepository = {
     return IdentityTrait.findByIdAndUpdate(
       id,
       { $set: data },
-      { new: true }
+      { returnDocument: "after" }
     ).lean() as Promise<IIdentityTrait | null>;
   },
 

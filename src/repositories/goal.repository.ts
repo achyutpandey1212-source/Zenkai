@@ -61,7 +61,7 @@ export const GoalRepository = {
   async update(id: string, data: GoalUpdateInput): Promise<IGoal | null> {
     await dbConnect();
     if (!Types.ObjectId.isValid(id)) return null;
-    return Goal.findByIdAndUpdate(id, { $set: data }, { new: true }).lean() as Promise<IGoal | null>;
+    return Goal.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean() as Promise<IGoal | null>;
   },
 
   /**

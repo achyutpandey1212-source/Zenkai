@@ -53,7 +53,7 @@ export const PlanRepository = {
   async update(id: string, data: PlanUpdateInput): Promise<IPlan | null> {
     await dbConnect();
     if (!Types.ObjectId.isValid(id)) return null;
-    return Plan.findByIdAndUpdate(id, { $set: data }, { new: true }).lean() as Promise<IPlan | null>;
+    return Plan.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean() as Promise<IPlan | null>;
   },
 
   async delete(id: string): Promise<void> {
