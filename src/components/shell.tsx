@@ -19,8 +19,8 @@ export default function Shell() {
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
   // Lifted Chat & Companion States
-  const [activeConversation, setActiveConversation] = useState<any>(null);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [activeConversation, setActiveConversation] = useState<{ _id: string; title?: string } | null>(null);
+  const [messages, setMessages] = useState<{ _id: string; role: string; content: string; createdAt: Date }[]>([]);
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [hasStartedChat, setHasStartedChat] = useState<boolean>(false);
@@ -48,7 +48,10 @@ export default function Shell() {
 
     if (typeof window !== "undefined") {
       const root = window.document.documentElement;
-      setIsDarkMode(root.classList.contains("dark"));
+      const isDark = root.classList.contains("dark");
+      Promise.resolve().then(() => {
+        setIsDarkMode(isDark);
+      });
 
       const handleThemeChange = () => {
         setIsDarkMode(root.classList.contains("dark"));
@@ -225,6 +228,55 @@ export default function Shell() {
     setIsDarkMode(prev => !prev);
   };
 
+  const handleSelectConversation = async (id: string) => {
+    setOrbState("thinking");
+    setStatusMessage("Loading conversation...");
+    try {
+      const res = await fetch(`/api/chat/history?conversationId=${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.conversation) {
+          setActiveConversation(data.conversation);
+          const loadedMessages = data.messages || [];
+          setMessages(loadedMessages);
+          setHasStartedChat(loadedMessages.length > 0);
+          setCurrentScreen("chat");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to select conversation:", err);
+    } finally {
+      setOrbState("idle");
+      setStatusMessage("");
+    }
+  };
+
+  const handleNewChat = async () => {
+    setOrbState("thinking");
+    setStatusMessage("Creating new chat...");
+    try {
+      const res = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "New Conversation" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.conversation) {
+          setActiveConversation(data.conversation);
+          setMessages([]);
+          setHasStartedChat(false);
+          setCurrentScreen("chat");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to create new conversation:", err);
+    } finally {
+      setOrbState("idle");
+      setStatusMessage("");
+    }
+  };
+
   const renderScreen = () => {
     switch (currentScreen) {
       case "home":
@@ -290,6 +342,9 @@ export default function Shell() {
         onScreenChange={setCurrentScreen} 
         isDarkMode={isDarkMode}
         onToggleTheme={toggleTheme}
+        activeConversationId={activeConversation?._id}
+        onSelectConversation={handleSelectConversation}
+        onNewChat={handleNewChat}
       />
       
       {/* Main Content Area */}

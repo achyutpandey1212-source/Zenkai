@@ -105,10 +105,10 @@ export async function POST(request: Request) {
 
           // 9. Once stream completes successfully, persist model response to DB
           if (accumulatedText.trim()) {
-            await MessageRepository.addMessage(conversationId, "assistant", accumulatedText);
+            const assistantMsg = await MessageRepository.addMessage(conversationId, "assistant", accumulatedText);
             
             // Post-chat Memory Evaluation (Non-blocking background task)
-            MemoryAgent.evaluateAndStore(user.firebaseUid, message, accumulatedText, conversationId)
+            MemoryAgent.evaluateAndStore(user.firebaseUid, message, accumulatedText, conversationId, assistantMsg._id.toString())
               .then((newMemory) => {
                 if (newMemory) {
                   console.log(`[MemoryAgent] Successfully admitted new memory: ${newMemory._id}`);
@@ -135,10 +135,11 @@ export async function POST(request: Request) {
         "x-conversation-id": conversationId,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("POST /api/chat Error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Internal Server Error";
     return NextResponse.json(
-      { success: false, error: error.message || "Internal Server Error" },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }

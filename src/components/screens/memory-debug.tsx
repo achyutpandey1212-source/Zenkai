@@ -1,22 +1,24 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Brain, Trash2, RefreshCw, Database, Clock, Info, ShieldCheck, Tag } from "lucide-react";
+import { Brain, Trash2, RefreshCw, Database, Clock, Info, ShieldCheck, Tag, Sparkles } from "lucide-react";
 
 interface Memory {
   _id: string;
-  memoryType: string;
+  category: string;
   content: string;
   summary: string;
   confidence: number;
   importance: number;
+  importanceReason?: string;
+  reason: string;
   status: string;
+  version: number;
   retrievalCount: number;
-  lastAccessedAt?: string;
+  lastRetrievedAt?: string;
   createdAt: string;
-  sourceConversationId?: string;
-  sourceMessageSnippet?: string;
-  admissionReason?: string;
+  conversationId?: string;
+  messageId?: string;
   keywords: string[];
 }
 
@@ -44,7 +46,7 @@ export default function MemoryDebug() {
       } else {
         throw new Error(data.error || "Failed to load memories");
       }
-        } catch (err) {
+    } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
       setError(errorMessage);
     } finally {
@@ -77,7 +79,7 @@ export default function MemoryDebug() {
       } else {
         throw new Error(data.error || "Failed to delete memory");
       }
-        } catch (err) {
+    } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Could not delete memory";
       alert(errorMessage);
     } finally {
@@ -97,7 +99,7 @@ export default function MemoryDebug() {
       } else {
         throw new Error(data.error || "Failed to clear memories");
       }
-        } catch (err) {
+    } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Could not clear memories";
       alert(errorMessage);
     } finally {
@@ -105,22 +107,30 @@ export default function MemoryDebug() {
     }
   };
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case "identity":
-        return "bg-purple-500/10 text-purple-400 border-purple-500/20";
-      case "aspiration":
-        return "bg-amber-500/10 text-amber-400 border-amber-500/20";
-      case "goal":
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case "Goal":
         return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-      case "behavior":
+      case "Preference":
+        return "bg-amber-500/10 text-amber-400 border-amber-500/20";
+      case "Habit":
         return "bg-blue-500/10 text-blue-400 border-blue-500/20";
-      case "constraint":
+      case "Constraint":
         return "bg-rose-500/10 text-rose-400 border-rose-500/20";
-      case "principle":
-        return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20";
-      case "pattern":
+      case "Identity":
+        return "bg-purple-500/10 text-purple-400 border-purple-500/20";
+      case "Project":
         return "bg-indigo-500/10 text-indigo-400 border-indigo-500/20";
+      case "Achievement":
+        return "bg-teal-500/10 text-teal-400 border-teal-500/20";
+      case "Relationship":
+        return "bg-pink-500/10 text-pink-400 border-pink-500/20";
+      case "Behavior":
+        return "bg-sky-500/10 text-sky-400 border-sky-500/20";
+      case "Motivation":
+        return "bg-orange-500/10 text-orange-400 border-orange-500/20";
+      case "Knowledge":
+        return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20";
       default:
         return "bg-muted text-muted-foreground border-border";
     }
@@ -186,7 +196,7 @@ export default function MemoryDebug() {
             <Database size={48} className="text-muted-foreground/30" />
             <h3 className="font-heading text-xl font-light">Memory is Stateless</h3>
             <p className="font-sans text-xs text-muted-foreground max-w-sm">
-              Zenkai hasn&apos;t admitted any facts to long-term memory yet. Teach Zenkai some goals, principles, or habits in the Companion Chat.
+              Zenkai hasn&apos;t admitted any facts to long-term memory yet. Teach Zenkai some goals, preferences, or projects in the Companion Chat.
             </p>
           </div>
         ) : (
@@ -197,9 +207,9 @@ export default function MemoryDebug() {
                 <thead>
                   <tr className="border-b border-border bg-secondary/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-sans">
                     <th className="p-4 pl-6">Memory Summary & Content</th>
-                    <th className="p-4 w-28">Type</th>
-                    <th className="p-4 w-36">Importance & Confidence</th>
-                    <th className="p-4 w-44">Retrieval Stats</th>
+                    <th className="p-4 w-28">Category</th>
+                    <th className="p-4 w-40">Importance & Confidence</th>
+                    <th className="p-4 w-44">Lifecycle & Stats</th>
                     <th className="p-4 w-24 text-right pr-6">Actions</th>
                   </tr>
                 </thead>
@@ -209,21 +219,27 @@ export default function MemoryDebug() {
                       {/* Summary & Content */}
                       <td className="p-4 pl-6 max-w-lg">
                         <div className="flex flex-col gap-1.5">
-                          <span className="font-heading text-sm font-medium text-foreground">{memory.summary}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-heading text-sm font-medium text-foreground">{memory.summary}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-secondary border border-border text-muted-foreground">
+                              v{memory.version}
+                            </span>
+                          </div>
                           <span className="text-muted-foreground leading-relaxed text-xs">{memory.content}</span>
                           
                           {/* Admission Reason */}
-                          {memory.admissionReason && (
+                          {memory.reason && (
                             <div className="mt-2 flex items-start gap-1.5 p-2 rounded bg-secondary/50 text-[11px] border border-border/40 text-muted-foreground">
                               <Info size={12} className="text-accent shrink-0 mt-0.5" />
-                              <p><strong>Admission Context:</strong> {memory.admissionReason}</p>
+                              <p><strong>Admission Context:</strong> {memory.reason}</p>
                             </div>
                           )}
 
-                          {/* Source Snippet */}
-                          {memory.sourceMessageSnippet && (
-                            <div className="text-[10px] text-muted-foreground/75 italic">
-                              Triggered by: &quot;{memory.sourceMessageSnippet}&quot;
+                          {/* Importance Reason */}
+                          {memory.importanceReason && (
+                            <div className="mt-1 flex items-start gap-1.5 p-2 rounded bg-secondary/30 text-[11px] border border-border/20 text-muted-foreground">
+                              <Sparkles size={12} className="text-emerald-400 shrink-0 mt-0.5" />
+                              <p><strong>Importance Context:</strong> {memory.importanceReason}</p>
                             </div>
                           )}
 
@@ -241,10 +257,10 @@ export default function MemoryDebug() {
                         </div>
                       </td>
 
-                      {/* Type */}
+                      {/* Category */}
                       <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${getTypeColor(memory.memoryType)}`}>
-                          {memory.memoryType}
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${getCategoryColor(memory.category)}`}>
+                          {memory.category}
                         </span>
                       </td>
 
@@ -254,12 +270,12 @@ export default function MemoryDebug() {
                           <div>
                             <div className="flex justify-between text-[10px] text-muted-foreground mb-1 font-mono">
                               <span>Importance</span>
-                              <span>{Math.round(memory.importance * 100)}%</span>
+                              <span>{memory.importance.toFixed(1)}/10</span>
                             </div>
                             <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden border border-border/40">
                               <div
                                 className="bg-accent h-full rounded-full"
-                                style={{ width: `${memory.importance * 100}%` }}
+                                style={{ width: `${memory.importance * 10}%` }}
                               />
                             </div>
                           </div>
@@ -279,7 +295,7 @@ export default function MemoryDebug() {
                         </div>
                       </td>
 
-                      {/* Retrieval Stats */}
+                      {/* Lifecycle Stats */}
                       <td className="p-4 text-muted-foreground">
                         <div className="flex flex-col gap-1.5 font-mono text-[10px]">
                           <div className="flex items-center gap-1.5">
@@ -287,11 +303,11 @@ export default function MemoryDebug() {
                             <span>Retrieved: {memory.retrievalCount} times</span>
                           </div>
                           
-                          {memory.lastAccessedAt ? (
+                          {memory.lastRetrievedAt ? (
                             <div className="flex items-center gap-1.5">
                               <Clock size={12} />
                               <span>
-                                Active: {new Date(memory.lastAccessedAt).toLocaleDateString()}
+                                Active: {new Date(memory.lastRetrievedAt).toLocaleDateString()}
                               </span>
                             </div>
                           ) : (

@@ -1,20 +1,20 @@
 import { dbConnect } from "@/lib/mongodb";
-import { Memory, IMemory, MemoryType, MemoryStatus } from "@/models/Memory";
+import { Memory, IMemory, MemoryCategory, MemoryStatus } from "@/models/Memory";
 import { Types } from "mongoose";
 
 export type MemoryCreateInput = {
   firebaseUid: string;
-  memoryType: MemoryType;
+  category: MemoryCategory;
   content: string;
   summary: string;
-  confidence?: number;
   importance?: number;
+  importanceReason?: string;
+  confidence?: number;
+  reason: string;
   status?: MemoryStatus;
-  retrievalCount?: number;
-  lastAccessedAt?: Date;
-  sourceConversationId?: string;
-  sourceMessageSnippet?: string;
-  admissionReason?: string;
+  conversationId?: string;
+  messageId?: string;
+  version?: number;
   keywords?: string[];
 };
 
@@ -35,11 +35,11 @@ export const MemoryRepository = {
   },
 
   /**
-   * Get memories by type.
+   * Get memories by category.
    */
-  async findByType(uid: string, memoryType: MemoryType): Promise<IMemory[]> {
+  async findByCategory(uid: string, category: MemoryCategory): Promise<IMemory[]> {
     await dbConnect();
-    return Memory.find({ firebaseUid: uid, memoryType, status: "approved" })
+    return Memory.find({ firebaseUid: uid, category, status: "approved" })
       .sort({ importance: -1 })
       .lean() as Promise<IMemory[]>;
   },
@@ -65,7 +65,7 @@ export const MemoryRepository = {
   },
 
   /**
-   * Create a new memory candidate.
+   * Create a new memory.
    */
   async create(data: MemoryCreateInput): Promise<IMemory> {
     await dbConnect();
@@ -134,13 +134,13 @@ export const MemoryRepository = {
   },
 
   /**
-   * Find approved memories of a specific type with a limit.
+   * Find approved memories of a specific category with a limit.
    */
-  async findByTypeWithLimit(uid: string, memoryType: MemoryType, limit = 10): Promise<IMemory[]> {
+  async findByCategoryWithLimit(uid: string, category: MemoryCategory, limit = 10): Promise<IMemory[]> {
     await dbConnect();
     return Memory.find({
       firebaseUid: uid,
-      memoryType,
+      category,
       status: "approved"
     })
       .sort({ importance: -1, createdAt: -1 })
@@ -159,7 +159,7 @@ export const MemoryRepository = {
   },
 
   /**
-   * Increment the retrieval count and update the lastAccessedAt timestamp.
+   * Increment the retrieval count and update the lastRetrievedAt timestamp.
    */
   async incrementRetrievalCount(id: string): Promise<IMemory | null> {
     await dbConnect();
@@ -168,7 +168,7 @@ export const MemoryRepository = {
       id,
       {
         $inc: { retrievalCount: 1 },
-        $set: { lastAccessedAt: new Date() }
+        $set: { lastRetrievedAt: new Date() }
       },
       { new: true }
     ).lean() as Promise<IMemory | null>;
@@ -177,12 +177,12 @@ export const MemoryRepository = {
   /**
    * Update the last accessed timestamp.
    */
-  async updateLastAccessed(id: string): Promise<IMemory | null> {
+  async updateLastRetrieved(id: string): Promise<IMemory | null> {
     await dbConnect();
     if (!Types.ObjectId.isValid(id)) return null;
     return Memory.findByIdAndUpdate(
       id,
-      { $set: { lastAccessedAt: new Date() } },
+      { $set: { lastRetrievedAt: new Date() } },
       { new: true }
     ).lean() as Promise<IMemory | null>;
   },

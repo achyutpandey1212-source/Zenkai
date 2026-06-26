@@ -19,7 +19,7 @@ export class RankingEngine {
     // 1. Score each memory
     const scoredMemories: RankedMemory[] = memories.map((memory) => {
       // Relevance: keyword overlap & string matching
-      let relevance = 0.1; // base baseline relevance
+      let relevance = 0.1; // baseline relevance
       if (memory.keywords && memory.keywords.length > 0) {
         const matchingKeywords = memory.keywords.filter((kw) =>
           userMessageLower.includes(kw.toLowerCase())
@@ -41,28 +41,32 @@ export class RankingEngine {
         relevance = Math.max(relevance, 0.95);
       }
 
-      // Importance & Confidence
-      const importance = Math.max(memory.importance ?? 0.5, 0.1);
+      // Importance (normalized from 0-10 scale to 0-1)
+      const rawImportance = memory.importance ?? 5.0;
+      const normalizedImportance = Math.max(rawImportance, 0.1) / 10.0;
+
+      // Confidence (0-1 scale)
       const confidence = Math.max(memory.confidence ?? 0.5, 0.1);
 
-      // Freshness (Decay based on lastAccessedAt or createdAt)
-      const lastTime = memory.lastAccessedAt
-        ? new Date(memory.lastAccessedAt).getTime()
+      // Recency / Freshness (Decay based on lastRetrievedAt or createdAt)
+      const lastTime = memory.lastRetrievedAt
+        ? new Date(memory.lastRetrievedAt).getTime()
         : new Date(memory.createdAt).getTime();
       const diffMs = Date.now() - lastTime;
       const diffDays = diffMs / (1000 * 60 * 60 * 24);
       // Half-life of 30 days
       const freshness = 0.2 + 0.8 * Math.exp(-diffDays / 30);
 
-      // GoalAlignment: Aspiration & Goal type bonus
-      const goalAlignment =
-        memory.memoryType === "aspiration" || memory.memoryType === "goal" ? 1.5 : 1.0;
+      // Retrieval Frequency bonus (log-based scaling to avoid runaway positive feedback loops)
+      const frequencyBonus = 1.0 + 0.1 * Math.log1p(memory.retrievalCount || 0);
 
-      // Final score formula
-      const score = relevance * importance * confidence * freshness * goalAlignment;
+      // GoalAlignment: Goal category gets a boost
+      const goalAlignment = memory.category === "Goal" ? 1.5 : 1.0;
 
-      // Cast lean document to object to allow extending fields for sorting
-      const memoryObj = (typeof memory.toObject === 'function') ? memory.toObject() : memory;
+      // Final score formula combining all elements
+      const score = relevance * normalizedImportance * confidence * freshness * frequencyBonus * goalAlignment;
+
+      const memoryObj = (typeof memory.toObject === "function") ? memory.toObject() : memory;
       return {
         ...memoryObj,
         score,

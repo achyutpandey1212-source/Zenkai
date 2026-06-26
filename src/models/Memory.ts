@@ -8,30 +8,35 @@ import mongoose, { Schema, Model, Document } from "mongoose";
 
 export type MemoryStatus = "candidate" | "proposal" | "approved" | "archived";
 
-export type MemoryType =
-  | "identity"
-  | "aspiration"
-  | "principle"
-  | "behavior"
-  | "constraint"
-  | "pattern"
-  | "goal"
-  | "reflection";
+export type MemoryCategory =
+  | "Goal"
+  | "Preference"
+  | "Habit"
+  | "Constraint"
+  | "Identity"
+  | "Project"
+  | "Achievement"
+  | "Relationship"
+  | "Behavior"
+  | "Motivation"
+  | "Knowledge";
 
 export interface IMemory extends Document {
-  firebaseUid: string;     // FK → users.firebaseUid
-  memoryType: MemoryType;
-  content: string;         // full memory text
-  summary: string;         // compressed version for prompt usage
-  confidence: number;      // 0.0 – 1.0
-  importance: number;      // 0.0 – 1.0
-  status: MemoryStatus;
-  retrievalCount: number;  // tracks how often this memory is used
-  lastAccessedAt?: Date;   // used for freshness calculation
-  sourceConversationId?: string; // traceability
-  sourceMessageSnippet?: string; // snippet of user message triggering the memory
-  admissionReason?: string; // explanation of why it was admitted
-  keywords: string[];      // extracted keywords for matching
+  firebaseUid: string;       // Owner (FK → users.firebaseUid)
+  category: MemoryCategory;  // Category
+  content: string;           // Content
+  summary: string;           // Compressed summary for prompt context
+  importance: number;        // Importance Score (0.0 - 10.0)
+  importanceReason?: string; // Reason for importance score
+  confidence: number;        // Confidence (0.0 - 1.0)
+  reason: string;            // Admission decision reason
+  lastRetrievedAt?: Date;    // Last Retrieved
+  retrievalCount: number;    // Retrieval Count
+  conversationId?: string;   // Conversation ID
+  messageId?: string;        // Message ID
+  status: MemoryStatus;      // Status
+  version: number;           // Version
+  keywords: string[];        // Keywords for local matching
   createdAt: Date;
   updatedAt: Date;
 }
@@ -39,34 +44,39 @@ export interface IMemory extends Document {
 const MemorySchema = new Schema<IMemory>(
   {
     firebaseUid: { type: String, required: true, index: true },
-    memoryType: {
+    category: {
       type: String,
       enum: [
-        "identity",
-        "aspiration",
-        "principle",
-        "behavior",
-        "constraint",
-        "pattern",
-        "goal",
-        "reflection",
+        "Goal",
+        "Preference",
+        "Habit",
+        "Constraint",
+        "Identity",
+        "Project",
+        "Achievement",
+        "Relationship",
+        "Behavior",
+        "Motivation",
+        "Knowledge",
       ],
       required: true,
     },
     content: { type: String, required: true },
     summary: { type: String, required: true },
+    importance: { type: Number, default: 5.0, min: 0, max: 10 },
+    importanceReason: { type: String },
     confidence: { type: Number, default: 0.5, min: 0, max: 1 },
-    importance: { type: Number, default: 0.5, min: 0, max: 1 },
+    reason: { type: String, required: true },
+    lastRetrievedAt: { type: Date },
+    retrievalCount: { type: Number, default: 0 },
+    conversationId: { type: String },
+    messageId: { type: String },
     status: {
       type: String,
       enum: ["candidate", "proposal", "approved", "archived"],
       default: "candidate",
     },
-    retrievalCount: { type: Number, default: 0 },
-    lastAccessedAt: { type: Date },
-    sourceConversationId: { type: String },
-    sourceMessageSnippet: { type: String },
-    admissionReason: { type: String },
+    version: { type: Number, default: 1 },
     keywords: { type: [String], default: [] },
   },
   {
@@ -78,7 +88,7 @@ const MemorySchema = new Schema<IMemory>(
 
 // Compound indexes for efficient per-user memory retrieval
 MemorySchema.index({ firebaseUid: 1, status: 1, importance: -1 });
-MemorySchema.index({ firebaseUid: 1, memoryType: 1, status: 1 });
+MemorySchema.index({ firebaseUid: 1, category: 1, status: 1 });
 MemorySchema.index({ firebaseUid: 1, keywords: 1 });
 
 export const Memory: Model<IMemory> =

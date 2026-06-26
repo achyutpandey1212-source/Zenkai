@@ -3,10 +3,9 @@ import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth-service";
 import { MessageRepository } from "@/repositories/message.repository";
 
-// Mark this route as dynamic
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     // 1. Authenticate user
     const cookieStore = await cookies();
@@ -27,10 +26,30 @@ export async function GET() {
       );
     }
 
-    // 2. Fetch the most recent conversation for the user
-    const conversations = await MessageRepository.findConversationsByUser(user.firebaseUid);
+    const { searchParams } = new URL(request.url);
+    const paramConversationId = searchParams.get("conversationId");
 
-    if (conversations.length === 0) {
+    let activeConversation = null;
+
+    if (paramConversationId) {
+      activeConversation = await MessageRepository.findConversationById(paramConversationId);
+    } else {
+      // Fetch the most recent conversation for the user
+      const conversations = await MessageRepository.findConversationsByUser(user.firebaseUid);
+      if (conversations.length > 0) {
+        const latestConv = conversations[0];
+        
+        // Inactivity check: 2 hours (2 * 60 * 60 * 1000 ms)
+        const lastUpdated = new Date(latestConv.updatedAt).getTime();
+        const inactiveTime = Date.now() - lastUpdated;
+        
+        if (inactiveTime <= 2 * 60 * 60 * 1000) {
+          activeConversation = latestConv;
+        }
+      }
+    }
+
+    if (!activeConversation) {
       return NextResponse.json({
         success: true,
         conversation: null,
@@ -38,8 +57,6 @@ export async function GET() {
       });
     }
 
-    // Use the latest conversation
-    const activeConversation = conversations[0];
     const conversationId = activeConversation._id.toString();
 
     // 3. Load all messages in chronological order
@@ -50,10 +67,11 @@ export async function GET() {
       conversation: activeConversation,
       messages: messages,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("GET /api/chat/history Error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Internal Server Error";
     return NextResponse.json(
-      { success: false, error: error.message || "Internal Server Error" },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }

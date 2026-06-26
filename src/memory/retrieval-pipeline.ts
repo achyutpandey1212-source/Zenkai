@@ -65,33 +65,33 @@ export class RetrievalPipeline {
     const intent = this.detectIntent(userMessage);
     const keywords = this.extractKeywords(userMessage);
 
-    // 1. Broadly fetch candidate memories
+    // 1. Broadly fetch candidate memories (curated subset, not the whole DB)
     // Fetch via keyword overlap
     const keywordCandidates = keywords.length > 0
       ? await MemoryRepository.findRelevantByKeywords(uid, keywords, 30)
       : [];
 
-    // Fetch by type priority to ensure coverage
-    const [identityList, aspirationList, goalList, behaviorList, constraintList, principleList, reflectionList] = await Promise.all([
-      MemoryRepository.findByTypeWithLimit(uid, "identity", 5),
-      MemoryRepository.findByTypeWithLimit(uid, "aspiration", 5),
-      MemoryRepository.findByTypeWithLimit(uid, "goal", 5),
-      MemoryRepository.findByTypeWithLimit(uid, "behavior", 5),
-      MemoryRepository.findByTypeWithLimit(uid, "constraint", 5),
-      MemoryRepository.findByTypeWithLimit(uid, "principle", 5),
-      MemoryRepository.findByTypeWithLimit(uid, "reflection", 5),
+    // Fetch key category candidates to ensure coverage of core profile
+    const [identityList, goalList, preferenceList, habitList, constraintList, motivationList, projectList] = await Promise.all([
+      MemoryRepository.findByCategoryWithLimit(uid, "Identity", 5),
+      MemoryRepository.findByCategoryWithLimit(uid, "Goal", 5),
+      MemoryRepository.findByCategoryWithLimit(uid, "Preference", 5),
+      MemoryRepository.findByCategoryWithLimit(uid, "Habit", 5),
+      MemoryRepository.findByCategoryWithLimit(uid, "Constraint", 5),
+      MemoryRepository.findByCategoryWithLimit(uid, "Motivation", 5),
+      MemoryRepository.findByCategoryWithLimit(uid, "Project", 5),
     ]);
 
     // Merge all lists
     const allCandidates = [
       ...keywordCandidates,
       ...identityList,
-      ...aspirationList,
       ...goalList,
-      ...behaviorList,
+      ...preferenceList,
+      ...habitList,
       ...constraintList,
-      ...principleList,
-      ...reflectionList
+      ...motivationList,
+      ...projectList
     ];
 
     // Deduplicate candidates by their stringified ID
