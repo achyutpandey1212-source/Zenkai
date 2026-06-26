@@ -129,6 +129,11 @@ export default function Shell({ initialUser }: ShellProps) {
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
 
+    // Transition from Home screen to Companion Chat screen seamlessly
+    if (currentScreen === "home") {
+      setCurrentScreen("chat");
+    }
+
     // 1. Append user's message locally
     const userTempId = `user-temp-${Date.now()}`;
     const userMsg = {

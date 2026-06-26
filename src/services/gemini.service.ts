@@ -79,12 +79,15 @@ export class GeminiService {
    * @param message The user's new message text
    * @param history The conversation history mapped to Gemini's format
    * @param memoryPromptText Formatted memory context to inject
+   * @param identityPromptText Formatted identity context to inject
+   * @param profilePromptText Formatted profile context to inject
    */
   static async generateCompanionStreamWithMemory(
     message: string,
     history: { role: "user" | "model"; content: string }[],
     memoryPromptText: string,
-    identityPromptText: string
+    identityPromptText: string,
+    profilePromptText: string = ""
   ) {
     const ai = this.getClient();
 
@@ -100,9 +103,11 @@ export class GeminiService {
       parts: [{ text: message }],
     });
 
-    // Weave the memory and identity prompt text into system instruction.
+    // Weave the profile, memory and identity prompt text into system instruction.
     const systemPromptWithMemory = `
 ${COMPANION_SYSTEM_PROMPT.trim()}
+
+${profilePromptText}
 
 ${memoryPromptText}
 

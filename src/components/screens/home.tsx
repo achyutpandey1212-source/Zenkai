@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import CompanionOrb, { OrbState } from "../ui/companion-orb";
 import { Sparkles } from "lucide-react";
+import MarkdownRenderer from "../ui/markdown-renderer";
 
 interface HomeProps {
   messages: any[];
@@ -192,13 +193,13 @@ export default function Home({
 
         {/* ─── Chat Messages (appears when chat starts) ─── */}
         <div
-          className={`w-full max-w-2xl px-4 min-h-0 transition-all duration-700 ease-in-out ${
+          className={`w-full min-h-0 transition-all duration-700 ease-in-out overflow-y-auto scrollbar-custom ${
             isChatActive
               ? "flex-1 opacity-100 mt-4"
               : "flex-none h-0 opacity-0 pointer-events-none overflow-hidden"
           }`}
         >
-          <div className="h-full overflow-y-auto py-3 space-y-6 scrollbar-custom border-t border-border/20">
+          <div className="w-full max-w-3xl mx-auto px-4 py-3 space-y-8 md:space-y-10 border-t border-border/20">
             {messages.map((msg) => {
               const isUser = msg.role === "user";
               const timeString = msg.createdAt
@@ -210,45 +211,53 @@ export default function Home({
                     hour: "2-digit",
                     minute: "2-digit",
                   });
-              return (
-                <div
-                  key={msg._id}
-                  className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}
-                >
-                  <div className="max-w-[85%] md:max-w-xl flex flex-col gap-1.5">
-                    <span
-                      className={`text-[9px] font-sans tracking-widest text-muted-foreground/80 uppercase ${
-                        isUser ? "text-right" : "text-left"
-                      }`}
-                    >
-                      {isUser ? userName : "Zenkai"}
-                    </span>
-                    <div
-                      className={`rounded-2xl px-5 py-3 font-sans text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${
-                        isUser
-                          ? "bg-primary text-primary-foreground rounded-tr-none"
-                          : "bg-secondary/90 text-foreground border border-border/30 rounded-tl-none"
-                      }`}
-                    >
-                      {msg.content}
+              
+              if (isUser) {
+                return (
+                  <div key={msg._id} className="flex w-full justify-end group">
+                    <div className="max-w-[85%] md:max-w-2xl flex flex-col gap-1.5 items-end">
+                      {userName && (
+                        <span className="text-[9px] font-sans tracking-widest text-muted-foreground/80 uppercase mr-1">
+                          {userName}
+                        </span>
+                      )}
+                      <div className="rounded-2xl px-6 py-4 bg-primary text-primary-foreground rounded-tr-none shadow-sm whitespace-pre-wrap font-sans text-sm md:text-[15px] leading-relaxed">
+                        {msg.content}
+                      </div>
+                      <span className="text-[8px] font-sans text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 mr-1">
+                        {timeString}
+                      </span>
                     </div>
-                    <span
-                      className={`text-[8px] font-sans text-muted-foreground/50 ${
-                        isUser ? "text-right" : "text-left"
-                      }`}
-                    >
-                      {timeString}
-                    </span>
                   </div>
-                </div>
-              );
+                );
+              } else {
+                return (
+                  <div key={msg._id} className="flex gap-3 items-start w-full group">
+                    <span className="text-accent text-[15px] select-none mt-1 shrink-0">✦</span>
+                    <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                      {msg.content === "" ? (
+                        <div className="flex gap-1.5 items-center py-2.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                      ) : (
+                        <MarkdownRenderer content={msg.content} />
+                      )}
+                      <span className="text-[8px] font-sans text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        {timeString}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
             })}
             <div ref={messagesEndRef} />
           </div>
         </div>
 
         {/* ─── Input Area ─── */}
-        <div className="w-full max-w-xl px-4 shrink-0 pt-5 pb-7">
+        <div className="w-full max-w-2xl px-4 shrink-0 pt-5 pb-7 z-10">
 
           {/* Quick action chips — visible in greeting state only */}
           <div

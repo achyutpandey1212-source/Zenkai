@@ -6,6 +6,7 @@ import { GeminiService } from "@/services/gemini.service";
 import { MemoryAgent } from "@/agents/memory-agent";
 import { IdentityRepository } from "@/repositories/identity.repository";
 import { IdentityAgent } from "@/agents/identity-agent";
+import { ProfileRepository } from "@/repositories/profile.repository";
 
 // Mark this route as dynamic
 export const dynamic = "force-dynamic";
@@ -81,8 +82,30 @@ export async function POST(request: Request) {
     const activeTraits = await IdentityRepository.findActiveByUser(user.firebaseUid);
     const identityPromptText = IdentityAgent.formatIdentityForPrompt(activeTraits);
 
-    // 7. Call Gemini streaming API with memory and identity context
-    const geminiStream = await GeminiService.generateCompanionStreamWithMemory(message, history, memoryPromptText, identityPromptText);
+    // Retrieve onboarding profile to provide foundational goals/profession context
+    const profile = await ProfileRepository.findByFirebaseUid(user.firebaseUid);
+    let profilePromptText = "";
+    if (profile) {
+      profilePromptText = `
+## User Foundational Profile (from Onboarding)
+- **Profession**: ${profile.profession}
+- **Long-term Goal**: ${profile.longTermGoal}
+- **Current Focus**: ${profile.currentFocus}
+${profile.motivation ? `- **Motivation**: ${profile.motivation}` : ""}
+${profile.dailyAvailability ? `- **Daily Availability**: ${profile.dailyAvailability}` : ""}
+${profile.workStyle ? `- **Working Style**: ${profile.workStyle}` : ""}
+${profile.biggestChallenge ? `- **Biggest Challenge**: ${profile.biggestChallenge}` : ""}
+`.trim();
+    }
+
+    // 7. Call Gemini streaming API with profile, memory and identity context
+    const geminiStream = await GeminiService.generateCompanionStreamWithMemory(
+      message,
+      history,
+      memoryPromptText,
+      identityPromptText,
+      profilePromptText
+    );
 
     // 8. Create a ReadableStream to stream chunks back to client
     const encoder = new TextEncoder();
