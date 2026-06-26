@@ -10,6 +10,12 @@ export type MemoryCreateInput = {
   confidence?: number;
   importance?: number;
   status?: MemoryStatus;
+  retrievalCount?: number;
+  lastAccessedAt?: Date;
+  sourceConversationId?: string;
+  sourceMessageSnippet?: string;
+  admissionReason?: string;
+  keywords?: string[];
 };
 
 export type MemoryUpdateInput = Partial<Omit<MemoryCreateInput, "firebaseUid">>;
@@ -109,5 +115,75 @@ export const MemoryRepository = {
   async deleteAllByUser(uid: string): Promise<void> {
     await dbConnect();
     await Memory.deleteMany({ firebaseUid: uid });
+  },
+
+  /**
+   * Find approved memories matching a set of keywords.
+   */
+  async findRelevantByKeywords(uid: string, keywords: string[], limit = 50): Promise<IMemory[]> {
+    await dbConnect();
+    if (!keywords || keywords.length === 0) return [];
+    return Memory.find({
+      firebaseUid: uid,
+      status: "approved",
+      keywords: { $in: keywords }
+    })
+      .sort({ importance: -1, createdAt: -1 })
+      .limit(limit)
+      .lean() as Promise<IMemory[]>;
+  },
+
+  /**
+   * Find approved memories of a specific type with a limit.
+   */
+  async findByTypeWithLimit(uid: string, memoryType: MemoryType, limit = 10): Promise<IMemory[]> {
+    await dbConnect();
+    return Memory.find({
+      firebaseUid: uid,
+      memoryType,
+      status: "approved"
+    })
+      .sort({ importance: -1, createdAt: -1 })
+      .limit(limit)
+      .lean() as Promise<IMemory[]>;
+  },
+
+  /**
+   * Get all memories (including candidates) for a user, for the debug API.
+   */
+  async findAllByUserDebug(uid: string): Promise<IMemory[]> {
+    await dbConnect();
+    return Memory.find({ firebaseUid: uid })
+      .sort({ createdAt: -1 })
+      .lean() as Promise<IMemory[]>;
+  },
+
+  /**
+   * Increment the retrieval count and update the lastAccessedAt timestamp.
+   */
+  async incrementRetrievalCount(id: string): Promise<IMemory | null> {
+    await dbConnect();
+    if (!Types.ObjectId.isValid(id)) return null;
+    return Memory.findByIdAndUpdate(
+      id,
+      {
+        $inc: { retrievalCount: 1 },
+        $set: { lastAccessedAt: new Date() }
+      },
+      { new: true }
+    ).lean() as Promise<IMemory | null>;
+  },
+
+  /**
+   * Update the last accessed timestamp.
+   */
+  async updateLastAccessed(id: string): Promise<IMemory | null> {
+    await dbConnect();
+    if (!Types.ObjectId.isValid(id)) return null;
+    return Memory.findByIdAndUpdate(
+      id,
+      { $set: { lastAccessedAt: new Date() } },
+      { new: true }
+    ).lean() as Promise<IMemory | null>;
   },
 };

@@ -134,3 +134,111 @@
     display: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Companion Orb Animation System
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* 1. Slow, calm vertical floating for idle & typing states (6-8px, 5s) */
+@keyframes orb-float-slow {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+/* 2. Slow rotation for thinking & writing states */
+@keyframes orb-rotate-slow {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* 3. Glow States */
+/* Idle: Soft, warm, barely noticeable glow */
+@keyframes orb-glow-idle {
+  0%, 100% {
+    opacity: 0.12;
+    filter: blur(24px);
+  }
+  50% {
+    opacity: 0.22;
+    filter: blur(28px);
+  }
+}
+
+/* User Typing: Increased glow, subtle pulse */
+@keyframes orb-glow-typing {
+  0%, 100% {
+    opacity: 0.25;
+    filter: blur(24px);
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.38;
+    filter: blur(28px);
+    transform: scale(1.04);
+  }
+}
+
+/* Thinking: Glowing brighter, soft inner core pulse (2s) */
+@keyframes orb-glow-thinking {
+  0%, 100% {
+    opacity: 0.45;
+    filter: blur(28px);
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    filter: blur(36px);
+    transform: scale(1.03);
+  }
+}
+
+/* Writing: Glow rhythmically pulses, very subtle contraction & expansion */
+@keyframes orb-glow-writing {
+  0%, 100% {
+    opacity: 0.35;
+    filter: blur(24px);
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.58;
+    filter: blur(32px);
+    transform: scale(1.02);
+  }
+}
+
+/* Animation Utility Classes */
+.animate-orb-float {
+  animation: orb-float-slow 5s ease-in-out infinite;
+}
+
+.animate-orb-rotate-slow {
+  animation: orb-rotate-slow 10s linear infinite;
+}
+
+.animate-orb-rotate-writing {
+  animation: orb-rotate-slow 18s linear infinite;
+}
+
+.animate-glow-idle {
+  animation: orb-glow-idle 4s ease-in-out infinite;
+}
+
+.animate-glow-typing {
+  animation: orb-glow-typing 1.5s ease-in-out infinite;
+}
+
+.animate-glow-thinking {
+  animation: orb-glow-thinking 2s ease-in-out infinite;
+}
+
+.animate-glow-writing {
+  animation: orb-glow-writing 3s ease-in-out infinite;
+}

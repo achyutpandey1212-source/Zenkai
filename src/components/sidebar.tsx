@@ -10,10 +10,11 @@ import {
   BookOpen, 
   Settings,
   Sun,
-  Moon
+  Moon,
+  Brain
 } from "lucide-react";
 
-export type ScreenType = "home" | "chat" | "tasks" | "identity" | "reflection" | "settings";
+export type ScreenType = "home" | "chat" | "tasks" | "identity" | "reflection" | "settings" | "memory";
 
 interface SidebarProps {
   currentScreen: ScreenType;
@@ -25,14 +26,21 @@ interface SidebarProps {
 export default function Sidebar({ currentScreen, onScreenChange, isDarkMode, onToggleTheme }: SidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  const baseMenuItems = [
+    { id: "home" as const, label: "Home", icon: Home },
+    { id: "chat" as const, label: "Companion Chat", icon: MessageSquare },
+    { id: "tasks" as const, label: "Tasks", icon: CheckSquare },
+    { id: "identity" as const, label: "Identity", icon: Compass },
+    { id: "reflection" as const, label: "Reflection", icon: BookOpen },
+    { id: "settings" as const, label: "Settings", icon: Settings },
+  ];
+
   const menuItems = [
-    { id: "home", label: "Home", icon: Home },
-    { id: "chat", label: "Companion Chat", icon: MessageSquare },
-    { id: "tasks", label: "Tasks", icon: CheckSquare },
-    { id: "identity", label: "Identity", icon: Compass },
-    { id: "reflection", label: "Reflection", icon: BookOpen },
-    { id: "settings", label: "Settings", icon: Settings },
-  ] as const;
+    ...baseMenuItems,
+    ...(process.env.NODE_ENV === "development"
+      ? [{ id: "memory" as const, label: "Memory Inspector", icon: Brain }]
+      : []),
+  ];
 
   return (
     <aside

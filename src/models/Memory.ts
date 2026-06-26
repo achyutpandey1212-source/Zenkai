@@ -26,6 +26,12 @@ export interface IMemory extends Document {
   confidence: number;      // 0.0 – 1.0
   importance: number;      // 0.0 – 1.0
   status: MemoryStatus;
+  retrievalCount: number;  // tracks how often this memory is used
+  lastAccessedAt?: Date;   // used for freshness calculation
+  sourceConversationId?: string; // traceability
+  sourceMessageSnippet?: string; // snippet of user message triggering the memory
+  admissionReason?: string; // explanation of why it was admitted
+  keywords: string[];      // extracted keywords for matching
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,6 +62,12 @@ const MemorySchema = new Schema<IMemory>(
       enum: ["candidate", "proposal", "approved", "archived"],
       default: "candidate",
     },
+    retrievalCount: { type: Number, default: 0 },
+    lastAccessedAt: { type: Date },
+    sourceConversationId: { type: String },
+    sourceMessageSnippet: { type: String },
+    admissionReason: { type: String },
+    keywords: { type: [String], default: [] },
   },
   {
     timestamps: true,
@@ -64,8 +76,10 @@ const MemorySchema = new Schema<IMemory>(
   }
 );
 
-// Compound index for efficient per-user memory retrieval
+// Compound indexes for efficient per-user memory retrieval
 MemorySchema.index({ firebaseUid: 1, status: 1, importance: -1 });
+MemorySchema.index({ firebaseUid: 1, memoryType: 1, status: 1 });
+MemorySchema.index({ firebaseUid: 1, keywords: 1 });
 
 export const Memory: Model<IMemory> =
   mongoose.models.Memory || mongoose.model<IMemory>("Memory", MemorySchema);

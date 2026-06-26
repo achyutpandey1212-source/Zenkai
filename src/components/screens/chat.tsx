@@ -1,68 +1,71 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import Image from "next/image";
 import { Send, Sparkles } from "lucide-react";
+import CompanionOrb, { OrbState } from "../ui/companion-orb";
 
-export default function Chat() {
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      sender: "companion",
-      text: "Hello Achyut. I have been reflecting on your goal to build Zenkai. What is the most important thing you want to focus on today?",
-      time: "10:00 AM"
-    },
-    {
-      id: 2,
-      sender: "user",
-      text: "I need to design the frontend screens. I'm feeling a bit overwhelmed by the styling rules.",
-      time: "10:02 AM"
-    },
-    {
-      id: 3,
-      sender: "companion",
-      text: "I understand. The design guidelines ask for 'expensive silence'—meaning large empty spaces and calm layout. Let's simplify: only focus on the core layout first. Shall we structure the Tasks today?",
-      time: "10:03 AM"
-    }
-  ]);
-  
+interface ChatProps {
+  messages: any[];
+  sendMessage: (text: string) => Promise<void>;
+  orbState: OrbState;
+  statusMessage: string;
+  setOrbState: React.Dispatch<React.SetStateAction<OrbState>>;
+}
+
+export default function Chat({
+  messages,
+  sendMessage,
+  orbState,
+  statusMessage,
+  setOrbState,
+}: ChatProps) {
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [userName, setUserName] = useState("Achyut");
 
+  // Load username
+  useEffect(() => {
+    async function loadUserName() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user?.name) setUserName(data.user.name);
+        }
+      } catch {
+        // Silently fall back
+      }
+    }
+    loadUserName();
+  }, []);
+
+  // Auto-scroll on message updates
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setInputText(val);
+    if (val.trim()) {
+      setOrbState("typing");
+    } else {
+      setOrbState("idle");
+    }
+  };
+
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
 
-    const newMsg = {
-      id: messages.length + 1,
-      sender: "user",
-      text: inputText,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setMessages(prev => [...prev, newMsg]);
+    const textToSend = inputText;
     setInputText("");
-
-    // Simulate companion response
-    setTimeout(() => {
-      setMessages(prev => [
-        ...prev,
-        {
-          id: prev.length + 1,
-          sender: "companion",
-          text: "I am noting this down. I'll align your schedule to protect your focus block on this.",
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
-    }, 1500);
+    await sendMessage(textToSend);
   };
 
   const handleQuickAction = (action: string) => {
     setInputText(action);
+    setOrbState("typing");
   };
 
   const quickActions = [
@@ -75,30 +78,24 @@ export default function Chat() {
   return (
     <div className="relative h-screen max-h-screen w-full flex flex-col md:flex-row bg-background overflow-hidden">
       
-      {/* Left side: Companion Status Panel (Stays fixed & premium, hidden on mobile) */}
+      {/* Left side: Companion Status Panel */}
       <div className="hidden md:flex md:w-80 border-b md:border-b-0 md:border-r border-border/60 flex-col items-center justify-center p-8 bg-secondary/30 shrink-0 h-auto md:h-full">
         <div className="relative flex flex-col items-center gap-6">
-          {/* Subtle Glow */}
-          <div className="absolute -inset-6 rounded-full bg-accent/5 blur-2xl opacity-75" />
-          
-          {/* Small Companion Orb */}
-          <div className="relative w-36 h-36 animate-bounce" style={{ animationDuration: "6s" }}>
-            <Image
-              src="/assets/orbs/companion_orb.png"
-              alt="Companion Orb"
-              fill
-              sizes="144px"
-              className="object-contain"
-            />
-          </div>
+          {/* Unified Companion Orb with dynamic states */}
+          <CompanionOrb state={orbState} size="sm" />
           
           <div className="text-center">
             <h2 className="font-heading text-2xl font-semibold text-foreground">Zenkai</h2>
-            <p className="font-sans text-xs tracking-wider text-accent uppercase mt-1">Online & Listening</p>
+            <p className="font-sans text-xs tracking-wider text-accent uppercase mt-1">
+              {orbState === "idle" && "Online & Listening"}
+              {orbState === "typing" && "Listening..."}
+              {orbState === "thinking" && "Understanding..."}
+              {orbState === "writing" && "Writing response..."}
+            </p>
           </div>
           
-          <div className="mt-4 px-4 py-2 bg-secondary rounded-full border border-border/40 text-[11px] text-muted-foreground font-sans tracking-wide">
-            Understanding Your Focus
+          <div className="mt-4 px-4 py-2 bg-secondary rounded-full border border-border/40 text-[11px] text-muted-foreground font-sans tracking-wide min-h-[32px] text-center max-w-[220px] transition-all duration-300">
+            {statusMessage || "Understanding Your Focus"}
           </div>
         </div>
       </div>
@@ -110,14 +107,8 @@ export default function Chat() {
         <header className="px-6 py-4 md:px-8 md:py-6 border-b border-border/40 flex justify-between items-center bg-background/80 backdrop-blur-md z-10 shrink-0">
           <div className="flex items-center gap-3">
             {/* Mobile-only avatar */}
-            <div className="relative w-8 h-8 md:hidden shrink-0">
-              <Image
-                src="/assets/orbs/companion_orb.png"
-                alt="Companion Orb"
-                fill
-                sizes="32px"
-                className="object-contain"
-              />
+            <div className="relative w-8 h-8 md:hidden shrink-0 flex items-center justify-center">
+              <CompanionOrb state={orbState} size="sm" className="!w-8 !h-8" />
             </div>
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-accent animate-pulse" />
@@ -129,32 +120,36 @@ export default function Chat() {
         {/* Message Area */}
         <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin">
           {messages.map((msg) => {
-            const isUser = msg.sender === "user";
+            const isUser = msg.role === "user";
+            const timeString = msg.createdAt
+              ? new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
             return (
               <div
-                key={msg.id}
+                key={msg._id}
                 className={`flex w-full ${isUser ? "justify-end animate-slide-in-right" : "justify-start animate-slide-in-left"}`}
               >
-                <div className={`max-w-xl flex flex-col gap-2`}>
+                <div className="max-w-[85%] md:max-w-xl flex flex-col gap-2">
                   {/* Sender indicator */}
                   <span className={`text-[10px] font-sans tracking-widest text-muted-foreground uppercase ${isUser ? "text-right" : "text-left"}`}>
-                    {isUser ? "Achyut" : "Zenkai"}
+                    {isUser ? userName : "Zenkai"}
                   </span>
                   
                   {/* Bubble */}
                   <div
-                    className={`rounded-2xl px-6 py-4 font-sans text-sm leading-relaxed shadow-sm ${
+                    className={`rounded-2xl px-6 py-4 font-sans text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${
                       isUser
                         ? "bg-primary text-primary-foreground rounded-tr-none"
                         : "bg-secondary text-foreground border border-border/40 rounded-tl-none"
                     }`}
                   >
-                    {msg.text}
+                    {msg.content}
                   </div>
                   
                   {/* Time */}
                   <span className={`text-[9px] font-sans text-muted-foreground/60 ${isUser ? "text-right" : "text-left"}`}>
-                    {msg.time}
+                    {timeString}
                   </span>
                 </div>
               </div>
@@ -186,7 +181,7 @@ export default function Chat() {
               type="text"
               placeholder="Speak with Zenkai..."
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={handleInputChange}
               className="w-full bg-secondary/80 hover:bg-secondary focus:bg-secondary text-foreground font-sans placeholder:text-muted-foreground/60 rounded-full py-4 pl-6 pr-14 border border-border/50 focus:border-accent/40 focus:ring-1 focus:ring-accent/40 transition-all duration-300 outline-none text-sm"
             />
             <button

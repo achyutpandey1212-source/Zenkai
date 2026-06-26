@@ -9,11 +9,21 @@ import Identity from "./screens/identity";
 import Reflection from "./screens/reflection";
 import Settings from "./screens/settings";
 import Onboarding, { OnboardingData } from "./onboarding";
+import MemoryDebug from "./screens/memory-debug";
+
+import { OrbState } from "./ui/companion-orb";
 
 export default function Shell() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>("home");
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
+
+  // Lifted Chat & Companion States
+  const [activeConversation, setActiveConversation] = useState<any>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [orbState, setOrbState] = useState<OrbState>("idle");
+  const [statusMessage, setStatusMessage] = useState<string>("");
+  const [hasStartedChat, setHasStartedChat] = useState<boolean>(false);
 
   // On mount: read onboardingCompleted from MongoDB (via /api/auth/me)
   // This ensures each Firebase account has its own onboarding status —
@@ -49,6 +59,32 @@ export default function Shell() {
     }
   }, []);
 
+  // Fetch active conversation and messages once onboarding is verified/complete
+  useEffect(() => {
+    async function loadActiveConversation() {
+      try {
+        const res = await fetch("/api/chat/history");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.conversation) {
+            setActiveConversation(data.conversation);
+            const loadedMessages = data.messages || [];
+            setMessages(loadedMessages);
+            if (loadedMessages.length > 0) {
+              setHasStartedChat(true);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load active conversation history:", err);
+      }
+    }
+
+    if (onboardingCompleted) {
+      loadActiveConversation();
+    }
+  }, [onboardingCompleted]);
+
   const handleOnboardingComplete = async (onboardingData: OnboardingData) => {
     try {
       // Persist onboarding data to MongoDB
@@ -67,6 +103,108 @@ export default function Shell() {
 
     // Update state regardless so the user isn't blocked if a network error occurs
     setOnboardingCompleted(true);
+  };
+
+  // Shared send message handler
+  const sendMessage = async (text: string) => {
+    if (!text.trim()) return;
+
+    // 1. Append user's message locally
+    const userTempId = `user-temp-${Date.now()}`;
+    const userMsg = {
+      _id: userTempId,
+      role: "user",
+      content: text,
+      createdAt: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMsg]);
+    setHasStartedChat(true);
+    setOrbState("thinking");
+    setStatusMessage("Understanding your request...");
+
+    // 2. Append assistant's placeholder message
+    const companionTempId = `companion-temp-${Date.now()}`;
+    const companionMsg = {
+      _id: companionTempId,
+      role: "assistant",
+      content: "",
+      createdAt: new Date(),
+    };
+
+    setMessages((prev) => [...prev, companionMsg]);
+
+    try {
+      // 3. POST request to endpoint
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: text,
+          conversationId: activeConversation?._id || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("HTTP error " + res.status);
+      }
+
+      // Check header for updated conversation ID
+      const returnedConvId = res.headers.get("x-conversation-id");
+      if (returnedConvId && (!activeConversation || activeConversation._id !== returnedConvId)) {
+        setActiveConversation({ _id: returnedConvId });
+      }
+
+      // 4. Read body stream chunk-by-chunk
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let streamFinished = false;
+      let accumulatedText = "";
+
+      setOrbState("writing");
+      setStatusMessage("Writing response...");
+
+      while (!streamFinished && reader) {
+        const { value, done } = await reader.read();
+        if (done) {
+          streamFinished = true;
+          break;
+        }
+
+        const chunkText = decoder.decode(value, { stream: true });
+        accumulatedText += chunkText;
+
+        // Update the streaming companion message in-place
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === companionTempId ? { ...m, content: accumulatedText } : m
+          )
+        );
+      }
+
+      // Reset Companion status
+      setOrbState("idle");
+      setStatusMessage("");
+
+      // 5. Fetch fresh canonical messages list with exact database IDs and timestamps
+      const historyRes = await fetch("/api/chat/history");
+      if (historyRes.ok) {
+        const historyData = await historyRes.json();
+        if (historyData.success && historyData.conversation) {
+          setActiveConversation(historyData.conversation);
+          setMessages(historyData.messages || []);
+        }
+      }
+    } catch (err) {
+      console.error("Error sending message to companion:", err);
+      setOrbState("idle");
+      setStatusMessage("Connection failed. Try again.");
+      
+      // Clean up the empty assistant message in case of failure
+      setMessages((prev) => prev.filter((m) => m._id !== companionTempId));
+    }
   };
 
   // Sync theme with DOM and localStorage
@@ -90,9 +228,27 @@ export default function Shell() {
   const renderScreen = () => {
     switch (currentScreen) {
       case "home":
-        return <Home onNavigateToChat={() => setCurrentScreen("chat")} />;
+        return (
+          <Home
+            messages={messages}
+            sendMessage={sendMessage}
+            orbState={orbState}
+            statusMessage={statusMessage}
+            hasStartedChat={hasStartedChat}
+            setOrbState={setOrbState}
+            onNavigateToChat={() => setCurrentScreen("chat")}
+          />
+        );
       case "chat":
-        return <Chat />;
+        return (
+          <Chat
+            messages={messages}
+            sendMessage={sendMessage}
+            orbState={orbState}
+            statusMessage={statusMessage}
+            setOrbState={setOrbState}
+          />
+        );
       case "tasks":
         return <Tasks />;
       case "identity":
@@ -101,8 +257,20 @@ export default function Shell() {
         return <Reflection />;
       case "settings":
         return <Settings />;
+      case "memory":
+        return <MemoryDebug />;
       default:
-        return <Home onNavigateToChat={() => setCurrentScreen("chat")} />;
+        return (
+          <Home
+            messages={messages}
+            sendMessage={sendMessage}
+            orbState={orbState}
+            statusMessage={statusMessage}
+            hasStartedChat={hasStartedChat}
+            setOrbState={setOrbState}
+            onNavigateToChat={() => setCurrentScreen("chat")}
+          />
+        );
     }
   };
 
