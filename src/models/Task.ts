@@ -15,6 +15,8 @@ export interface ITask extends Document {
   status: TaskStatus;
   priority: number;            // 1 = highest
   estimatedMinutes?: number;
+  estimatedDuration?: string;  // planning estimated duration string
+  dependencies?: string[];     // list of task titles or IDs this task depends on
   scheduledFor?: Date;
   completedAt?: Date;
   createdAt: Date;
@@ -34,6 +36,8 @@ const TaskSchema = new Schema<ITask>(
     },
     priority: { type: Number, default: 1 },
     estimatedMinutes: { type: Number },
+    estimatedDuration: { type: String, default: "" },
+    dependencies: [{ type: String }],
     scheduledFor: { type: Date },
     completedAt: { type: Date },
   },

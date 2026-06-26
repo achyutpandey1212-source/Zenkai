@@ -10,6 +10,7 @@ import Reflection from "./screens/reflection";
 import Settings from "./screens/settings";
 import Onboarding, { OnboardingData } from "./onboarding";
 import MemoryDebug from "./screens/memory-debug";
+import Plans from "./screens/plans";
 
 import { OrbState } from "./ui/companion-orb";
 
@@ -43,8 +44,6 @@ export default function Shell({ initialUser }: ShellProps) {
   const [hasStartedChat, setHasStartedChat] = useState<boolean>(false);
 
   // On mount: read onboardingCompleted from MongoDB (via /api/auth/me)
-  // This ensures each Firebase account has its own onboarding status —
-  // not shared via localStorage across accounts on the same browser.
   useEffect(() => {
     async function checkOnboardingStatus() {
       try {
@@ -55,7 +54,6 @@ export default function Shell({ initialUser }: ShellProps) {
           if (data.user?.name) setUserName(data.user.name);
           if (data.user?.email) setUserEmail(data.user.email);
         } else {
-          // If not authenticated, the layout already redirected — default to false
           setOnboardingCompleted(false);
         }
       } catch {
@@ -107,7 +105,6 @@ export default function Shell({ initialUser }: ShellProps) {
       setUserName(onboardingData.name);
     }
     try {
-      // Persist onboarding data to MongoDB
       const res = await fetch("/api/onboarding/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -121,7 +118,6 @@ export default function Shell({ initialUser }: ShellProps) {
       console.error("Onboarding persistence error:", err);
     }
 
-    // Update state regardless so the user isn't blocked if a network error occurs
     setOnboardingCompleted(true);
   };
 
@@ -182,6 +178,9 @@ export default function Shell({ initialUser }: ShellProps) {
         setActiveConversation({ _id: returnedConvId });
       }
 
+      // Check header to see if a plan was generated/updated and we should redirect
+      const planGenerated = res.headers.get("x-plan-generated");
+
       // 4. Read body stream chunk-by-chunk
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -213,6 +212,11 @@ export default function Shell({ initialUser }: ShellProps) {
       setOrbState("idle");
       setStatusMessage("");
 
+      // Redirect user to the Plans screen if a plan was generated
+      if (planGenerated === "true") {
+        setCurrentScreen("plans");
+      }
+
       // 5. Fetch fresh canonical messages list with exact database IDs and timestamps
       const historyRes = await fetch("/api/chat/history");
       if (historyRes.ok) {
@@ -227,7 +231,6 @@ export default function Shell({ initialUser }: ShellProps) {
       setOrbState("idle");
       setStatusMessage("Connection failed. Try again.");
       
-      // Clean up the empty assistant message in case of failure
       setMessages((prev) => prev.filter((m) => m._id !== companionTempId));
     }
   };
@@ -311,6 +314,7 @@ export default function Shell({ initialUser }: ShellProps) {
             hasStartedChat={hasStartedChat}
             setOrbState={setOrbState}
             userName={userName}
+            onNavigate={setCurrentScreen}
           />
         );
       case "chat":
@@ -324,6 +328,8 @@ export default function Shell({ initialUser }: ShellProps) {
             userName={userName}
           />
         );
+      case "plans":
+        return <Plans />;
       case "tasks":
         return <Tasks userName={userName} />;
       case "identity":
@@ -344,6 +350,7 @@ export default function Shell({ initialUser }: ShellProps) {
             hasStartedChat={hasStartedChat}
             setOrbState={setOrbState}
             userName={userName}
+            onNavigate={setCurrentScreen}
           />
         );
     }

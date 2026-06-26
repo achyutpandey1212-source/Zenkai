@@ -89,7 +89,8 @@ export class GeminiService {
     memoryPromptText: string,
     identityPromptText: string,
     profilePromptText: string = "",
-    reflectionPromptText: string = ""
+    reflectionPromptText: string = "",
+    planPromptText: string = ""
   ) {
     const ai = this.getClient();
 
@@ -105,7 +106,7 @@ export class GeminiService {
       parts: [{ text: message }],
     });
 
-    // Weave the profile, memory, identity and reflection prompt text into system instruction.
+    // Weave the profile, memory, identity, reflection, and plan prompt text into system instruction.
     const systemPromptWithMemory = `
 ${COMPANION_SYSTEM_PROMPT.trim()}
 
@@ -116,6 +117,8 @@ ${memoryPromptText}
 ${identityPromptText}
 
 ${reflectionPromptText}
+
+${planPromptText}
 
 IMPORTANT MEMORY & REFLECTION USAGE DIRECTIVES:
 - Never say "I searched my memory", "According to my database", "I recall from our past conversations", "My records say", or "My reflections indicate".

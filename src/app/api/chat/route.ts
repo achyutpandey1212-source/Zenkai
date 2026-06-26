@@ -9,6 +9,9 @@ import { IdentityAgent } from "@/agents/identity-agent";
 import { ProfileRepository } from "@/repositories/profile.repository";
 import { ReflectionRepository } from "@/repositories/reflection.repository";
 import { ReflectionAgent } from "@/agents/reflection-agent";
+import { PlanningAgent } from "@/agents/planning-agent";
+import { PlanRepository } from "@/repositories/plan.repository";
+import { Task } from "@/models/Task";
 
 // Mark this route as dynamic
 export const dynamic = "force-dynamic";
@@ -77,6 +80,53 @@ export async function POST(request: Request) {
     // 5. Persist the new user message to MongoDB
     await MessageRepository.addMessage(conversationId, "user", message);
 
+    // 5b. Detect planning/task update intent
+    const intent = await PlanningAgent.detectIntent(message, history);
+    let planHeaderValue = "false";
+    let planPromptText = "";
+
+    if (intent.type === "create_or_modify") {
+      console.log(`[ChatRoute] Detected create_or_modify intent. Running PlanningAgent.`);
+      const success = await PlanningAgent.generateOrEvolvePlan(user.firebaseUid, intent, message);
+      if (success) {
+        planHeaderValue = "true";
+        // Fetch newly created/evolved plan to pass to Companion Agent
+        const plans = await PlanRepository.findFullTree(user.firebaseUid);
+        if (plans.length > 0) {
+          planPromptText = `
+## Zenkai Planning Engine generated/updated roadmap:
+You have just successfully generated/updated the user's roadmap:
+${JSON.stringify(plans[0], null, 2)}
+Your companion response should naturally reference this generation or update. Explain what milestones you've laid out or adjusted, and encourage them. Remind them that they can see the full roadmap in the Plans screen.
+`;
+        }
+      }
+    } else if (intent.type === "task_update") {
+      console.log(`[ChatRoute] Detected task_update intent. Searching for task: ${intent.taskTitle}`);
+      // Find task matching title (case-insensitive search)
+      const tasks = await Task.find({
+        firebaseUid: user.firebaseUid,
+        title: { $regex: new RegExp(intent.taskTitle || "", "i") }
+      });
+      if (tasks.length > 0) {
+        const targetTask = tasks[0];
+        const newStatus = intent.taskStatus || "completed";
+        await Task.findByIdAndUpdate(targetTask._id, {
+          $set: {
+            status: newStatus,
+            completedAt: newStatus === "completed" ? new Date() : null
+          }
+        });
+        await PlanningAgent.recalculateProgress(user.firebaseUid, targetTask._id.toString());
+        planHeaderValue = "updated";
+        planPromptText = `
+## Zenkai Planning Engine Task Update:
+You have just marked the task "${targetTask.title}" as "${newStatus}".
+Your companion response should naturally acknowledge this completion or update, celebrate their progress, and discuss what priorities or milestones are next in line.
+`;
+      }
+    }
+
     // 6. Retrieve relevant long-term memories, active identity traits, active reflections and format for prompt
     const memoryContext = await MemoryAgent.retrieveForContext(user.firebaseUid, message);
     const memoryPromptText = MemoryAgent.formatMemoriesForPrompt(memoryContext.memories);
@@ -103,14 +153,15 @@ ${profile.biggestChallenge ? `- **Biggest Challenge**: ${profile.biggestChalleng
 `.trim();
     }
 
-    // 7. Call Gemini streaming API with profile, memory, identity, and reflection context
+    // 7. Call Gemini streaming API with profile, memory, identity, reflection, and plan context
     const geminiStream = await GeminiService.generateCompanionStreamWithMemory(
       message,
       history,
       memoryPromptText,
       identityPromptText,
       profilePromptText,
-      reflectionPromptText
+      reflectionPromptText,
+      planPromptText
     );
 
     // 8. Create a ReadableStream to stream chunks back to client
@@ -175,12 +226,13 @@ ${profile.biggestChallenge ? `- **Biggest Challenge**: ${profile.biggestChalleng
       },
     });
 
-    // 9. Return the stream response with conversation ID in headers
+    // 9. Return the stream response with conversation ID and plan headers
     return new Response(customStream, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "Transfer-Encoding": "chunked",
         "x-conversation-id": conversationId,
+        "x-plan-generated": planHeaderValue,
       },
     });
   } catch (error) {

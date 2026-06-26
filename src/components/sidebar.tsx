@@ -16,11 +16,13 @@ import {
   X,
   PanelLeftOpen,
   PanelLeftClose,
+  TrendingUp,
 } from "lucide-react";
 
 export type ScreenType =
   | "home"
   | "chat"
+  | "plans"
   | "tasks"
   | "identity"
   | "reflection"
@@ -83,6 +85,7 @@ export default function Sidebar({
   const baseMenuItems = [
     { id: "home" as const, label: "Home", icon: Home },
     { id: "chat" as const, label: "Companion Chat", icon: MessageSquare },
+    { id: "plans" as const, label: "Plans", icon: TrendingUp },
     { id: "tasks" as const, label: "Tasks", icon: CheckSquare },
     { id: "identity" as const, label: "Identity", icon: Compass },
     { id: "reflection" as const, label: "Reflection", icon: BookOpen },

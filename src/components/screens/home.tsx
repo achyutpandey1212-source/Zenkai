@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import CompanionOrb, { OrbState } from "../ui/companion-orb";
-import { Sparkles } from "lucide-react";
+import { Sparkles, ArrowRight, BookOpen, CheckSquare, Compass, Clock } from "lucide-react";
 import MarkdownRenderer from "../ui/markdown-renderer";
 
 interface HomeProps {
@@ -14,6 +14,7 @@ interface HomeProps {
   hasStartedChat: boolean;
   setOrbState: React.Dispatch<React.SetStateAction<OrbState>>;
   userName: string;
+  onNavigate?: (screen: "plans" | "chat" | "tasks" | "identity" | "reflection" | "settings" | "memory") => void;
 }
 
 const quickActions = [
@@ -23,6 +24,13 @@ const quickActions = [
   "Reflect on Today",
 ];
 
+interface ProactiveData {
+  currentGoal: string | null;
+  nextMilestone: string | null;
+  priorities: { id: string; title: string; status: string; priority: number; estimatedDuration: string }[];
+  recentReflection: { title: string; summary: string; category: string } | null;
+}
+
 export default function Home({
   messages,
   sendMessage,
@@ -31,27 +39,33 @@ export default function Home({
   hasStartedChat,
   setOrbState,
   userName,
+  onNavigate,
 }: HomeProps) {
   const [query, setQuery] = useState("");
   const [isChatActive, setIsChatActive] = useState(false);
-  const [longTermGoal, setLongTermGoal] = useState<string | null>(null);
+  const [proactiveData, setProactiveData] = useState<ProactiveData | null>(null);
+  const [loadingProactive, setLoadingProactive] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load profile (goal) from MongoDB
+  // Fetch proactive details from endpoint
   useEffect(() => {
-    async function loadProfile() {
+    async function fetchProactiveData() {
       try {
-        const res = await fetch("/api/user/profile");
+        const res = await fetch("/api/plans/proactive");
         if (res.ok) {
           const data = await res.json();
-          if (data.profile?.longTermGoal) setLongTermGoal(data.profile.longTermGoal);
+          if (data.success && data.proactiveData) {
+            setProactiveData(data.proactiveData);
+          }
         }
-      } catch {
-        // Silently fall back
+      } catch (err) {
+        console.error("Failed to load proactive data:", err);
+      } finally {
+        setLoadingProactive(false);
       }
     }
-    loadProfile();
+    fetchProactiveData();
   }, []);
 
   // Delayed transition from greeting → chat if prior messages exist
@@ -110,7 +124,7 @@ export default function Home({
   };
 
   return (
-    <div className="relative h-screen max-h-screen w-full overflow-hidden bg-background">
+    <div className="relative h-screen max-h-screen w-full overflow-y-auto bg-background scrollbar-none flex flex-col items-center">
 
       {/* ── Temple Background ── */}
       <div
@@ -130,31 +144,26 @@ export default function Home({
         />
       </div>
 
-      {/* ── Main Layout: single centered flex column ── */}
-      <div className="relative z-10 h-full flex flex-col items-center">
+      {/* ── Main Layout ── */}
+      <div className="relative z-10 w-full max-w-3xl flex flex-col items-center min-h-screen px-4 md:px-6">
 
-        {/* Top elastic spacer — collapses when chat starts, creating centering */}
+        {/* Top elastic spacer */}
         <div
           className="shrink-0 transition-all duration-700 ease-in-out"
-          style={{ height: isChatActive ? "0px" : "clamp(20px, 14vh, 72px)" }}
+          style={{ height: isChatActive ? "16px" : "clamp(24px, 6vh, 48px)" }}
         />
 
-        {/* ─── Hero Block: Orb + Greeting ─── */}
-        <div className="shrink-0 flex flex-col items-center w-full max-w-2xl px-6">
-
-          {/* Companion Orb — the face of Zenkai, reacts to all states */}
+        {/* Companion Orb + Greeting */}
+        <div className="shrink-0 flex flex-col items-center w-full">
           <CompanionOrb
             state={orbState}
             size={isChatActive ? "xs" : "md"}
             className="transition-all duration-700"
           />
 
-          {/* Ambient status label */}
           <span
-            className={`font-sans text-[10px] tracking-[0.3em] font-medium uppercase mt-2.5 transition-all duration-500 ${
-              orbState === "idle"
-                ? "text-accent/50"
-                : "text-accent animate-pulse"
+            className={`font-sans text-[9px] tracking-[0.3em] font-medium uppercase mt-2.5 transition-all duration-500 ${
+              orbState === "idle" ? "text-accent/50" : "text-accent animate-pulse"
             }`}
           >
             {orbState === "idle" && "Zenkai Listening"}
@@ -163,12 +172,9 @@ export default function Home({
             {orbState === "writing" && (statusMessage || "Writing response...")}
           </span>
 
-          {/* Greeting — collapses smoothly when chat starts */}
           <div
             className={`text-center flex flex-col items-center transition-all duration-700 ease-in-out overflow-hidden ${
-              isChatActive
-                ? "max-h-0 opacity-0 mt-0 pointer-events-none"
-                : "max-h-80 opacity-100 mt-7"
+              isChatActive ? "max-h-0 opacity-0 mt-0 pointer-events-none" : "max-h-36 opacity-100 mt-6"
             }`}
           >
             <span className="font-heading text-3xl md:text-4xl font-light text-muted-foreground italic">
@@ -177,40 +183,114 @@ export default function Home({
             <span className="font-signature text-5xl md:text-6xl text-accent leading-none mt-1">
               {userName}
             </span>
-            <p className="font-sans text-sm text-muted-foreground mt-3 max-w-sm leading-relaxed">
-              {longTermGoal !== null ? (
-                <>
-                  {"Planning today around your goal of becoming a "}
-                  <span className="text-foreground font-semibold">{longTermGoal}</span>
-                  {"."}
-                </>
-              ) : (
-                <span className="inline-block w-48 h-3.5 rounded bg-muted-foreground/15 animate-pulse" />
-              )}
-            </p>
           </div>
         </div>
 
-        {/* ─── Chat Messages (appears when chat starts) ─── */}
+        {/* Proactive Panel (Visible only when chat is not active) */}
+        {!isChatActive && !loadingProactive && proactiveData && (
+          <div className="w-full flex flex-col gap-6 mt-8 animate-fade-in transition-all duration-500">
+            
+            {/* Top Row: Current Goal + Resume */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              
+              {/* Goal Card */}
+              {proactiveData.currentGoal ? (
+                <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col justify-between gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
+                      <Compass size={11} /> Current Aspiration
+                    </span>
+                    <h3 className="font-heading text-lg font-light text-foreground">
+                      {proactiveData.currentGoal}
+                    </h3>
+                    {proactiveData.nextMilestone && (
+                      <p className="font-sans text-xs text-muted-foreground">
+                        Next Milestone: <span className="font-semibold text-foreground/80">{proactiveData.nextMilestone}</span>
+                      </p>
+                    )}
+                  </div>
+                  
+                  {onNavigate && (
+                    <button
+                      onClick={() => onNavigate("plans")}
+                      className="self-start font-sans text-xs font-semibold text-accent hover:text-accent/80 flex items-center gap-1.5 transition-all mt-2"
+                    >
+                      Resume Roadmap <ArrowRight size={13} />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col justify-center items-center text-center gap-2">
+                  <span className="font-sans text-[10px] text-muted-foreground">No active plans yet.</span>
+                  <span className="font-sans text-xs text-accent">Type a goal below to begin.</span>
+                </div>
+              )}
+
+              {/* Reflection Card */}
+              {proactiveData.recentReflection ? (
+                <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col gap-2">
+                  <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
+                    <BookOpen size={11} /> Recent Reflection
+                  </span>
+                  <span className="font-sans text-[10px] font-medium text-foreground/75 italic">
+                    {proactiveData.recentReflection.category}
+                  </span>
+                  <p className="font-sans text-xs text-muted-foreground/90 leading-relaxed italic">
+                    "{proactiveData.recentReflection.summary}"
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col justify-center items-center text-center">
+                  <span className="font-sans text-[10px] text-muted-foreground">No reflections accumulated yet.</span>
+                </div>
+              )}
+
+            </div>
+
+            {/* Priorities Card */}
+            {proactiveData.priorities.length > 0 && (
+              <div className="bg-card border border-border/50 p-6 rounded-2xl flex flex-col gap-4 shadow-sm">
+                <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckSquare size={11} /> Today's Top Priorities
+                </span>
+                
+                <div className="space-y-3">
+                  {proactiveData.priorities.map((task) => (
+                    <div key={task.id} className="flex items-center justify-between border-b border-border/10 pb-2.5 last:border-0 last:pb-0">
+                      <span className="font-sans text-xs text-foreground tracking-wide font-medium">
+                        {task.title}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        {task.estimatedDuration && (
+                          <span className="font-sans text-[9px] text-muted-foreground/60 flex items-center gap-1">
+                            <Clock size={10} /> {task.estimatedDuration}
+                          </span>
+                        )}
+                        <span className="font-sans text-[9px] font-bold text-accent/80 uppercase">
+                          Priority {task.priority}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {/* Chat Messages */}
         <div
           className={`w-full min-h-0 transition-all duration-700 ease-in-out overflow-y-auto scrollbar-custom ${
-            isChatActive
-              ? "flex-1 opacity-100 mt-4"
-              : "flex-none h-0 opacity-0 pointer-events-none overflow-hidden"
+            isChatActive ? "flex-1 opacity-100 mt-4" : "flex-none h-0 opacity-0 pointer-events-none overflow-hidden"
           }`}
         >
-          <div className="w-full max-w-3xl mx-auto px-4 py-3 space-y-8 md:space-y-10 border-t border-border/20">
+          <div className="w-full mx-auto py-3 space-y-8 md:space-y-10 border-t border-border/20">
             {messages.map((msg) => {
               const isUser = msg.role === "user";
               const timeString = msg.createdAt
-                ? new Date(msg.createdAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : new Date().toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
+                ? new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
               
               if (isUser) {
                 return (
@@ -256,15 +336,13 @@ export default function Home({
           </div>
         </div>
 
-        {/* ─── Input Area ─── */}
-        <div className="w-full max-w-2xl px-4 shrink-0 pt-5 pb-7 z-10">
-
-          {/* Quick action chips — visible in greeting state only */}
+        {/* Input Area */}
+        <div className="w-full px-4 shrink-0 pt-5 pb-7 z-10">
+          
+          {/* Quick Actions */}
           <div
             className={`flex flex-wrap gap-2 justify-center transition-all duration-500 ease-in-out overflow-hidden ${
-              isChatActive
-                ? "max-h-0 opacity-0 mb-0 pointer-events-none"
-                : "max-h-20 opacity-100 mb-4"
+              isChatActive ? "max-h-0 opacity-0 mb-0 pointer-events-none" : "max-h-20 opacity-100 mb-4"
             }`}
           >
             {quickActions.map((action) => (
@@ -279,15 +357,13 @@ export default function Home({
             ))}
           </div>
 
-          {/* Input form — Claude-style: textarea + bottom bar with hint + send */}
           <form onSubmit={handleSubmit} className="relative w-full">
             <div className="w-full bg-secondary/80 hover:bg-secondary focus-within:bg-secondary border border-border/50 focus-within:border-accent/40 focus-within:ring-1 focus-within:ring-accent/30 rounded-2xl shadow-sm focus-within:shadow-md transition-all duration-300 flex flex-col px-5 pt-4 pb-3 gap-3">
               
-              {/* Text area */}
               <textarea
                 ref={textareaRef}
                 rows={1}
-                placeholder="Ask Zenkai anything..."
+                placeholder="Speak with Zenkai..."
                 value={query}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
@@ -295,7 +371,6 @@ export default function Home({
                 style={{ lineHeight: "1.6" }}
               />
 
-              {/* Bottom bar: hint text + send button */}
               <div className="flex items-center justify-between">
                 <span className="font-sans text-[10px] text-muted-foreground/35 select-none tracking-wide">
                   Shift + ↵ &nbsp;new line
@@ -321,11 +396,6 @@ export default function Home({
           </form>
         </div>
 
-        {/* Bottom elastic spacer — collapses when chat starts */}
-        <div
-          className="shrink-0 transition-all duration-700 ease-in-out"
-          style={{ height: isChatActive ? "0px" : "clamp(12px, 8vh, 40px)" }}
-        />
       </div>
     </div>
   );
