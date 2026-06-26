@@ -244,28 +244,28 @@
 }
 
 /* Custom scrollbar styling following luxury design rules */
-::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 
-::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background: rgba(85, 85, 85, 0.25);
   border-radius: 9999px;
 }
 
-::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb:hover {
   background: rgba(201, 168, 106, 0.7);
 }
 
-.dark ::-webkit-scrollbar-thumb {
+.dark *::-webkit-scrollbar-thumb {
   background: rgba(160, 160, 160, 0.25);
 }
 
-.dark ::-webkit-scrollbar-thumb:hover {
+.dark *::-webkit-scrollbar-thumb:hover {
   background: rgba(201, 168, 106, 0.7);
 }

@@ -241,20 +241,22 @@ export default function Home({
 
         {/* Bottom Section: Ask Zenkai Input */}
         <footer className="w-full max-w-2xl mx-auto mb-2 relative z-20">
-          <form onSubmit={handleSubmit} className="relative flex items-end">
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              placeholder="Ask Zenkai anything..."
-              value={query}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              className="w-full bg-secondary/80 hover:bg-secondary focus:bg-secondary text-foreground font-sans placeholder:text-muted-foreground/60 rounded-[28px] py-4 pl-7 pr-14 border border-border/50 focus:border-accent/40 focus:ring-1 focus:ring-accent/40 shadow-sm focus:shadow-md transition-all duration-300 outline-none text-sm md:text-base resize-none min-h-[52px] max-h-[160px] overflow-y-auto align-bottom flex items-center"
-              style={{ lineHeight: "1.5", paddingTop: "14px", paddingBottom: "14px" }}
-            />
+          <form onSubmit={handleSubmit} className="relative flex items-end w-full">
+            <div className="w-full bg-secondary/80 hover:bg-secondary focus-within:bg-secondary border border-border/50 focus-within:border-accent/40 focus-within:ring-1 focus-within:ring-accent/40 rounded-[28px] shadow-sm focus-within:shadow-md transition-all duration-300 flex items-end p-1 pr-14 pl-5">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                placeholder="Ask Zenkai anything..."
+                value={query}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                className="w-full bg-transparent text-foreground font-sans placeholder:text-muted-foreground/60 py-3 outline-none text-sm md:text-base resize-none min-h-[44px] max-h-[160px] overflow-y-auto border-none focus:ring-0 focus:border-none focus:outline-none scrollbar-none"
+                style={{ lineHeight: "1.5" }}
+              />
+            </div>
             <button 
               type="submit"
-              className="absolute right-2.5 bottom-2 p-2.5 rounded-full bg-primary hover:bg-accent text-primary-foreground hover:text-foreground transition-all duration-300 shadow-md flex items-center justify-center"
+              className="absolute right-2.5 bottom-2.5 p-2.5 rounded-full bg-primary hover:bg-accent text-primary-foreground hover:text-foreground transition-all duration-300 shadow-md flex items-center justify-center z-10"
             >
               <svg 
                 xmlns="http://www.w3.org/2000/svg" 

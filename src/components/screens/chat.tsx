@@ -196,20 +196,22 @@ export default function Chat({
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSend} className="relative flex items-end">
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              placeholder="Speak with Zenkai..."
-              value={inputText}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              className="w-full bg-secondary/80 hover:bg-secondary focus:bg-secondary text-foreground font-sans placeholder:text-muted-foreground/60 rounded-[28px] py-4 pl-6 pr-14 border border-border/50 focus:border-accent/40 focus:ring-1 focus:ring-accent/40 transition-all duration-300 outline-none text-sm resize-none min-h-[52px] max-h-[160px] overflow-y-auto align-bottom flex items-center"
-              style={{ lineHeight: "1.5", paddingTop: "14px", paddingBottom: "14px" }}
-            />
+          <form onSubmit={handleSend} className="relative flex items-end w-full">
+            <div className="w-full bg-secondary/80 hover:bg-secondary focus-within:bg-secondary border border-border/50 focus-within:border-accent/40 focus-within:ring-1 focus-within:ring-accent/40 rounded-[28px] shadow-sm focus-within:shadow-md transition-all duration-300 flex items-end p-1 pr-14 pl-5">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                placeholder="Speak with Zenkai..."
+                value={inputText}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                className="w-full bg-transparent text-foreground font-sans placeholder:text-muted-foreground/60 py-3 outline-none text-sm resize-none min-h-[44px] max-h-[160px] overflow-y-auto border-none focus:ring-0 focus:border-none focus:outline-none scrollbar-none"
+                style={{ lineHeight: "1.5" }}
+              />
+            </div>
             <button
               type="submit"
-              className="absolute right-2.5 bottom-2 p-2.5 rounded-full bg-primary hover:bg-accent text-primary-foreground hover:text-foreground transition-all duration-200 shadow flex items-center justify-center"
+              className="absolute right-2.5 bottom-2.5 p-2.5 rounded-full bg-primary hover:bg-accent text-primary-foreground hover:text-foreground transition-all duration-200 shadow flex items-center justify-center z-10"
             >
               <Send size={16} />
             </button>
