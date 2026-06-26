@@ -22,6 +22,7 @@ export default function Chat({
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [userName, setUserName] = useState("Achyut");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Load username
   useEffect(() => {
@@ -44,7 +45,16 @@ export default function Chat({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Adjust textarea height automatically
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = "auto";
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+    }
+  }, [inputText]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setInputText(val);
     if (val.trim()) {
@@ -54,13 +64,23 @@ export default function Chat({
     }
   };
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSend = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!inputText.trim()) return;
 
     const textToSend = inputText;
     setInputText("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
     await sendMessage(textToSend);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
   const handleQuickAction = (action: string) => {
@@ -176,17 +196,20 @@ export default function Chat({
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSend} className="relative flex items-center">
-            <input
-              type="text"
+          <form onSubmit={handleSend} className="relative flex items-end">
+            <textarea
+              ref={textareaRef}
+              rows={1}
               placeholder="Speak with Zenkai..."
               value={inputText}
               onChange={handleInputChange}
-              className="w-full bg-secondary/80 hover:bg-secondary focus:bg-secondary text-foreground font-sans placeholder:text-muted-foreground/60 rounded-full py-4 pl-6 pr-14 border border-border/50 focus:border-accent/40 focus:ring-1 focus:ring-accent/40 transition-all duration-300 outline-none text-sm"
+              onKeyDown={handleKeyDown}
+              className="w-full bg-secondary/80 hover:bg-secondary focus:bg-secondary text-foreground font-sans placeholder:text-muted-foreground/60 rounded-[28px] py-4 pl-6 pr-14 border border-border/50 focus:border-accent/40 focus:ring-1 focus:ring-accent/40 transition-all duration-300 outline-none text-sm resize-none min-h-[52px] max-h-[160px] overflow-y-auto align-bottom flex items-center"
+              style={{ lineHeight: "1.5", paddingTop: "14px", paddingBottom: "14px" }}
             />
             <button
               type="submit"
-              className="absolute right-2 p-2.5 rounded-full bg-primary hover:bg-accent text-primary-foreground hover:text-foreground transition-all duration-200 shadow"
+              className="absolute right-2.5 bottom-2 p-2.5 rounded-full bg-primary hover:bg-accent text-primary-foreground hover:text-foreground transition-all duration-200 shadow flex items-center justify-center"
             >
               <Send size={16} />
             </button>

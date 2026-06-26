@@ -27,6 +27,7 @@ export default function Home({
   const [userName, setUserName] = useState("Achyut");
   const [longTermGoal, setLongTermGoal] = useState("Software Engineer");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Load profile data from MongoDB via API (not localStorage).
   useEffect(() => {
@@ -66,7 +67,16 @@ export default function Home({
     }
   }, [messages, hasStartedChat]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Adjust textarea height automatically
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = "auto";
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+    }
+  }, [query]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setQuery(val);
     if (val.trim()) {
@@ -76,13 +86,23 @@ export default function Home({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!query.trim()) return;
 
     const textToSend = query;
     setQuery("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
     await sendMessage(textToSend);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
   };
 
   return (
@@ -220,18 +240,21 @@ export default function Home({
         </div>
 
         {/* Bottom Section: Ask Zenkai Input */}
-        <footer className="w-full max-w-2xl mx-auto mb-2">
-          <form onSubmit={handleSubmit} className="relative flex items-center">
-            <input
-              type="text"
+        <footer className="w-full max-w-2xl mx-auto mb-2 relative z-20">
+          <form onSubmit={handleSubmit} className="relative flex items-end">
+            <textarea
+              ref={textareaRef}
+              rows={1}
               placeholder="Ask Zenkai anything..."
               value={query}
               onChange={handleInputChange}
-              className="w-full bg-secondary/80 hover:bg-secondary focus:bg-secondary text-foreground font-sans placeholder:text-muted-foreground/60 rounded-full py-4.5 pl-7 pr-14 border border-border/50 focus:border-accent/40 focus:ring-1 focus:ring-accent/40 shadow-sm focus:shadow-md transition-all duration-300 outline-none text-sm md:text-base"
+              onKeyDown={handleKeyDown}
+              className="w-full bg-secondary/80 hover:bg-secondary focus:bg-secondary text-foreground font-sans placeholder:text-muted-foreground/60 rounded-[28px] py-4 pl-7 pr-14 border border-border/50 focus:border-accent/40 focus:ring-1 focus:ring-accent/40 shadow-sm focus:shadow-md transition-all duration-300 outline-none text-sm md:text-base resize-none min-h-[52px] max-h-[160px] overflow-y-auto align-bottom flex items-center"
+              style={{ lineHeight: "1.5", paddingTop: "14px", paddingBottom: "14px" }}
             />
             <button 
               type="submit"
-              className="absolute right-2.5 p-2.5 rounded-full bg-primary hover:bg-accent text-primary-foreground hover:text-foreground transition-all duration-300 shadow-md flex items-center justify-center"
+              className="absolute right-2.5 bottom-2 p-2.5 rounded-full bg-primary hover:bg-accent text-primary-foreground hover:text-foreground transition-all duration-300 shadow-md flex items-center justify-center"
             >
               <svg 
                 xmlns="http://www.w3.org/2000/svg" 

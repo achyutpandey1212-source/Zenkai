@@ -11,7 +11,9 @@ import {
   Settings,
   Sun,
   Moon,
-  Brain
+  Brain,
+  Check,
+  X
 } from "lucide-react";
 
 export type ScreenType = "home" | "chat" | "tasks" | "identity" | "reflection" | "settings" | "memory";
@@ -44,6 +46,8 @@ export default function Sidebar({
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [conversations, setConversations] = useState<SidebarConversation[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
 
   // Load conversation history on mount and when activeConversationId changes
   useEffect(() => {
@@ -106,27 +110,114 @@ export default function Sidebar({
 
   const { today, yesterday, older } = groupConversations(conversations);
 
+  const handleStartEdit = (e: React.MouseEvent, c: SidebarConversation) => {
+    e.stopPropagation();
+    setEditingId(c._id.toString());
+    setEditingTitle(c.title || "Untitled Conversation");
+  };
+
+  const handleSaveEdit = async (id: string) => {
+    if (!editingTitle.trim()) return;
+    try {
+      const res = await fetch("/api/conversations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, title: editingTitle.trim() }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setConversations((prev) =>
+            prev.map((c) =>
+              c._id === id ? { ...c, title: editingTitle.trim() } : c
+            )
+          );
+        }
+      }
+    } catch (err) {
+      console.error("Failed to rename conversation:", err);
+    } finally {
+      setEditingId(null);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+  };
+
   const renderConvItem = (c: SidebarConversation) => {
     const isActive = activeConversationId === c._id.toString();
+    const isEditing = editingId === c._id.toString();
+
+    if (isEditing) {
+      return (
+        <div key={c._id} className="flex items-center gap-1 px-1 py-0.5 w-full bg-background/25 rounded">
+          <input
+            type="text"
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSaveEdit(c._id);
+              if (e.key === "Escape") handleCancelEdit();
+            }}
+            className="w-full text-[10px] font-sans px-1 py-0.5 rounded border border-accent bg-background text-foreground outline-none shrink min-w-0"
+            autoFocus
+          />
+          <button
+            onClick={() => handleSaveEdit(c._id)}
+            className="text-accent hover:text-accent/80 p-0.5 shrink-0"
+          >
+            <Check size={10} />
+          </button>
+          <button
+            onClick={handleCancelEdit}
+            className="text-muted-foreground hover:text-foreground p-0.5 shrink-0"
+          >
+            <X size={10} />
+          </button>
+        </div>
+      );
+    }
+
     return (
-      <button
-        key={c._id}
-        onClick={() => onSelectConversation(c._id.toString())}
-        className={`w-full text-left px-2 py-1 rounded text-[11px] font-sans truncate transition-colors block ${
-          isActive
-            ? "bg-accent/20 text-accent font-semibold border-l-2 border-accent pl-1.5"
-            : "text-muted-foreground hover:bg-background/40 hover:text-foreground"
-        }`}
-        title={c.title || "Untitled Conversation"}
+      <div 
+        key={c._id} 
+        className="group/item flex items-center justify-between w-full rounded hover:bg-background/20"
       >
-        {c.title || "Untitled Conversation"}
-      </button>
+        <button
+          onClick={() => onSelectConversation(c._id.toString())}
+          className={`flex-1 text-left px-2 py-1 text-[11px] font-sans truncate transition-colors block ${
+            isActive
+              ? "text-accent font-semibold border-l-2 border-accent pl-1.5"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          title={c.title || "Untitled Conversation"}
+        >
+          {c.title || "Untitled Conversation"}
+        </button>
+        <button
+          onClick={(e) => handleStartEdit(e, c)}
+          className="opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-accent p-0.5 transition-opacity shrink-0 mr-1"
+          title="Rename Chat"
+        >
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            fill="none" 
+            viewBox="0 0 24 24" 
+            strokeWidth={2} 
+            stroke="currentColor" 
+            className="w-3 h-3"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.83 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+          </svg>
+        </button>
+      </div>
     );
   };
 
   return (
     <aside
-      className={`fixed left-0 top-0 z-40 h-screen bg-secondary border-r border-border flex flex-col justify-between py-8 transition-all duration-300 ease-in-out ${
+      className={`fixed left-0 top-0 z-40 h-screen bg-secondary border-r border-border flex flex-col justify-between py-8 transition-all duration-300 ease-in-out overflow-x-hidden ${
         isExpanded ? "w-48 md:w-60" : "w-16 md:w-20"
       }`}
       onMouseEnter={() => setIsExpanded(true)}

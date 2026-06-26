@@ -52,6 +52,19 @@ export const MessageRepository = {
   },
 
   /**
+   * Rename a conversation.
+   */
+  async renameConversation(id: string, title: string): Promise<IConversation | null> {
+    await dbConnect();
+    if (!Types.ObjectId.isValid(id)) return null;
+    return Conversation.findByIdAndUpdate(
+      id,
+      { $set: { title } },
+      { new: true }
+    ).lean() as Promise<IConversation | null>;
+  },
+
+  /**
    * Delete a conversation and all its messages.
    */
   async deleteConversation(id: string): Promise<void> {
