@@ -123,7 +123,7 @@ export default function Chat({
         </header>
 
         {/* Message Area */}
-        <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-custom">
           {messages.map((msg) => {
             const isUser = msg.role === "user";
             const timeString = msg.createdAt

@@ -135,6 +135,25 @@
   }
 }
 
+@utility scrollbar-custom {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(85, 85, 85, 0.25) transparent;
+  &::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(85, 85, 85, 0.25);
+    border-radius: 9999px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(201, 168, 106, 0.7);
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    Companion Orb Animation System
    ───────────────────────────────────────────────────────────────────────────── */
@@ -243,41 +262,43 @@
   animation: orb-glow-writing 3s ease-in-out infinite;
 }
 
-/* Custom scrollbar styling following luxury design rules */
-*::-webkit-scrollbar, ::-webkit-scrollbar {
-  width: 5px !important;
-  height: 5px !important;
+/* ─────────────────────────────────────────────────────────────────────────────
+   Global Custom Scrollbar — Luxury Design System
+   Applied globally; overridden to none where scrollbar-none is used.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
 }
 
-*::-webkit-scrollbar-track, ::-webkit-scrollbar-track {
-  background: transparent !important;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-*::-webkit-scrollbar-thumb, ::-webkit-scrollbar-thumb {
-  background: rgba(85, 85, 85, 0.25) !important;
-  border-radius: 9999px !important;
+::-webkit-scrollbar-thumb {
+  background: rgba(85, 85, 85, 0.25);
+  border-radius: 9999px;
 }
 
-*::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:hover {
-  background: rgba(201, 168, 106, 0.7) !important;
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 168, 106, 0.7);
 }
 
-.dark *::-webkit-scrollbar-thumb, .dark ::-webkit-scrollbar-thumb {
-  background: rgba(160, 160, 160, 0.25) !important;
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(160, 160, 160, 0.25);
 }
 
-.dark *::-webkit-scrollbar-thumb:hover, .dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(201, 168, 106, 0.7) !important;
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 168, 106, 0.7);
 }
 
-/* Firefox scrollbar support */
-@supports (-moz-appearance: none) {
-  html, body, div, textarea {
-    scrollbar-width: thin !important;
-    scrollbar-color: rgba(85, 85, 85, 0.25) transparent !important;
-  }
+/* Firefox — applied globally */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(85, 85, 85, 0.25) transparent;
+}
 
-  .dark html, .dark body, .dark div, .dark textarea {
-    scrollbar-color: rgba(160, 160, 160, 0.25) transparent !important;
-  }
+.dark * {
+  scrollbar-color: rgba(160, 160, 160, 0.25) transparent;
 }

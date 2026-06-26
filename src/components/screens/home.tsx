@@ -25,7 +25,7 @@ export default function Home({
 }: HomeProps) {
   const [query, setQuery] = useState("");
   const [isChatActive, setIsChatActive] = useState(false);
-  const [longTermGoal, setLongTermGoal] = useState("Software Engineer");
+  const [longTermGoal, setLongTermGoal] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -51,7 +51,7 @@ export default function Home({
     if (hasStartedChat) {
       const timer = setTimeout(() => {
         setIsChatActive(true);
-      }, 3000); // 3 seconds window
+      }, 500); // 3 seconds window
       return () => clearTimeout(timer);
     } else {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -152,7 +152,15 @@ export default function Home({
               </span>
             </div>
             <p className="font-sans text-sm md:text-base text-muted-foreground max-w-md leading-relaxed">
-              {"I've already started planning today around your goal of becoming a "}<span className="text-foreground font-semibold">{longTermGoal}</span>{". Let's make progress."}
+              {longTermGoal !== null ? (
+                <>
+                  {"I've already started planning today around your goal of becoming a "}
+                  <span className="text-foreground font-semibold">{longTermGoal}</span>
+                  {". Let's make progress."}
+                </>
+              ) : (
+                <span className="inline-block w-64 h-4 rounded bg-muted-foreground/20 animate-pulse" />
+              )}
             </p>
           </div>
 
@@ -205,7 +213,7 @@ export default function Home({
               : "opacity-0 translate-y-12 max-h-0 h-0 pointer-events-none"
           }`}
         >
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 scrollbar-thin border-t border-b border-border/20 bg-background/20 backdrop-blur-[2px] rounded-xl">
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 scrollbar-custom border-t border-b border-border/20 bg-background/20 backdrop-blur-[2px] rounded-xl">
             {messages.map((msg) => {
               const isUser = msg.role === "user";
               const timeString = msg.createdAt 
