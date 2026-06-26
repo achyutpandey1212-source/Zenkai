@@ -1,9 +1,25 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Quote, Sparkles, TrendingUp, AlertCircle } from "lucide-react";
 
 export default function Reflection() {
+  const [userName, setUserName] = useState("");
+
+  useEffect(() => {
+    async function loadUserName() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user?.name) setUserName(data.user.name);
+        }
+      } catch {
+        // Silently fallback
+      }
+    }
+    loadUserName();
+  }, []);
   const wins = [
     "Successfully initialized Next.js 15 project skeleton and TailwindCSS config.",
     "Integrated the custom design system rules for 'expensive silence'.",
@@ -45,7 +61,7 @@ export default function Reflection() {
           </span>
           
           <p className="font-heading text-xl italic text-foreground leading-relaxed max-w-xl">
-            "Achyut, you work best when focusing on one major objective at a time. Task switching reduced progress during the last three sessions. Let's protect your evening blocks today."
+            {`"${userName || "User"}, you work best when focusing on one major objective at a time. Task switching reduced progress during the last three sessions. Let's protect your evening blocks today."`}
           </p>
           
           <div className="border-t border-border/60 pt-4 flex items-center gap-2 text-xs text-muted-foreground font-sans">

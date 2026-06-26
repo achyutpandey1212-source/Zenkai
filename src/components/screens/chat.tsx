@@ -21,7 +21,7 @@ export default function Chat({
 }: ChatProps) {
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [userName, setUserName] = useState("Achyut");
+  const [userName, setUserName] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Load username

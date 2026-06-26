@@ -48,6 +48,27 @@ export default function Sidebar({
   const [conversations, setConversations] = useState<SidebarConversation[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+
+  // Load user information on mount
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            setUserName(data.user.name || "");
+            setUserEmail(data.user.email || "");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load user in Sidebar:", err);
+      }
+    }
+    loadUser();
+  }, []);
 
   // Load conversation history on mount and when activeConversationId changes
   useEffect(() => {
@@ -366,16 +387,16 @@ export default function Sidebar({
         </button>
 
         <div className="flex items-center gap-3 p-2 rounded-lg bg-background/30 overflow-hidden">
-          <div className="h-8 w-8 rounded-full bg-accent/20 flex items-center justify-center text-accent font-heading font-bold text-sm shrink-0">
-            A
+          <div className="h-8 w-8 rounded-full bg-accent/20 flex items-center justify-center text-accent font-heading font-bold text-sm shrink-0 uppercase">
+            {userName ? userName.charAt(0) : (userEmail ? userEmail.charAt(0) : "U")}
           </div>
           {isExpanded && (
             <div className="flex flex-col min-w-0">
               <span className="font-sans text-xs font-medium text-foreground truncate">
-                Achyut Pandey
+                {userName || "User"}
               </span>
               <span className="font-sans text-[10px] text-muted-foreground truncate">
-                User Profile
+                {userEmail || "User Profile"}
               </span>
             </div>
           )}

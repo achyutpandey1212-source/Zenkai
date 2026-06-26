@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Check, Clock, Calendar } from "lucide-react";
 
 interface Task {
@@ -26,7 +26,7 @@ export default function Tasks() {
     },
     {
       id: 2,
-      title: "Review Database Schema with Achyut",
+      title: "Review Database Schema",
       timeSlot: "2:00 PM — 3:30 PM",
       duration: "1.5h",
       category: "Collaboration",
@@ -43,6 +43,27 @@ export default function Tasks() {
       notes: "Define cache policy for agent output and graph state."
     }
   ]);
+
+  useEffect(() => {
+    async function loadUserName() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user?.name) {
+            setTasks(prev =>
+              prev.map(t =>
+                t.id === 2 ? { ...t, title: `Review Database Schema with ${data.user.name}` } : t
+              )
+            );
+          }
+        }
+      } catch {
+        // Silently fallback
+      }
+    }
+    loadUserName();
+  }, []);
 
   const toggleTask = (id: number) => {
     setTasks(prev =>
@@ -66,7 +87,7 @@ export default function Tasks() {
             Curated Execution
           </span>
           <h1 className="font-heading text-4xl md:text-5xl font-light text-foreground">
-            Today's Priorities
+            {"Today's Priorities"}
           </h1>
           <p className="font-sans text-sm text-muted-foreground leading-relaxed">
             Zenkai has organized 3 items for today. Focus on the first block to build early momentum.

@@ -244,28 +244,40 @@
 }
 
 /* Custom scrollbar styling following luxury design rules */
-*::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+::-webkit-scrollbar {
+  width: 5px !important;
+  height: 5px !important;
 }
 
-*::-webkit-scrollbar-track {
-  background: transparent;
+::-webkit-scrollbar-track {
+  background: transparent !important;
 }
 
-*::-webkit-scrollbar-thumb {
-  background: rgba(85, 85, 85, 0.25);
-  border-radius: 9999px;
+::-webkit-scrollbar-thumb {
+  background: rgba(85, 85, 85, 0.25) !important;
+  border-radius: 9999px !important;
 }
 
-*::-webkit-scrollbar-thumb:hover {
-  background: rgba(201, 168, 106, 0.7);
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 168, 106, 0.7) !important;
 }
 
-.dark *::-webkit-scrollbar-thumb {
-  background: rgba(160, 160, 160, 0.25);
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(160, 160, 160, 0.25) !important;
 }
 
-.dark *::-webkit-scrollbar-thumb:hover {
-  background: rgba(201, 168, 106, 0.7);
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 168, 106, 0.7) !important;
+}
+
+/* Firefox scrollbar support */
+@supports (-moz-appearance: none) {
+  html, body, div, textarea {
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(85, 85, 85, 0.25) transparent !important;
+  }
+
+  .dark html, .dark body, .dark div, .dark textarea {
+    scrollbar-color: rgba(160, 160, 160, 0.25) transparent !important;
+  }
 }

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Compass, ShieldCheck, HelpCircle, ChevronDown, ChevronUp, History, Eye, Check, X, Clock } from "lucide-react";
 
 interface Trait {
-  id: string;
+  _id: string;
   trait: string;
   category: "core_identity" | "aspiration" | "principle" | "behavior_pattern" | "current_state";
   description: string;
@@ -80,6 +80,7 @@ export default function Identity() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
   }, []);
 
@@ -236,9 +237,9 @@ export default function Identity() {
               Identity Proposals
             </span>
             <div className="space-y-3">
-              {proposals.map((p) => (
+              {proposals.map((p, idx) => (
                 <div 
-                  key={p._id} 
+                  key={p._id || `proposal-${idx}`} 
                   className="bg-card border border-accent/40 shadow-[0_2px_12px_rgba(201,168,106,0.06)] p-6 rounded-xl flex flex-col gap-4 relative overflow-hidden transition-all duration-300"
                 >
                   <div className="flex justify-between items-start">
@@ -247,7 +248,7 @@ export default function Identity() {
                         {getCategoryLabel(p.category)}
                       </span>
                       <h3 className="font-heading text-lg font-medium text-foreground">
-                        Would you like me to remember that you are a "{p.trait}"?
+                        {`Would you like me to remember that you are a "${p.trait}"?`}
                       </h3>
                     </div>
                     <span className="font-sans text-[10px] font-semibold text-accent whitespace-nowrap bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
@@ -256,7 +257,7 @@ export default function Identity() {
                   </div>
 
                   <p className="font-sans text-xs text-muted-foreground leading-relaxed italic bg-secondary/20 p-3 rounded-lg border border-border/40">
-                    "{p.reason}"
+                    {`"${p.reason}"`}
                   </p>
 
                   <div className="flex gap-2.5 mt-1 justify-end">
@@ -301,11 +302,11 @@ export default function Identity() {
             </div>
           ) : (
             <div className="space-y-4">
-              {allActive.map((t) => {
+              {allActive.map((t, idx) => {
                 const stage = getStageLabel(t);
                 return (
                   <div 
-                    key={t.id} 
+                    key={t._id || `${t.category}-${t.trait}-${idx}`} 
                     className="bg-card border border-border p-5 rounded-xl flex flex-col gap-3 hover:border-accent/30 transition-all duration-300 shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
                   >
                     <div className="flex justify-between items-start gap-4">
@@ -362,17 +363,17 @@ export default function Identity() {
                     {t.evidence && (
                       <div className="mt-1">
                         <button 
-                          onClick={() => toggleEvidence(t.id)}
+                          onClick={() => toggleEvidence(t._id)}
                           className="font-sans text-[9px] tracking-wider uppercase text-accent font-semibold flex items-center gap-1 hover:text-accent/80 transition-colors"
                         >
-                          {expandedEvidence[t.id] ? (
+                          {expandedEvidence[t._id] ? (
                             <>Hide Evidence <ChevronUp size={10} /></>
                           ) : (
                             <>View Evidence <ChevronDown size={10} /></>
                           )}
                         </button>
                         
-                        {expandedEvidence[t.id] && (
+                        {expandedEvidence[t._id] && (
                           <div className="mt-2.5 bg-secondary/30 border border-border/40 p-3 rounded-lg text-[11px] font-sans text-muted-foreground leading-relaxed whitespace-pre-line animate-fade-in">
                             {t.evidence}
                           </div>
@@ -393,9 +394,9 @@ export default function Identity() {
               Emerging Traits & Hypotheses
             </span>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {profile.emergingTraits.map((t) => (
+              {profile.emergingTraits.map((t, idx) => (
                 <div 
-                  key={t.id} 
+                  key={t._id || `emerging-${t.trait}-${idx}`} 
                   className="bg-card border border-border/60 p-4 rounded-xl flex flex-col gap-2 hover:border-accent/20 transition-all duration-300"
                 >
                   <div className="flex justify-between items-center">
@@ -431,7 +432,7 @@ export default function Identity() {
                     year: "numeric"
                   });
                   return (
-                    <div key={t.id + "-" + idx} className="relative">
+                    <div key={(t._id || t.trait) + "-" + idx} className="relative">
                       {/* Timeline dot */}
                       <span className="absolute -left-[20.5px] top-1.5 w-2 h-2 rounded-full bg-accent border-2 border-background" />
                       

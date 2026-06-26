@@ -24,7 +24,7 @@ export default function Home({
   onNavigateToChat,
 }: HomeProps) {
   const [query, setQuery] = useState("");
-  const [userName, setUserName] = useState("Achyut");
+  const [userName, setUserName] = useState("");
   const [longTermGoal, setLongTermGoal] = useState("Software Engineer");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -150,7 +150,7 @@ export default function Home({
               </span>
             </div>
             <p className="font-sans text-sm md:text-base text-muted-foreground max-w-md leading-relaxed">
-              I've already started planning today around your goal of becoming a <span className="text-foreground font-semibold">{longTermGoal}</span>. Let's make progress.
+              {"I've already started planning today around your goal of becoming a "}<span className="text-foreground font-semibold">{longTermGoal}</span>{". Let's make progress."}
             </p>
           </div>
 
@@ -163,7 +163,7 @@ export default function Home({
             }`}
           >
             <h1 className="font-heading text-3xl md:text-4xl font-light text-foreground italic tracking-wide">
-              Let's think this through together.
+              {"Let's think this through together."}
             </h1>
           </div>
         </header>
