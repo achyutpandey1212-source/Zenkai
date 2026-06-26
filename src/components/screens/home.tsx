@@ -109,13 +109,18 @@ export default function Home({
       {/* Main Column Wrapper */}
       <div className="relative z-10 w-full h-full flex flex-col justify-between">
         
-        {/* Top Section: Greeting */}
+        {/* Top Section: Greeting / Transformed Greeting */}
         <header className={`max-w-xl self-start flex flex-col relative w-full transition-all duration-1000 ease-in-out ${
-          hasStartedChat 
-            ? "min-h-0 h-0 opacity-0 overflow-hidden m-0" 
-            : "mt-4 min-h-[120px] opacity-100"
+          hasStartedChat ? "mt-2 min-h-0" : "mt-4 min-h-[120px]"
         }`}>
-          <div className="flex flex-col gap-3">
+          {/* Initial Greeting state */}
+          <div 
+            className={`flex flex-col gap-3 transition-all duration-1000 ease-in-out transform ${
+              hasStartedChat 
+                ? "opacity-0 -translate-y-6 pointer-events-none absolute" 
+                : "opacity-100 translate-y-0"
+            }`}
+          >
             <div className="flex flex-col">
               <span className="font-heading text-3xl md:text-4xl font-light text-muted-foreground italic">
                 Good Morning,
@@ -127,6 +132,19 @@ export default function Home({
             <p className="font-sans text-sm md:text-base text-muted-foreground max-w-md leading-relaxed">
               I've already started planning today around your goal of becoming a <span className="text-foreground font-semibold">{longTermGoal}</span>. Let's make progress.
             </p>
+          </div>
+
+          {/* Transformed Active Conversation state */}
+          <div 
+            className={`transition-all duration-1000 ease-in-out transform ${
+              hasStartedChat 
+                ? "opacity-100 translate-y-0" 
+                : "opacity-0 translate-y-6 pointer-events-none absolute"
+            }`}
+          >
+            <h1 className="font-heading text-3xl md:text-4xl font-light text-foreground italic tracking-wide">
+              Let's think this through together.
+            </h1>
           </div>
         </header>
 
