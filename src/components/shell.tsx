@@ -368,7 +368,7 @@ export default function Shell({ initialUser }: ShellProps) {
       />
       
       {/* Main Content Area */}
-      <main className="flex-1 h-screen max-h-screen overflow-hidden pl-16 md:pl-20 transition-all duration-300">
+      <main className="flex-1 h-screen max-h-screen overflow-hidden overflow-x-hidden pl-14 md:pl-16 transition-all duration-300">
         <div className="w-full h-full relative overflow-hidden">
           {renderScreen()}
         </div>

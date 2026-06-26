@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import CompanionOrb, { OrbState } from "../ui/companion-orb";
+import { Sparkles } from "lucide-react";
 
 interface HomeProps {
   messages: any[];
@@ -13,6 +14,13 @@ interface HomeProps {
   setOrbState: React.Dispatch<React.SetStateAction<OrbState>>;
   userName: string;
 }
+
+const quickActions = [
+  "Plan My Week",
+  "Review Goals",
+  "Help Me Focus",
+  "Reflect on Today",
+];
 
 export default function Home({
   messages,
@@ -29,74 +37,61 @@ export default function Home({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load profile data from MongoDB via API (not localStorage).
+  // Load profile (goal) from MongoDB
   useEffect(() => {
     async function loadProfile() {
       try {
         const res = await fetch("/api/user/profile");
         if (res.ok) {
           const data = await res.json();
-          const profile = data.profile;
-          if (profile?.longTermGoal) setLongTermGoal(profile.longTermGoal);
+          if (data.profile?.longTermGoal) setLongTermGoal(data.profile.longTermGoal);
         }
       } catch {
-        // Silently fall back to defaults
+        // Silently fall back
       }
     }
     loadProfile();
   }, []);
 
-  // Delayed transition from greeting to chat if previous messages exist
+  // Delayed transition from greeting → chat if prior messages exist
   useEffect(() => {
     if (hasStartedChat) {
-      const timer = setTimeout(() => {
-        setIsChatActive(true);
-      }, 500); // 3 seconds window
+      const timer = setTimeout(() => setIsChatActive(true), 500);
       return () => clearTimeout(timer);
     } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsChatActive(false);
     }
   }, [hasStartedChat]);
 
-  // Scroll to bottom of message list on updates
+  // Auto-scroll messages
   useEffect(() => {
     if (isChatActive) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, isChatActive]);
 
-  // Adjust textarea height automatically
+  // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = "auto";
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
     }
   }, [query]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setQuery(val);
-    if (val.trim()) {
-      setOrbState("typing");
-    } else {
-      setOrbState("idle");
-    }
+    setOrbState(val.trim() ? "typing" : "idle");
   };
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!query.trim()) return;
-
-    // Immediately expand and show the chat thread
     setIsChatActive(true);
-
     const textToSend = query;
     setQuery("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
     await sendMessage(textToSend);
   };
 
@@ -107,15 +102,21 @@ export default function Home({
     }
   };
 
+  const handleQuickAction = (action: string) => {
+    setQuery(action);
+    setOrbState("typing");
+    textareaRef.current?.focus();
+  };
+
   return (
-    <div className="relative h-screen max-h-screen w-full flex flex-col p-6 pb-8 md:p-12 md:pb-12 overflow-hidden bg-background">
-      
-      {/* Temple Background on the right side with smooth fade mask */}
-      <div 
+    <div className="relative h-screen max-h-screen w-full overflow-hidden bg-background">
+
+      {/* ── Temple Background ── */}
+      <div
         className="absolute right-0 top-0 h-full w-full md:w-1/2 pointer-events-none select-none z-0"
         style={{
           maskImage: "linear-gradient(to left, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%)",
-          WebkitMaskImage: "linear-gradient(to left, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%)"
+          WebkitMaskImage: "linear-gradient(to left, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%)",
         }}
       >
         <Image
@@ -128,74 +129,31 @@ export default function Home({
         />
       </div>
 
-      {/* Main Column Wrapper */}
-      <div className="relative z-10 w-full h-full flex flex-col justify-between">
-        
-        {/* Top Section: Greeting / Transformed Greeting */}
-        <header className={`max-w-xl self-start flex flex-col relative w-full transition-all duration-1000 ease-in-out ${
-          isChatActive ? "mt-2 min-h-0" : "mt-4 min-h-[120px]"
-        }`}>
-          {/* Initial Greeting state */}
-          <div 
-            className={`flex flex-col gap-3 transition-all duration-1000 ease-in-out transform ${
-              isChatActive 
-                ? "opacity-0 -translate-y-6 pointer-events-none absolute" 
-                : "opacity-100 translate-y-0"
-            }`}
-          >
-            <div className="flex flex-col">
-              <span className="font-heading text-3xl md:text-4xl font-light text-muted-foreground italic">
-                Good Morning,
-              </span>
-              <span className="font-signature text-6xl md:text-7xl text-accent mt-1 leading-none">
-                {userName}
-              </span>
-            </div>
-            <p className="font-sans text-sm md:text-base text-muted-foreground max-w-md leading-relaxed">
-              {longTermGoal !== null ? (
-                <>
-                  {"I've already started planning today around your goal of becoming a "}
-                  <span className="text-foreground font-semibold">{longTermGoal}</span>
-                  {". Let's make progress."}
-                </>
-              ) : (
-                <span className="inline-block w-64 h-4 rounded bg-muted-foreground/20 animate-pulse" />
-              )}
-            </p>
-          </div>
+      {/* ── Main Layout: single centered flex column ── */}
+      <div className="relative z-10 h-full flex flex-col items-center">
 
-          {/* Transformed Active Conversation state */}
-          <div 
-            className={`transition-all duration-1000 ease-in-out transform ${
-              isChatActive 
-                ? "opacity-100 translate-y-0" 
-                : "opacity-0 translate-y-6 pointer-events-none absolute"
-            }`}
-          >
-            <h1 className="font-heading text-3xl md:text-4xl font-light text-foreground italic tracking-wide">
-              {"Let's think this through together."}
-            </h1>
-          </div>
-        </header>
+        {/* Top elastic spacer — collapses when chat starts, creating centering */}
+        <div
+          className="shrink-0 transition-all duration-700 ease-in-out"
+          style={{ height: isChatActive ? "0px" : "clamp(20px, 14vh, 72px)" }}
+        />
 
-        {/* Center Section: Floating Companion Orb & Status messages */}
-        <div 
-          className={`flex flex-col items-center justify-center transition-all duration-1000 ease-in-out ${
-            isChatActive 
-              ? "h-20 md:h-24 py-1" 
-              : "h-[45vh] md:h-[50vh] py-6 md:py-12"
-          }`}
-        >
-          <CompanionOrb 
-            state={orbState} 
-            size={isChatActive ? "xs" : "lg"} 
-            className="transition-all duration-1000"
+        {/* ─── Hero Block: Orb + Greeting ─── */}
+        <div className="shrink-0 flex flex-col items-center w-full max-w-2xl px-6">
+
+          {/* Companion Orb — the face of Zenkai, reacts to all states */}
+          <CompanionOrb
+            state={orbState}
+            size={isChatActive ? "xs" : "md"}
+            className="transition-all duration-700"
           />
 
-          {/* Status Message Text */}
-          <span 
-            className={`font-sans text-[11px] tracking-[0.25em] font-medium uppercase mt-2 transition-all duration-500 min-h-[16px] ${
-              orbState === "idle" ? "text-accent/60" : "text-accent animate-pulse"
+          {/* Ambient status label */}
+          <span
+            className={`font-sans text-[10px] tracking-[0.3em] font-medium uppercase mt-2.5 transition-all duration-500 ${
+              orbState === "idle"
+                ? "text-accent/50"
+                : "text-accent animate-pulse"
             }`}
           >
             {orbState === "idle" && "Zenkai Listening"}
@@ -203,30 +161,66 @@ export default function Home({
             {orbState === "thinking" && (statusMessage || "Understanding your request...")}
             {orbState === "writing" && (statusMessage || "Writing response...")}
           </span>
+
+          {/* Greeting — collapses smoothly when chat starts */}
+          <div
+            className={`text-center flex flex-col items-center transition-all duration-700 ease-in-out overflow-hidden ${
+              isChatActive
+                ? "max-h-0 opacity-0 mt-0 pointer-events-none"
+                : "max-h-80 opacity-100 mt-7"
+            }`}
+          >
+            <span className="font-heading text-3xl md:text-4xl font-light text-muted-foreground italic">
+              Good Morning,
+            </span>
+            <span className="font-signature text-5xl md:text-6xl text-accent leading-none mt-1">
+              {userName}
+            </span>
+            <p className="font-sans text-sm text-muted-foreground mt-3 max-w-sm leading-relaxed">
+              {longTermGoal !== null ? (
+                <>
+                  {"Planning today around your goal of becoming a "}
+                  <span className="text-foreground font-semibold">{longTermGoal}</span>
+                  {"."}
+                </>
+              ) : (
+                <span className="inline-block w-48 h-3.5 rounded bg-muted-foreground/15 animate-pulse" />
+              )}
+            </p>
+          </div>
         </div>
 
-        {/* growing/sliding conversation container */}
-        <div 
-          className={`flex-1 w-full max-w-2xl mx-auto overflow-hidden flex flex-col transition-all duration-1000 ease-in-out ${
-            isChatActive 
-              ? "opacity-100 translate-y-0 mt-2 mb-2" 
-              : "opacity-0 translate-y-12 max-h-0 h-0 pointer-events-none"
+        {/* ─── Chat Messages (appears when chat starts) ─── */}
+        <div
+          className={`w-full max-w-2xl px-4 min-h-0 transition-all duration-700 ease-in-out ${
+            isChatActive
+              ? "flex-1 opacity-100 mt-4"
+              : "flex-none h-0 opacity-0 pointer-events-none overflow-hidden"
           }`}
         >
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 scrollbar-custom border-t border-b border-border/20 bg-background/20 backdrop-blur-[2px] rounded-xl">
+          <div className="h-full overflow-y-auto py-3 space-y-6 scrollbar-custom border-t border-border/20">
             {messages.map((msg) => {
               const isUser = msg.role === "user";
-              const timeString = msg.createdAt 
-                ? new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
+              const timeString = msg.createdAt
+                ? new Date(msg.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : new Date().toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
               return (
                 <div
                   key={msg._id}
-                  className={`flex w-full ${isUser ? "justify-end animate-slide-in-right" : "justify-start animate-slide-in-left"}`}
+                  className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}
                 >
                   <div className="max-w-[85%] md:max-w-xl flex flex-col gap-1.5">
-                    <span className={`text-[9px] font-sans tracking-widest text-muted-foreground/80 uppercase ${isUser ? "text-right" : "text-left"}`}>
+                    <span
+                      className={`text-[9px] font-sans tracking-widest text-muted-foreground/80 uppercase ${
+                        isUser ? "text-right" : "text-left"
+                      }`}
+                    >
                       {isUser ? userName : "Zenkai"}
                     </span>
                     <div
@@ -238,7 +232,11 @@ export default function Home({
                     >
                       {msg.content}
                     </div>
-                    <span className={`text-[8px] font-sans text-muted-foreground/50 ${isUser ? "text-right" : "text-left"}`}>
+                    <span
+                      className={`text-[8px] font-sans text-muted-foreground/50 ${
+                        isUser ? "text-right" : "text-left"
+                      }`}
+                    >
                       {timeString}
                     </span>
                   </div>
@@ -249,10 +247,34 @@ export default function Home({
           </div>
         </div>
 
-        {/* Bottom Section: Ask Zenkai Input */}
-        <footer className="w-full max-w-2xl mx-auto mb-2 relative z-20">
-          <form onSubmit={handleSubmit} className="relative flex items-end w-full">
-            <div className="w-full bg-secondary/80 hover:bg-secondary focus-within:bg-secondary border border-border/50 focus-within:border-accent/40 focus-within:ring-1 focus-within:ring-accent/40 rounded-[28px] shadow-sm focus-within:shadow-md transition-all duration-300 flex items-end p-1 pr-14 pl-5">
+        {/* ─── Input Area ─── */}
+        <div className="w-full max-w-xl px-4 shrink-0 pt-5 pb-7">
+
+          {/* Quick action chips — visible in greeting state only */}
+          <div
+            className={`flex flex-wrap gap-2 justify-center transition-all duration-500 ease-in-out overflow-hidden ${
+              isChatActive
+                ? "max-h-0 opacity-0 mb-0 pointer-events-none"
+                : "max-h-20 opacity-100 mb-4"
+            }`}
+          >
+            {quickActions.map((action) => (
+              <button
+                key={action}
+                onClick={() => handleQuickAction(action)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-border/60 bg-background/60 hover:bg-secondary text-[11px] text-muted-foreground hover:text-foreground font-sans transition-all duration-200"
+              >
+                <Sparkles size={9} className="text-accent/80" />
+                {action}
+              </button>
+            ))}
+          </div>
+
+          {/* Input form — Claude-style: textarea + bottom bar with hint + send */}
+          <form onSubmit={handleSubmit} className="relative w-full">
+            <div className="w-full bg-secondary/80 hover:bg-secondary focus-within:bg-secondary border border-border/50 focus-within:border-accent/40 focus-within:ring-1 focus-within:ring-accent/30 rounded-2xl shadow-sm focus-within:shadow-md transition-all duration-300 flex flex-col px-5 pt-4 pb-3 gap-3">
+              
+              {/* Text area */}
               <textarea
                 ref={textareaRef}
                 rows={1}
@@ -260,28 +282,41 @@ export default function Home({
                 value={query}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                className="w-full bg-transparent text-foreground font-sans placeholder:text-muted-foreground/60 py-3 outline-none text-sm md:text-base resize-none min-h-[44px] max-h-[160px] overflow-y-auto border-none focus:ring-0 focus:border-none focus:outline-none scrollbar-none"
-                style={{ lineHeight: "1.5" }}
+                className="w-full bg-transparent text-foreground font-sans placeholder:text-muted-foreground/50 outline-none text-sm md:text-[15px] resize-none min-h-[28px] max-h-[180px] overflow-y-auto border-none focus:ring-0 focus:border-none focus:outline-none scrollbar-custom"
+                style={{ lineHeight: "1.6" }}
               />
-            </div>
-            <button 
-              type="submit"
-              className="absolute right-2.5 bottom-2.5 p-2.5 rounded-full bg-primary hover:bg-accent text-primary-foreground hover:text-foreground transition-all duration-300 shadow-md flex items-center justify-center z-10"
-            >
-              <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                fill="none" 
-                viewBox="0 0 24 24" 
-                strokeWidth={2} 
-                stroke="currentColor" 
-                className="w-4.5 h-4.5"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-              </svg>
-            </button>
-          </form>
-        </footer>
 
+              {/* Bottom bar: hint text + send button */}
+              <div className="flex items-center justify-between">
+                <span className="font-sans text-[10px] text-muted-foreground/35 select-none tracking-wide">
+                  Shift + ↵ &nbsp;new line
+                </span>
+                <button
+                  type="submit"
+                  disabled={!query.trim()}
+                  className="p-2 rounded-full bg-primary hover:bg-accent disabled:opacity-25 disabled:cursor-not-allowed text-primary-foreground hover:text-foreground transition-all duration-300 shadow-sm flex items-center justify-center"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                    className="w-4 h-4"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        {/* Bottom elastic spacer — collapses when chat starts */}
+        <div
+          className="shrink-0 transition-all duration-700 ease-in-out"
+          style={{ height: isChatActive ? "0px" : "clamp(12px, 8vh, 40px)" }}
+        />
       </div>
     </div>
   );
