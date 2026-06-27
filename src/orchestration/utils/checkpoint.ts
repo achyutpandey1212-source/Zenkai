@@ -60,6 +60,21 @@ class InMemoryCheckpointStore {
     return results;
   }
 
+  async listRecentWorkflows(): Promise<CheckpointRecord[]> {
+    this.evictExpired();
+    const latestMap: Map<string, CheckpointRecord> = new Map();
+    for (const entry of this.cache.values()) {
+      const rec = entry.record;
+      const existing = latestMap.get(rec.workflowId);
+      if (!existing || new Date(rec.checkpointedAt) > new Date(existing.checkpointedAt)) {
+        latestMap.set(rec.workflowId, rec);
+      }
+    }
+    return Array.from(latestMap.values()).sort(
+      (a, b) => new Date(b.checkpointedAt).getTime() - new Date(a.checkpointedAt).getTime()
+    );
+  }
+
   private evictExpired(): void {
     const now = Date.now();
     for (const [key, entry] of this.cache.entries()) {
@@ -101,6 +116,28 @@ class MongoCheckpointStore {
         .toArray() as unknown as CheckpointRecord[];
     } catch (err) {
       console.error("[CheckpointManager] MongoDB find failed:", err);
+      return [];
+    }
+  }
+
+  async listRecentWorkflows(): Promise<CheckpointRecord[]> {
+    try {
+      const mongoose = await dbConnect();
+      const col = mongoose.connection.db!.collection(this.collectionName);
+      const results = await col.aggregate([
+        { $sort: { checkpointedAt: -1 } },
+        {
+          $group: {
+            _id: "$workflowId",
+            latest: { $first: "$$ROOT" }
+          }
+        },
+        { $replaceRoot: { newRoot: "$latest" } },
+        { $sort: { checkpointedAt: -1 } }
+      ]).toArray();
+      return results as unknown as CheckpointRecord[];
+    } catch (err) {
+      console.error("[CheckpointManager] MongoDB listRecentWorkflows failed:", err);
       return [];
     }
   }
@@ -151,5 +188,10 @@ export class CheckpointManager {
   /** Retrieve all checkpoints for a given workflowId (useful for debugging) */
   static async findByWorkflowId(workflowId: string): Promise<CheckpointRecord[]> {
     return store.findByWorkflowId(workflowId);
+  }
+
+  /** List all recent unique workflows, showing their latest checkpoint state */
+  static async listRecentWorkflows(): Promise<CheckpointRecord[]> {
+    return store.listRecentWorkflows();
   }
 }

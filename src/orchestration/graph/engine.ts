@@ -29,6 +29,7 @@ import type {
 import { GraphLogger } from "../utils/graph-logger";
 import { CheckpointManager } from "../utils/checkpoint";
 import { EventBus } from "../events/event-bus";
+import { telemetryStorage } from "@/lib/telemetry-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -211,6 +212,13 @@ export class StateGraph<S extends object> {
       // Merge patch into state
       const newState = { ...state, ...result.patch };
 
+      // Sync telemetry calls into the state
+      const telemetry = telemetryStorage.getStore();
+      if (telemetry) {
+        telemetry.stateRef = newState;
+        ((newState as unknown) as { aiCalls?: unknown[] }).aiCalls = [...telemetry.aiCalls];
+      }
+
       // Append to nodeLog
       const workflowId = (state as Record<string, unknown>).workflowId as string ?? "unknown";
       (newState as Record<string, unknown>).nodeLog = [
@@ -270,6 +278,11 @@ export class StateGraph<S extends object> {
       ];
 
       const newState = { ...state, errors, nodeLog } as S;
+      const telemetry = telemetryStorage.getStore();
+      if (telemetry) {
+        telemetry.stateRef = newState;
+        ((newState as unknown) as { aiCalls?: unknown[] }).aiCalls = [...telemetry.aiCalls];
+      }
       return { newState, metadata };
     }
   }

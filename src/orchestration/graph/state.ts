@@ -15,6 +15,7 @@ import type { LifeEventExtraction, PlanningIntent } from "@/agents/planning-agen
 import type { IMemory } from "@/models/Memory";
 import type { NodeMetadata } from "./types";
 import type { InternalEvent } from "../events/event-types";
+import type { AICall } from "@/lib/telemetry-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Routing Decision
@@ -160,6 +161,8 @@ export interface GraphState {
   nodeLog: NodeLogEntry[];
   /** Wall-clock timestamp when the workflow started */
   startedAt: number;
+  /** Chronological AI calls recorded during this workflow run */
+  aiCalls?: AICall[];
 
   // ── Error Tracking (isolated — one failure never kills the workflow) ───────
   errors: NodeError[];
@@ -221,6 +224,7 @@ export function createInitialState(overrides: Partial<GraphState> & {
     errors: [],
     checkpointIds: [],
     pluginData: {},
+    aiCalls: [],
     ...overrides,
   };
 }

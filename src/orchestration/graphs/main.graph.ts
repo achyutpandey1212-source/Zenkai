@@ -31,6 +31,7 @@ import { backgroundNode } from "../nodes/background.node";
 import { assemblerNode } from "../nodes/assembler.node";
 import { PluginRegistry } from "../plugins/plugin-registry";
 import { GraphLogger } from "../utils/graph-logger";
+import { telemetryStorage } from "@/lib/telemetry-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Conditional edge functions
@@ -147,7 +148,15 @@ export async function invokeMainGraph(initialState: GraphState): Promise<GraphSt
 
   const graph = getMainGraph();
   
-  const finalState = await graph.invoke(initialState);
+  const telemetry = {
+    workflowId: initialState.workflowId,
+    aiCalls: [],
+    stateRef: initialState
+  };
+
+  const finalState = await telemetryStorage.run(telemetry, async () => {
+    return await graph.invoke(initialState);
+  });
 
   return finalState;
 }
