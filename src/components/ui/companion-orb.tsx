@@ -3,7 +3,7 @@
 import React from "react";
 import Image from "next/image";
 
-export type OrbState = "idle" | "typing" | "thinking" | "writing";
+export type OrbState = "idle" | "typing" | "thinking" | "writing" | "generating_agenda" | "completed_task" | "all_completed";
 
 interface CompanionOrbProps {
   state: OrbState;
@@ -26,6 +26,9 @@ export default function CompanionOrb({ state, size = "md", className = "" }: Com
     typing: "bg-accent/20 animate-glow-typing",
     thinking: "bg-accent/25 animate-glow-thinking",
     writing: "bg-accent/20 animate-glow-writing",
+    generating_agenda: "bg-accent/30 animate-glow-breath",
+    completed_task: "bg-accent/40 animate-glow-pulse",
+    all_completed: "bg-amber-500/35 animate-glow-golden",
   }[state];
 
   // Determine orb movement/rotation classes
@@ -34,6 +37,9 @@ export default function CompanionOrb({ state, size = "md", className = "" }: Com
     typing: "animate-orb-float",
     thinking: "animate-orb-rotate-slow",
     writing: "animate-orb-rotate-writing",
+    generating_agenda: "animate-orb-breath",
+    completed_task: "animate-orb-pulse-scale",
+    all_completed: "animate-orb-float-golden",
   }[state];
 
   return (

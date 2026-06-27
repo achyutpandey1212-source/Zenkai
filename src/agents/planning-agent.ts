@@ -11,7 +11,7 @@ import { PlanRepository } from "@/repositories/plan.repository";
 import { Types } from "mongoose";
 
 export type PlanningIntent = {
-  type: "create_or_modify" | "task_update" | "none";
+  type: "create_or_modify" | "task_update" | "execution_inquiry" | "none";
   taskTitle?: string;
   taskStatus?: "completed" | "in_progress" | "todo";
   planType?: "career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal";
@@ -24,7 +24,8 @@ You are the Intent Detection Agent for Zenkai's Planning Engine.
 Your job is to analyze the user's latest message and the recent conversation history to classify if they want to:
 1. Create a new plan or modify/evolve an existing roadmap/study plan/project plan/career goal (e.g. "I want to become an SDE", "Plan my semester", "Help me prepare for placements", "I no longer want to build a startup"). Classification: "create_or_modify".
 2. Update the status of a specific task (e.g., "I've completed Arrays", "I finished my revise formula sheet task", "I am working on Linked Lists"). Classification: "task_update".
-3. Continue standard, ordinary conversation without any planning or task changes. Classification: "none".
+3. Ask what tasks they should do today, what they should study, or request to plan their day (e.g., "What should I do today?", "What should I study?", "What should I work on?", "Plan my day"). Classification: "execution_inquiry".
+4. Continue standard, ordinary conversation without any planning, task changes, or daily execution questions. Classification: "none".
 
 For "create_or_modify", try to identify the planType ("career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"), and a descriptive goalTitle.
 For "task_update", extract the taskTitle and taskStatus ("completed", "in_progress", "todo").
@@ -125,7 +126,7 @@ Determine the intent:
           responseSchema: {
             type: "OBJECT",
             properties: {
-              intentType: { type: "STRING", enum: ["create_or_modify", "task_update", "none"] },
+              intentType: { type: "STRING", enum: ["create_or_modify", "task_update", "execution_inquiry", "none"] },
               taskTitle: { type: "STRING" },
               taskStatus: { type: "STRING", enum: ["completed", "in_progress", "todo"] },
               planType: { type: "STRING", enum: ["career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"] },
@@ -141,7 +142,7 @@ Determine the intent:
       if (!text) return { type: "none" };
 
       const parsed = JSON.parse(text) as {
-        intentType: "create_or_modify" | "task_update" | "none";
+        intentType: "create_or_modify" | "task_update" | "execution_inquiry" | "none";
         taskTitle?: string;
         taskStatus?: "completed" | "in_progress" | "todo";
         planType?: "career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal";

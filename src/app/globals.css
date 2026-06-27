@@ -262,6 +262,73 @@
   animation: orb-glow-writing 3s ease-in-out infinite;
 }
 
+/* 4. Execution State Keyframes */
+@keyframes orb-breath {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes orb-pulse-quick {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes orb-glow-golden {
+  0%, 100% {
+    opacity: 0.3;
+    filter: blur(28px);
+  }
+  50% {
+    opacity: 0.7;
+    filter: blur(40px);
+  }
+}
+
+@keyframes orb-float-golden {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(2deg);
+  }
+}
+
+/* Classes */
+.animate-orb-breath {
+  animation: orb-breath 4s ease-in-out infinite;
+}
+
+.animate-orb-pulse-scale {
+  animation: orb-pulse-quick 0.8s cubic-bezier(0.16, 1, 0.3, 1) 1;
+}
+
+.animate-orb-float-golden {
+  animation: orb-float-golden 6s ease-in-out infinite;
+}
+
+.animate-glow-breath {
+  animation: orb-glow-idle 3s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: orb-glow-typing 0.8s ease-out 1;
+}
+
+.animate-glow-golden {
+  animation: orb-glow-golden 5s ease-in-out infinite;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    Global Custom Scrollbar — Luxury Design System
    Applied globally; overridden to none where scrollbar-none is used.

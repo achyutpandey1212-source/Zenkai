@@ -12,6 +12,7 @@ import { ReflectionAgent } from "@/agents/reflection-agent";
 import { PlanningAgent } from "@/agents/planning-agent";
 import { PlanRepository } from "@/repositories/plan.repository";
 import { Task } from "@/models/Task";
+import { ExecutionAgent } from "@/agents/execution-agent";
 
 // Mark this route as dynamic
 export const dynamic = "force-dynamic";
@@ -124,6 +125,49 @@ Your companion response should naturally reference this generation or update. Ex
 You have just marked the task "${targetTask.title}" as "${newStatus}".
 Your companion response should naturally acknowledge this completion or update, celebrate their progress, and discuss what priorities or milestones are next in line.
 `;
+      }
+    } else if (intent.type === "execution_inquiry") {
+      console.log(`[ChatRoute] Detected execution_inquiry intent. Fetching today's daily agenda.`);
+      const todayStr = new Date().toISOString().split("T")[0];
+      try {
+        const agenda = await ExecutionAgent.getOrCreateDailyAgenda(user.firebaseUid, todayStr);
+        if (agenda) {
+          // Format today's agenda for Companion Agent to talk about it
+          const formattedBlocks = agenda.workBlocks.map((wb: any) => {
+            const taskTitles = wb.tasks.map((t: any) => `- ${t.title} (${t.status})`).join("\n");
+            return `Block: ${wb.title} (${wb.startTime} - ${wb.endTime})\nTasks:\n${taskTitles || "No tasks scheduled in this block"}`;
+          }).join("\n\n");
+          
+          planPromptText = `
+## Today's Daily Agenda (Execution Plan):
+Date: ${agenda.date}
+Intention: "${agenda.intention}"
+Focus: "${agenda.focus}"
+
+Suggested Work Blocks & Tasks:
+${formattedBlocks}
+
+Optional Tasks:
+${agenda.optionalTasks.map((t: any) => `- ${t.title} (${t.status})`).join("\n") || "None"}
+
+Stretch Goals:
+${agenda.stretchGoals.map((t: any) => `- ${t.title} (${t.status})`).join("\n") || "None"}
+
+Estimated Focus Time: ${agenda.estimatedFocusTime} minutes
+Current Priority: ${agenda.currentPriority}
+Upcoming Deadline: ${agenda.upcomingDeadline}
+Execution Reasoning: "${agenda.executionReasoning}"
+Deferred Explanation: "${agenda.deferredExplanation || ""}"
+
+INSTRUCTIONS FOR COMPANION AGENT:
+- Address the user's execution query by explaining what is on their agenda today.
+- Reference their intention, overarching focus, work blocks, and task priorities.
+- Do NOT talk about long-term roadmaps or regenerate plans. Keep their attention strictly on "Today's Agenda".
+- Do NOT say "according to the execution agent" or "your daily agenda database". Simply convey it naturally.
+`;
+        }
+      } catch (err) {
+        console.error("Failed to inject daily agenda context into chat:", err);
       }
     }
 

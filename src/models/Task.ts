@@ -5,7 +5,7 @@ import mongoose, { Schema, Model, Document, Types } from "mongoose";
  * Collection: tasks
  */
 
-export type TaskStatus = "todo" | "in_progress" | "completed" | "missed";
+export type TaskStatus = "todo" | "in_progress" | "completed" | "skipped" | "deferred" | "blocked" | "missed";
 
 export interface ITask extends Document {
   firebaseUid: string;         // FK → users.firebaseUid
@@ -21,6 +21,9 @@ export interface ITask extends Document {
   completedAt?: Date;
   suggestedDate?: string;      // YYYY-MM-DD suggested execution date
   timeBlock?: string;          // optional time slot, e.g. "09:00 AM - 10:30 AM"
+  deferredCount?: number;      // number of times task has been postponed
+  lastExecutedAt?: Date;       // timestamp of execution action
+  executionOrder?: number;     // manual order in daily agenda
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,7 +36,7 @@ const TaskSchema = new Schema<ITask>(
     description: { type: String, default: "" },
     status: {
       type: String,
-      enum: ["todo", "in_progress", "completed", "missed"],
+      enum: ["todo", "in_progress", "completed", "skipped", "deferred", "blocked", "missed"],
       default: "todo",
     },
     priority: { type: Number, default: 1 },
@@ -44,6 +47,9 @@ const TaskSchema = new Schema<ITask>(
     completedAt: { type: Date },
     suggestedDate: { type: String, default: "" },
     timeBlock: { type: String, default: "" },
+    deferredCount: { type: Number, default: 0 },
+    lastExecutedAt: { type: Date },
+    executionOrder: { type: Number },
   },
   {
     timestamps: true,

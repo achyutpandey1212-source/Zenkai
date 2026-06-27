@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import CompanionOrb, { OrbState } from "../ui/companion-orb";
-import { Sparkles, ArrowRight, BookOpen, CheckSquare, Compass, Clock } from "lucide-react";
+import { Sparkles, ArrowRight, BookOpen, CheckSquare, Compass, Clock, Calendar, AlertCircle } from "lucide-react";
 import MarkdownRenderer from "../ui/markdown-renderer";
 
 interface HomeProps {
@@ -17,44 +17,15 @@ interface HomeProps {
   onNavigate?: (screen: "plans" | "chat" | "tasks" | "identity" | "reflection" | "settings" | "memory") => void;
 }
 
-const quickActions = [
-  "Plan My Week",
-  "Review Goals",
-  "Help Me Focus",
-  "Reflect on Today",
-];
-
 interface ProactiveData {
   currentGoal: string | null;
-  activeMilestone: {
-    _id: string;
-    title: string;
-    progress: number;
-    category: string;
-    startDate: string;
-    endDate: string;
-    estimatedDuration: string;
-  } | null;
-  upcomingHardConstraint: {
-    _id: string;
-    title: string;
-    category: string;
-    startDate: string;
-    endDate: string;
-  } | null;
+  activeMilestone: any | null;
+  upcomingHardConstraint: any | null;
   planProgress: number;
-  priorities: {
-    id: string;
-    title: string;
-    status: string;
-    priority: number;
-    suggestedDate?: string;
-    timeBlock?: string;
-    estimatedDuration: string;
-  }[];
+  priorities: any[];
   recentReflection: { title: string; summary: string; category: string } | null;
 }
- 
+
 export default function Home({
   messages,
   sendMessage,
@@ -68,11 +39,22 @@ export default function Home({
   const [query, setQuery] = useState("");
   const [isChatActive, setIsChatActive] = useState(false);
   const [proactiveData, setProactiveData] = useState<ProactiveData | null>(null);
+  const [agenda, setAgenda] = useState<any | null>(null);
+  
   const [loadingProactive, setLoadingProactive] = useState(true);
+  const [loadingAgenda, setLoadingAgenda] = useState(true);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
- 
-  // Fetch proactive details from endpoint
+
+  const quickActions = [
+    "Plan My Day",
+    "What should I study?",
+    "Review Goals",
+    "Reflect on Today",
+  ];
+
+  // Fetch proactive details
   const fetchProactiveData = async () => {
     try {
       const res = await fetch("/api/plans/proactive");
@@ -89,31 +71,78 @@ export default function Home({
     }
   };
 
-  useEffect(() => {
-    fetchProactiveData();
-  }, []);
-
-  const handleToggleTask = async (taskId: string, currentStatus: string) => {
-    const newStatus = currentStatus === "completed" ? "todo" : "completed";
+  // Fetch daily agenda details
+  const fetchAgenda = async () => {
     try {
-      if (proactiveData) {
-        setProactiveData({
-          ...proactiveData,
-          priorities: proactiveData.priorities.map((t) =>
-            t.id === taskId ? { ...t, status: newStatus } : t
-          ),
-        });
-      }
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      const res = await fetch("/api/execution/agenda");
       if (res.ok) {
-        await fetchProactiveData();
+        const data = await res.json();
+        if (data.success) {
+          setAgenda(data.agenda);
+        }
       }
     } catch (err) {
-      console.error("Failed to update task on home screen:", err);
+      console.error("Failed to load daily agenda on home:", err);
+    } finally {
+      setLoadingAgenda(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProactiveData();
+    fetchAgenda();
+  }, []);
+
+  // Update Orb behavior based on agenda completion on mount/load
+  useEffect(() => {
+    if (agenda) {
+      const totalCritical = agenda.workBlocks.reduce((acc: number, wb: any) => acc + wb.tasks.length, 0);
+      const completedCritical = agenda.workBlocks.reduce((acc: number, wb: any) => acc + wb.tasks.filter((t: any) => t.status === "completed").length, 0);
+      if (totalCritical > 0 && completedCritical === totalCritical) {
+        setOrbState("all_completed");
+      } else {
+        setOrbState("idle");
+      }
+    }
+  }, [agenda, setOrbState]);
+
+  const handleToggleTask = async (taskId: string, currentStatus: string) => {
+    const isCompleted = currentStatus === "completed";
+    const nextAction = isCompleted ? "reschedule" : "complete";
+    const dateStr = agenda?.date || new Date().toISOString().split("T")[0];
+
+    try {
+      // Pulse the orb
+      setOrbState("completed_task");
+
+      const res = await fetch("/api/execution/task-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId, action: nextAction, date: dateStr, newDate: dateStr })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.agenda) {
+          setAgenda(data.agenda);
+          await fetchProactiveData();
+          
+          // Re-evaluate complete state
+          const totalCritical = data.agenda.workBlocks.reduce((acc: number, wb: any) => acc + wb.tasks.length, 0);
+          const completedCritical = data.agenda.workBlocks.reduce((acc: number, wb: any) => acc + wb.tasks.filter((t: any) => t.status === "completed").length, 0);
+          
+          setTimeout(() => {
+            if (totalCritical > 0 && completedCritical === totalCritical) {
+              setOrbState("all_completed");
+            } else {
+              setOrbState("idle");
+            }
+          }, 800);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to toggle task on home dashboard:", err);
+      setOrbState("idle");
     }
   };
 
@@ -172,6 +201,35 @@ export default function Home({
     textareaRef.current?.focus();
   };
 
+  // Calculate task stats for progress ring
+  const getTaskStats = () => {
+    if (!agenda) return { total: 0, completed: 0, percentage: 0 };
+    let total = 0;
+    let completed = 0;
+
+    agenda.workBlocks.forEach((wb: any) => wb.tasks.forEach((t: any) => {
+      total++;
+      if (t.status === "completed") completed++;
+    }));
+    agenda.optionalTasks.forEach((t: any) => {
+      total++;
+      if (t.status === "completed") completed++;
+    });
+    agenda.stretchGoals.forEach((t: any) => {
+      total++;
+      if (t.status === "completed") completed++;
+    });
+
+    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, percentage };
+  };
+
+  const stats = getTaskStats();
+  // SVG progress variables
+  const radius = 32;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (stats.percentage / 100) * circumference;
+
   return (
     <div className="relative h-screen max-h-screen w-full overflow-y-auto bg-background scrollbar-none flex flex-col items-center">
 
@@ -194,12 +252,12 @@ export default function Home({
       </div>
 
       {/* ── Main Layout ── */}
-      <div className="relative z-10 w-full max-w-3xl flex flex-col items-center min-h-screen px-4 md:px-6">
+      <div className="relative z-10 w-full max-w-4xl flex flex-col items-center min-h-screen px-4 md:px-6">
 
         {/* Top elastic spacer */}
         <div
           className="shrink-0 transition-all duration-700 ease-in-out"
-          style={{ height: isChatActive ? "16px" : "clamp(24px, 6vh, 48px)" }}
+          style={{ height: isChatActive ? "16px" : "clamp(20px, 4vh, 36px)" }}
         />
 
         {/* Companion Orb + Greeting */}
@@ -212,10 +270,13 @@ export default function Home({
 
           <span
             className={`font-sans text-[9px] tracking-[0.3em] font-medium uppercase mt-2.5 transition-all duration-500 ${
-              orbState === "idle" ? "text-accent/50" : "text-accent animate-pulse"
+              orbState === "idle" || orbState === "all_completed" ? "text-accent/50" : "text-accent animate-pulse"
             }`}
           >
             {orbState === "idle" && "Zenkai Listening"}
+            {orbState === "all_completed" && "Day Complete — Golden Glow"}
+            {orbState === "generating_agenda" && "Generating Agenda..."}
+            {orbState === "completed_task" && "Focus Locked"}
             {orbState === "typing" && "Zenkai Listening..."}
             {orbState === "thinking" && (statusMessage || "Understanding your request...")}
             {orbState === "writing" && (statusMessage || "Writing response...")}
@@ -223,7 +284,7 @@ export default function Home({
 
           <div
             className={`text-center flex flex-col items-center transition-all duration-700 ease-in-out overflow-hidden ${
-              isChatActive ? "max-h-0 opacity-0 mt-0 pointer-events-none" : "max-h-36 opacity-100 mt-6"
+              isChatActive ? "max-h-0 opacity-0 mt-0 pointer-events-none" : "max-h-36 opacity-100 mt-5"
             }`}
           >
             <span className="font-heading text-3xl md:text-4xl font-light text-muted-foreground italic">
@@ -235,159 +296,185 @@ export default function Home({
           </div>
         </div>
 
-        {/* Proactive Panel (Visible only when chat is not active) */}
-        {!isChatActive && !loadingProactive && proactiveData && (
-          <div className="w-full flex flex-col gap-6 mt-8 animate-fade-in transition-all duration-500">
+        {/* Proactive Daily Dashboard (Visible only when chat is not active) */}
+        {!isChatActive && !loadingAgenda && agenda && (
+          <div className="w-full flex flex-col gap-6 mt-6 animate-fade-in transition-all duration-500 pb-4">
             
-            {/* Top Row: Current Goal & Active Milestone / Hard Constraints */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              
-              {/* Goal & Milestone Card */}
-              {proactiveData.currentGoal ? (
-                <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col justify-between gap-4">
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
-                        <Compass size={11} /> Current Aspiration
-                      </span>
-                      <span className="font-sans text-[9px] text-muted-foreground/80 font-semibold">
-                        {proactiveData.planProgress}% overall
-                      </span>
-                    </div>
-                    
-                    <div className="flex flex-col gap-1">
-                      <h3 className="font-heading text-lg font-light text-foreground leading-tight">
-                        {proactiveData.currentGoal}
-                      </h3>
-                      {proactiveData.activeMilestone && (
-                        <div className="flex flex-col gap-0.5 mt-2 border-t border-border/10 pt-2">
-                          <span className="font-sans text-[8px] text-accent/60 uppercase tracking-widest">
-                            Active Milestone Focus
-                          </span>
-                          <span className="font-sans text-xs font-semibold text-foreground/90">
-                            {proactiveData.activeMilestone.title}
-                          </span>
-                          <div className="flex items-center justify-between text-[9px] text-muted-foreground/60 mt-0.5 font-sans">
-                            <span>{proactiveData.activeMilestone.category} | {proactiveData.activeMilestone.progress}% done</span>
-                            {proactiveData.activeMilestone.startDate && (
-                              <span>{proactiveData.activeMilestone.startDate} — {proactiveData.activeMilestone.endDate}</span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {onNavigate && (
-                    <button
-                      onClick={() => onNavigate("plans")}
-                      className="self-start font-sans text-xs font-semibold text-accent hover:text-accent/80 flex items-center gap-1.5 transition-all mt-2"
-                    >
-                      Resume Roadmap <ArrowRight size={13} />
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col justify-center items-center text-center gap-2">
-                  <span className="font-sans text-[10px] text-muted-foreground">No active plans yet.</span>
-                  <span className="font-sans text-xs text-accent">Type a goal below to begin.</span>
-                </div>
-              )}
-
-              {/* Reflection & Hard Constraints Card */}
-              <div className="flex flex-col gap-5">
-                {/* Upcoming Hard Constraint (If exists) */}
-                {proactiveData.upcomingHardConstraint ? (
-                  <div className="bg-red-500/5 border border-red-500/20 p-4 rounded-xl flex flex-col gap-1.5">
-                    <span className="font-sans text-[8px] font-semibold text-red-400 uppercase tracking-widest flex items-center gap-1.5">
-                      🎓 Upcoming Hard Constraint
-                    </span>
-                    <h4 className="font-sans text-xs font-semibold text-foreground/90">
-                      {proactiveData.upcomingHardConstraint.title}
-                    </h4>
-                    <span className="font-sans text-[9px] text-muted-foreground/75">
-                      Starts: {proactiveData.upcomingHardConstraint.startDate}
-                    </span>
-                  </div>
-                ) : null}
-
-                {/* Reflection Card */}
-                {proactiveData.recentReflection ? (
-                  <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col gap-2 flex-1 justify-center">
-                    <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
-                      <BookOpen size={11} /> Recent Reflection
-                    </span>
-                    <span className="font-sans text-[10px] font-medium text-foreground/75 italic">
-                      {proactiveData.recentReflection.category}
-                    </span>
-                    <p className="font-sans text-xs text-muted-foreground/90 leading-relaxed italic">
-                      "{proactiveData.recentReflection.summary}"
-                    </p>
-                  </div>
-                ) : (
-                  <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col justify-center items-center text-center flex-1">
-                    <span className="font-sans text-[10px] text-muted-foreground">No reflections accumulated yet.</span>
-                  </div>
-                )}
-              </div>
-
+            {/* Today's Intention banner */}
+            <div className="text-center bg-secondary/20 border border-border/30 px-6 py-4 rounded-2xl">
+              <span className="font-sans text-[8px] tracking-[0.2em] font-bold text-accent uppercase">Today's Intention</span>
+              <p className="font-heading text-lg md:text-xl font-light text-muted-foreground italic mt-1 leading-relaxed">
+                "{agenda.intention}"
+              </p>
             </div>
 
-            {/* Priorities Card */}
-            {proactiveData.priorities.length > 0 && (
-              <div className="bg-card border border-border/50 p-6 rounded-2xl flex flex-col gap-4 shadow-sm">
-                <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
-                  <CheckSquare size={11} /> Today's Planned Tasks
-                </span>
+            {/* Main Grid content */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              
+              {/* Left Column (Focus & Work Blocks - takes 2 cols) */}
+              <div className="md:col-span-2 flex flex-col gap-5">
                 
-                <div className="space-y-3">
-                  {proactiveData.priorities.map((task) => {
-                    const isCompleted = task.status === "completed";
-                    return (
-                      <div
-                        key={task.id}
-                        onClick={() => handleToggleTask(task.id, task.status)}
-                        className="flex items-start justify-between border-b border-border/10 pb-2.5 last:border-0 last:pb-0 cursor-pointer group transition-all"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <button
-                            type="button"
-                            className={`h-4 w-4 rounded-full flex items-center justify-center shrink-0 border transition-all mt-0.5 ${
-                              isCompleted
-                                ? "bg-accent border-accent text-foreground"
-                                : "border-muted-foreground/30 text-transparent group-hover:border-accent"
-                            }`}
-                          >
-                            {isCompleted && (
-                              <svg className="w-2.5 h-2.5 text-primary-foreground stroke-[3px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </button>
-                          <span className={`font-sans text-xs text-foreground tracking-wide font-medium transition-all ${
-                            isCompleted ? "line-through text-muted-foreground opacity-65" : "text-foreground group-hover:text-accent/90"
-                          }`}>
-                            {task.title}
-                          </span>
+                {/* Overarching Focus card */}
+                <div className="bg-secondary/40 border border-border/30 p-5 rounded-2xl flex flex-col gap-2">
+                  <span className="font-sans text-[9px] tracking-wider text-accent font-bold uppercase flex items-center gap-1.5">
+                    <Compass size={11} /> Today's Focus
+                  </span>
+                  <h3 className="font-heading text-xl font-light text-foreground">
+                    {agenda.focus}
+                  </h3>
+                </div>
+
+                {/* Work Blocks Checklist */}
+                <div className="bg-card border border-border/50 p-6 rounded-2xl flex flex-col gap-4 shadow-sm">
+                  <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5 border-b border-border/10 pb-2.5">
+                    <CheckSquare size={11} /> Suggested Work Blocks
+                  </span>
+
+                  <div className="space-y-6">
+                    {agenda.workBlocks.map((block: any, bIdx: number) => (
+                      <div key={bIdx} className="flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-sans text-xs font-semibold text-foreground/90">{block.title}</span>
+                          <span className="font-sans text-[9px] text-accent/80 font-semibold">{block.startTime} - {block.endTime}</span>
                         </div>
-                        <div className="flex items-center gap-3 shrink-0 ml-3">
-                          {task.suggestedDate && (
-                            <span className="font-sans text-[9px] text-accent/80 font-medium">
-                              {task.timeBlock ? `${task.timeBlock}` : `${task.suggestedDate}`}
-                            </span>
-                          )}
-                          {task.estimatedDuration && (
-                            <span className="font-sans text-[9px] text-muted-foreground/60 flex items-center gap-1">
-                              <Clock size={10} /> {task.estimatedDuration}
-                            </span>
+                        <div className="space-y-2 border-l border-border/20 pl-3">
+                          {block.tasks.length === 0 ? (
+                            <span className="font-sans text-[11px] text-muted-foreground italic">No tasks planned</span>
+                          ) : (
+                            block.tasks.map((task: any) => {
+                              const isCompleted = task.status === "completed";
+                              return (
+                                <div
+                                  key={task._id}
+                                  onClick={() => handleToggleTask(task._id, task.status)}
+                                  className="flex items-start justify-between cursor-pointer group transition-all py-0.5"
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <button
+                                      type="button"
+                                      className={`h-4.5 w-4.5 rounded-full flex items-center justify-center shrink-0 border transition-all mt-0.5 ${
+                                        isCompleted
+                                          ? "bg-accent border-accent text-foreground"
+                                          : "border-muted-foreground/30 text-transparent group-hover:border-accent"
+                                      }`}
+                                    >
+                                      {isCompleted && (
+                                        <svg className="w-2.5 h-2.5 text-primary-foreground stroke-[3px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </button>
+                                    <span className={`font-sans text-xs text-foreground tracking-wide font-medium transition-all ${
+                                      isCompleted ? "line-through text-muted-foreground opacity-65" : "text-foreground group-hover:text-accent/90"
+                                    }`}>
+                                      {task.title}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })
                           )}
                         </div>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
+
               </div>
-            )}
+
+              {/* Right Column (Metrics & Deferrals - takes 1 col) */}
+              <div className="flex flex-col gap-5">
+                
+                {/* Progress Ring Card */}
+                <div className="bg-secondary/40 border border-border/30 p-5 rounded-2xl flex flex-col items-center text-center gap-4">
+                  <span className="font-sans text-[9px] tracking-wider text-accent font-bold uppercase">
+                    Daily Progress
+                  </span>
+                  
+                  <div className="relative flex items-center justify-center">
+                    <svg className="w-20 h-20 transform -rotate-90">
+                      <circle
+                        cx="40"
+                        cy="40"
+                        r={radius}
+                        className="stroke-secondary-foreground/10"
+                        strokeWidth="5"
+                        fill="transparent"
+                      />
+                      <circle
+                        cx="40"
+                        cy="40"
+                        r={radius}
+                        className="stroke-accent transition-all duration-500 ease-in-out"
+                        strokeWidth="5"
+                        fill="transparent"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <span className="absolute font-heading text-lg font-light text-foreground mt-0.5">
+                      {stats.percentage}%
+                    </span>
+                  </div>
+
+                  <span className="font-sans text-xs text-muted-foreground">
+                    {stats.completed} of {stats.total} tasks completed
+                  </span>
+                </div>
+
+                {/* Next Upcoming Deadline */}
+                {agenda.upcomingDeadline && (
+                  <div className="bg-red-500/5 border border-red-500/10 p-4 rounded-xl flex flex-col gap-1.5">
+                    <span className="font-sans text-[8px] font-semibold text-red-400 uppercase tracking-widest flex items-center gap-1.5">
+                      📅 Upcoming Deadline
+                    </span>
+                    <h4 className="font-sans text-xs font-semibold text-foreground/90 leading-tight">
+                      {agenda.upcomingDeadline}
+                    </h4>
+                  </div>
+                )}
+
+                {/* Current Long term goal */}
+                {proactiveData?.currentGoal && (
+                  <div className="bg-secondary/40 border border-border/30 p-4 rounded-xl flex flex-col gap-1.5">
+                    <span className="font-sans text-[8px] font-semibold text-accent uppercase tracking-widest">
+                      Current Roadmap Goal
+                    </span>
+                    <h4 className="font-sans text-xs font-semibold text-foreground/90 leading-tight">
+                      {proactiveData.currentGoal}
+                    </h4>
+                    <span className="font-sans text-[9px] text-muted-foreground/60">
+                      {proactiveData.planProgress}% overall roadmap completion
+                    </span>
+                  </div>
+                )}
+
+                {/* Recent Reflection Card */}
+                {proactiveData?.recentReflection && (
+                  <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col gap-2">
+                    <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen size={11} /> Recent Insight
+                    </span>
+                    <p className="font-sans text-[11px] text-muted-foreground/90 leading-relaxed italic">
+                      "{proactiveData.recentReflection.summary}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Resume Working gold CTA */}
+                {onNavigate && (
+                  <button
+                    onClick={() => onNavigate("tasks")}
+                    className="w-full py-3.5 rounded-full bg-accent hover:bg-accent/90 text-primary-foreground font-sans font-semibold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2 shadow-sm mt-1"
+                  >
+                    Resume Working <ArrowRight size={13} />
+                  </button>
+                )}
+
+              </div>
+
+            </div>
 
           </div>
         )}
