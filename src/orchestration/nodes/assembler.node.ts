@@ -13,6 +13,8 @@ import type { NodeResult } from "../graph/types";
 import type { GraphState } from "../graph/state";
 import { MessageRepository } from "@/repositories/message.repository";
 import { Milestone } from "@/models/Milestone";
+import { Memory } from "@/models/Memory";
+import { Types } from "mongoose";
 import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
 import { GraphLogger } from "../utils/graph-logger";
@@ -46,7 +48,10 @@ export async function assemblerNode(
 
       // Link new memory to assistant message if one was just stored
       if (state.newMemory && assistantMsgId) {
-        await state.newMemory.updateOne({ assistantMessageId: assistantMsgId }).catch((err) => {
+        await Memory.updateOne(
+          { _id: new Types.ObjectId(state.newMemory._id) },
+          { $set: { assistantMessageId: assistantMsgId } }
+        ).catch((err) => {
           console.error("[Assembler] Failed to link memory to message:", err);
         });
       }

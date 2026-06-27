@@ -630,6 +630,49 @@ Determine the intent:
         ? state.activePlans 
         : await PlanRepository.findFullTree(uid);
 
+      // Prune existingPlans to strip heavy fields like history and diagnostics
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const prunedPlans = existingPlans.map((p: any) => ({
+        id: p._id?.toString() || p.id,
+        title: p.title,
+        description: p.description || "",
+        status: p.status,
+        priority: p.priority,
+        estimatedDuration: p.estimatedDuration,
+        type: p.type,
+        progress: p.progress,
+        milestones: (p.milestones || []).map((m: any) => ({
+          id: m._id?.toString() || m.id,
+          title: m.title,
+          description: m.description || "",
+          status: m.status,
+          priority: m.priority,
+          estimatedDuration: m.estimatedDuration,
+          category: m.category,
+          startDate: m.startDate,
+          endDate: m.endDate,
+          progress: m.progress,
+          goals: (m.goals || []).map((g: any) => ({
+            id: g._id?.toString() || g.id,
+            title: g.title,
+            description: g.description || "",
+            status: g.status,
+            priority: g.priority,
+            progress: g.progress,
+            tasks: (g.tasks || []).map((t: any) => ({
+              id: t._id?.toString() || t.id,
+              title: t.title,
+              description: t.description || "",
+              status: t.status,
+              priority: t.priority,
+              suggestedDate: t.suggestedDate,
+              timeBlock: t.timeBlock,
+              dependencies: t.dependencies,
+            })),
+          })),
+        })),
+      }));
+
       // 2. Format context for prompt
       const lifeEventsContext = lifeEvents?.detectedEvents?.length
         ? `\nDetected Life Events (auto-extracted):\n${JSON.stringify(lifeEvents.detectedEvents, null, 2)}\n`
@@ -652,8 +695,8 @@ ${JSON.stringify(traits.map((t) => ({ trait: t.trait, description: t.description
 Active Reflections:
 ${JSON.stringify(reflections.map((r) => ({ title: r.title, summary: r.summary })), null, 2)}
 ${lifeEventsContext}
-Existing Plans Tree:
-${JSON.stringify(existingPlans, null, 2)}
+Existing Plans Tree (Pruned):
+${JSON.stringify(prunedPlans, null, 2)}
 `;
 
       const prompt = `
