@@ -15,6 +15,7 @@
 import type { NodeResult } from "../graph/types";
 import type { GraphState } from "../graph/state";
 import { ExecutionAgent } from "@/agents/execution-agent";
+import { DailyAgendaRepository } from "@/repositories/daily-agenda.repository";
 import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
 
@@ -89,6 +90,7 @@ export async function executionNode(
     let agenda: unknown | null = null;
     let agendaBuilt = false;
     let agendaAction: "created" | "regenerated" = "created";
+    let callsMade = 0;
 
     // ── Branch 1: Planning just succeeded — force-regenerate so agenda reflects new plan
     if (state.planResult?.success === true) {
@@ -99,31 +101,36 @@ export async function executionNode(
         "running",
         "New plan detected \u2014 rebuilding your agenda from scratch\u2026"
       );
-      agenda = await ExecutionAgent.getOrCreateDailyAgenda(uid, todayStr, true);
+      agenda = await ExecutionAgent.getOrCreateDailyAgenda(uid, todayStr, true, state);
       agendaBuilt = agenda !== null;
       agendaAction = "regenerated";
+      callsMade = agendaBuilt ? 1 : 0;
     }
 
-    // ── Branch 2: Task update intent — rebalance existing agenda
+    // ── Branch 2: Task update intent — deterministically reload agenda from DB without calling Gemini
     else if (intentType === "task_update") {
-      console.log(`[ExecutionNode] Task update detected — rebalancing agenda.`);
+      console.log(`[ExecutionNode] Task update detected — deterministically reloading daily agenda.`);
       emitStatusToStream(
         state,
         "execution",
         "running",
-        "Task updated \u2014 rebalancing today\u2019s agenda\u2026"
+        "Task updated \u2014 updating daily agenda\u2026"
       );
-      agenda = await ExecutionAgent.rebalanceAgenda(uid, todayStr);
-      agendaBuilt = agenda !== null;
-      agendaAction = "regenerated";
+      agenda = await DailyAgendaRepository.findByUserAndDate(uid, todayStr);
+      agendaBuilt = false; // 0 Gemini calls
+      agendaAction = "created";
+      callsMade = 0;
     }
 
     // ── Branch 3: Execution inquiry + no agenda yet — lazy-load agenda
     else if (intentType === "execution_inquiry" && state.todayAgenda === null) {
       console.log(`[ExecutionNode] Execution inquiry — loading agenda for today.`);
-      agenda = await ExecutionAgent.getOrCreateDailyAgenda(uid, todayStr);
+      const exists = await DailyAgendaRepository.findByUserAndDate(uid, todayStr);
+      
+      agenda = await ExecutionAgent.getOrCreateDailyAgenda(uid, todayStr, false, state);
       agendaBuilt = agenda !== null;
       agendaAction = "created";
+      callsMade = exists ? 0 : (agendaBuilt ? 1 : 0);
     }
 
     // ── Branch 4: Agenda already in state — nothing to do
@@ -174,14 +181,15 @@ export async function executionNode(
         agendaBuilt,
         todayAgenda,
         emittedEvents: [...state.emittedEvents, ...newEvents],
+        aiCallsCount: state.aiCallsCount + callsMade,
       },
       metadata: {
         success: true,
         duration: Date.now() - startedAt,
         skipped: false,
         reason: agendaBuilt
-          ? `Agenda ${agendaAction} for ${todayStr}`
-          : `No agenda action taken | intent=${intentType}`,
+          ? `Agenda ${agendaAction} for ${todayStr} | Calls: ${callsMade}`
+          : `No agenda action taken | intent=${intentType} | Calls: ${callsMade}`,
       },
     };
   } catch (err) {
@@ -197,7 +205,9 @@ export async function executionNode(
     console.error(`[ExecutionNode] Error: ${errorMessage}`);
 
     return {
-      patch: {},
+      patch: {
+        aiCallsCount: state.aiCallsCount,
+      },
       metadata: {
         success: false,
         duration: Date.now() - startedAt,

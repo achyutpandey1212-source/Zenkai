@@ -177,6 +177,12 @@ export interface GraphState {
    * Plugins write their outputs here without modifying GraphState's core schema.
    */
   pluginData: Record<string, unknown>;
+
+  // ── AI Budgeting ──────────────────────────────────────────────────────────
+  /** Tracks the number of Gemini API calls made in this workflow run */
+  aiCallsCount: number;
+  /** Maximum number of Gemini API calls allowed for this workflow run */
+  maxAiCallsAllowed: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,6 +200,8 @@ export function createInitialState(overrides: Partial<GraphState> & {
     workflowVersion: "1.0.0",
     graphVersion: "1.0.0",
     todayStr: new Date().toISOString().split("T")[0],
+    aiCallsCount: 0,
+    maxAiCallsAllowed: 3, // Default budget for general chat
     intent: null,
     lifeEvents: null,
     routingDecision: null,

@@ -18,8 +18,13 @@ import type { NodeResult } from "../graph/types";
 import type { GraphState } from "../graph/state";
 import { GeminiService } from "@/services/gemini.service";
 import { Task } from "@/models/Task";
+import { Goal } from "@/models/Goal";
+import { Milestone } from "@/models/Milestone";
+import { Plan } from "@/models/Plan";
 import { ExecutionAgent } from "@/agents/execution-agent";
 import { PlanningAgent } from "@/agents/planning-agent";
+import { ZenkaiEvent } from "../events/event-types";
+import type { InternalEvent } from "../events/event-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Streaming protocol helper — null-byte delimited control events
@@ -136,6 +141,7 @@ export async function companionNode(
 
     let planPromptText = "";
     let taskUpdateExecuted = false;
+    const newEvents: InternalEvent[] = [];
 
     // ── 1. Build intent-aware planPromptText ──────────────────────────────────
 
@@ -179,6 +185,51 @@ export async function companionNode(
           });
 
           await PlanningAgent.recalculateProgress(uid, targetTask._id.toString());
+
+          // Fetch the updated goals/milestones/plans to emit events
+          const updatedTask = await Task.findById(targetTask._id).lean();
+          const goal = updatedTask?.goalId ? await Goal.findById(updatedTask.goalId).lean() : null;
+          const milestone = goal?.milestoneId ? await Milestone.findById(goal.milestoneId).lean() : null;
+          const plan = milestone?.planId ? await Plan.findById(milestone.planId).lean() : null;
+
+          if (newStatus === "completed") {
+            newEvents.push({
+              name: ZenkaiEvent.TaskCompleted,
+              payload: {
+                uid,
+                workflowId: state.workflowId,
+                taskId: targetTask._id.toString(),
+                taskTitle: targetTask.title,
+              },
+              emittedAt: new Date().toISOString(),
+            });
+          }
+
+          if (milestone && milestone.progress === 100) {
+            newEvents.push({
+              name: ZenkaiEvent.MilestoneCompleted,
+              payload: {
+                uid,
+                workflowId: state.workflowId,
+                milestoneId: milestone._id.toString(),
+                milestoneTitle: milestone.title,
+              },
+              emittedAt: new Date().toISOString(),
+            });
+          }
+
+          if (plan) {
+            newEvents.push({
+              name: ZenkaiEvent.PlanUpdated,
+              payload: {
+                uid,
+                workflowId: state.workflowId,
+                planId: plan._id.toString(),
+                planTitle: plan.title,
+              },
+              emittedAt: new Date().toISOString(),
+            });
+          }
 
           taskUpdateExecuted = true;
           planPromptText = buildTaskCompletionPrompt(targetTask.title, newStatus);
@@ -332,6 +383,7 @@ export async function companionNode(
         companionResponseDraft: accumulatedText,
         taskUpdateExecuted,
         planPromptText,
+        emittedEvents: [...state.emittedEvents, ...newEvents],
       },
       metadata: {
         success: true,

@@ -13,6 +13,7 @@
 import type { NodeResult } from "../graph/types";
 import type { GraphState, RoutingDecision } from "../graph/state";
 import { PlanningAgent } from "@/agents/planning-agent";
+import type { PlanningIntent, LifeEventExtraction } from "@/agents/planning-agent";
 import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
 
@@ -79,17 +80,28 @@ export async function routerNode(
   const startedAt = Date.now();
 
   try {
-    // Run life event extraction and initial intent detection in parallel
-    const [lifeEvents, prelimIntent] = await Promise.all([
-      PlanningAgent.extractLifeEvents(state.userMessage),
-      PlanningAgent.detectIntent(state.userMessage, state.history),
-    ]);
+    let intent: PlanningIntent;
+    let lifeEvents: LifeEventExtraction;
+    let maxAiCallsAllowed = 3; // Default General chat budget
+    let callsMade = 0;
 
-    // If life events flagged planning, detectIntent would fast-path anyway;
-    // but we re-call with lifeEvents so the fast-path is used cleanly.
-    const intent = lifeEvents.suggestsPlanning
-      ? await PlanningAgent.detectIntent(state.userMessage, state.history, lifeEvents)
-      : prelimIntent;
+    // 1. Try deterministic local shortcuts first
+    const shortcut = PlanningAgent.detectLocalIntentShortcut(state.userMessage, state.history);
+
+    if (shortcut) {
+      intent = shortcut.intent;
+      lifeEvents = shortcut.lifeEvents;
+      maxAiCallsAllowed = shortcut.budget;
+      console.log(`[Router] Local shortcut matched. Intent: ${intent.type} | Budget: ${maxAiCallsAllowed}`);
+    } else {
+      // 2. Fall back to unified Gemini call (Router + Life Event Extraction in 1 call)
+      const merged = await PlanningAgent.detectIntentAndExtractLifeEvents(state.userMessage, state.history);
+      intent = merged.intent;
+      lifeEvents = merged.lifeEvents;
+      maxAiCallsAllowed = merged.budget;
+      callsMade = 1;
+      console.log(`[Router] Gemini unified routing complete. Intent: ${intent.type} | Life signals: ${lifeEvents.suggestsPlanning} | Budget: ${maxAiCallsAllowed}`);
+    }
 
     const routingDecision = buildRoutingDecision(
       intent.type,
@@ -97,7 +109,7 @@ export async function routerNode(
     );
 
     console.log(
-      `[Router] Intent: ${intent.type} | Life signals: ${lifeEvents.suggestsPlanning} | Foreground: [${routingDecision.foreground.join(",")}] | BG: [${routingDecision.background.join(",")}]`
+      `[Router] Decision reasoning: ${routingDecision.reasoning} | Foreground: [${routingDecision.foreground.join(",")}] | BG: [${routingDecision.background.join(",")}]`
     );
 
     const emittedEvents: InternalEvent[] = [
@@ -119,12 +131,14 @@ export async function routerNode(
         lifeEvents,
         routingDecision,
         emittedEvents,
+        maxAiCallsAllowed,
+        aiCallsCount: state.aiCallsCount + callsMade,
       },
       metadata: {
         success: true,
         duration: Date.now() - startedAt,
         skipped: false,
-        reason: `Intent: ${intent.type} | Sub-graph: ${routingDecision.subGraph}`,
+        reason: `Intent: ${intent.type} | Sub-graph: ${routingDecision.subGraph} | Calls: ${callsMade} | Budget: ${maxAiCallsAllowed}`,
       },
     };
   } catch (err) {

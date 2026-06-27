@@ -8,6 +8,7 @@ import { DailyAgendaRepository } from "@/repositories/daily-agenda.repository";
 import { Task, ITask } from "@/models/Task";
 import { Milestone } from "@/models/Milestone";
 import { Types } from "mongoose";
+import type { GraphState } from "@/orchestration/graph/state";
 
 const EXECUTION_AGENT_SYSTEM_PROMPT = `
 You are the Execution Agent for Zenkai, a luxury AI growth companion.
@@ -60,7 +61,7 @@ export class ExecutionAgent {
   /**
    * Get or generate today's Daily Agenda for a user.
    */
-  static async getOrCreateDailyAgenda(uid: string, dateStr: string, forceRegenerate = false) {
+  static async getOrCreateDailyAgenda(uid: string, dateStr: string, forceRegenerate = false, state?: GraphState) {
     try {
       if (!forceRegenerate) {
         const existing = await DailyAgendaRepository.findByUserAndDate(uid, dateStr);
@@ -71,7 +72,7 @@ export class ExecutionAgent {
       }
 
       console.log(`[ExecutionAgent] Generating daily agenda for user ${uid} on date ${dateStr}`);
-      return await this.generateDailyAgenda(uid, dateStr);
+      return await this.generateDailyAgenda(uid, dateStr, state);
     } catch (error) {
       console.error("[ExecutionAgent] Error in getOrCreateDailyAgenda:", error);
       throw error;
@@ -81,14 +82,20 @@ export class ExecutionAgent {
   /**
    * Run the Execution Agent pipeline to generate today's agenda.
    */
-  private static async generateDailyAgenda(uid: string, dateStr: string) {
+  private static async generateDailyAgenda(uid: string, dateStr: string, state?: GraphState) {
     const startTime = Date.now();
 
-    // 1. Fetch User Context
-    const profile = await ProfileRepository.findByFirebaseUid(uid);
-    const activePlans = await PlanRepository.findFullTree(uid);
-    const activeTraits = await IdentityRepository.findActiveByUser(uid);
-    const activeReflections = await ReflectionRepository.findActiveByUser(uid);
+    // 1. Fetch User Context — reuse GraphState if available to avoid duplicate DB reads
+    const profile = state?.profile ?? await ProfileRepository.findByFirebaseUid(uid);
+    const activePlans = (state?.activePlans && state.activePlans.length > 0)
+      ? state.activePlans
+      : await PlanRepository.findFullTree(uid);
+    const activeTraits = (state?.activeTraits && state.activeTraits.length > 0)
+      ? state.activeTraits
+      : await IdentityRepository.findActiveByUser(uid);
+    const activeReflections = (state?.activeReflections && state.activeReflections.length > 0)
+      ? state.activeReflections
+      : await ReflectionRepository.findActiveByUser(uid);
 
     // Get all tasks for this user
     // We fetch tasks that are suggested for today, or have been deferred/todo/in-progress

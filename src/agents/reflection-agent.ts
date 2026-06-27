@@ -4,6 +4,7 @@ import { IdentityRepository } from "@/repositories/identity.repository";
 import { ReflectionRepository } from "@/repositories/reflection.repository";
 import { MessageRepository } from "@/repositories/message.repository";
 import { IReflection, ReflectionType, ReflectionStatus } from "@/models/Reflection";
+import type { GraphState } from "@/orchestration/graph/state";
 
 const REFLECTION_AGENT_SYSTEM_PROMPT = `
 You are the Reflection Engine Agent for Zenkai.
@@ -54,29 +55,40 @@ export class ReflectionAgent {
   /**
    * Run the Reflection Engine pattern detection and evolution pipeline.
    */
-  static async evaluateAndEvolve(uid: string): Promise<boolean> {
+  static async evaluateAndEvolve(uid: string, state?: GraphState): Promise<boolean> {
     try {
       console.log(`[ReflectionAgent] Starting reflection evolution for user: ${uid}`);
 
-      // 1. Fetch memories, identity traits, recent conversations, and existing reflections
-      const approvedMemories = await MemoryRepository.findApprovedByUser(uid);
-      const activeTraits = await IdentityRepository.findActiveByUser(uid);
+      // 1. Fetch memories, identity traits, recent conversations, and existing reflections — reuse GraphState where possible
+      const approvedMemories = state?.memoryContext?.memories ?? await MemoryRepository.findApprovedByUser(uid);
+      const activeTraits = (state?.activeTraits && state.activeTraits.length > 0)
+        ? state.activeTraits
+        : await IdentityRepository.findActiveByUser(uid);
       const candidateTraits = await IdentityRepository.findCandidatesByUser(uid);
       
-      // Load recent conversations (last 30 messages) to identify behavior patterns
-      const conversations = await MessageRepository.findConversationsByUser(uid);
+      // Load recent conversations to identify behavior patterns — reuse state history
       let recentMessagesFormatted: any[] = [];
-      if (conversations.length > 0) {
-        const latestConvId = conversations[0]._id.toString();
-        const messages = await MessageRepository.findRecentMessages(latestConvId, 30);
-        recentMessagesFormatted = messages.map(msg => ({
+      if (state?.history && state.history.length > 0) {
+        recentMessagesFormatted = state.history.map(msg => ({
           role: msg.role,
           content: msg.content,
-          timestamp: msg.createdAt
         }));
+      } else {
+        const conversations = await MessageRepository.findConversationsByUser(uid);
+        if (conversations.length > 0) {
+          const latestConvId = conversations[0]._id.toString();
+          const messages = await MessageRepository.findRecentMessages(latestConvId, 30);
+          recentMessagesFormatted = messages.map(msg => ({
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.createdAt
+          }));
+        }
       }
 
-      const activeReflections = await ReflectionRepository.findActiveByUser(uid);
+      const activeReflections = (state?.activeReflections && state.activeReflections.length > 0)
+        ? state.activeReflections
+        : await ReflectionRepository.findActiveByUser(uid);
 
       if (approvedMemories.length === 0 && activeReflections.length === 0) {
         console.log(`[ReflectionAgent] No memories or existing reflections found. Skipping.`);

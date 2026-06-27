@@ -90,156 +90,228 @@ export async function backgroundNode(
       };
     }
 
-    // ── 2. Build task list from routing decision ───────────────────────────────
-    type AgentTask =
-      | { agent: "memory"; promise: Promise<IMemory | null> }
-      | { agent: "identity"; promise: Promise<boolean> }
-      | { agent: "reflection"; promise: Promise<boolean> };
-
-    const agentTasks: AgentTask[] = [];
-
-    if (background.includes("memory")) {
-      console.log("[BackgroundNode] Queueing memory evaluation.");
-      agentTasks.push({
-        agent: "memory",
-        promise: MemoryAgent.evaluateAndStore(
-          uid,
-          userMessage,
-          companionResponseDraft,
-          conversationId
-        ),
-      });
-    }
-
-    if (background.includes("identity")) {
-      console.log("[BackgroundNode] Queueing identity evolution.");
-      agentTasks.push({
-        agent: "identity",
-        promise: IdentityAgent.evaluateAndEvolve(uid),
-      });
-    }
-
-    if (background.includes("reflection")) {
-      console.log("[BackgroundNode] Queueing reflection evolution.");
-      agentTasks.push({
-        agent: "reflection",
-        promise: ReflectionAgent.evaluateAndEvolve(uid),
-      });
-    }
-
-    // ── 3. Run all in parallel — allSettled so one failure can't block others ──
-    const settled = await Promise.allSettled(agentTasks.map((t) => t.promise));
-
-    // ── 4. Collect outputs and emit events ────────────────────────────────────
     let newMemory: IMemory | null = null;
     let evolvedTraits = false;
     let evolvedReflections = false;
     const newEvents: InternalEvent[] = [];
+    let backgroundCallsCount = 0;
 
-    for (let i = 0; i < agentTasks.length; i++) {
-      const task = agentTasks[i];
-      const result = settled[i];
+    // Check remaining AI budget
+    const remainingBudget = state.maxAiCallsAllowed - state.aiCallsCount;
+    console.log(`[BackgroundNode] Remaining AI budget: ${remainingBudget} (max: ${state.maxAiCallsAllowed}, count: ${state.aiCallsCount})`);
 
-      if (result.status === "rejected") {
-        console.error(
-          `[BackgroundNode] Agent "${task.agent}" failed:`,
-          result.reason
-        );
-        enqueueEvent(
-          streamController,
-          encoder,
-          makeStatusEvent(task.agent, "skipped", `${task.agent} evaluation failed.`)
-        );
-        continue;
-      }
+    // ── 2. Sequential Memory Evaluation (Gatekeeper) ─────────────────────────
+    if (background.includes("memory")) {
+      if (remainingBudget > 0) {
+        console.log("[BackgroundNode] Executing memory agent evaluation.");
+        try {
+          newMemory = await MemoryAgent.evaluateAndStore(
+            uid,
+            userMessage,
+            companionResponseDraft,
+            conversationId
+          );
 
-      const value = result.value;
+          // Admission check consumes 1 call. Consolidation consumes an extra 1 call if admitted.
+          const memoryCallsMade = newMemory ? 2 : 1;
+          backgroundCallsCount += memoryCallsMade;
 
-      if (task.agent === "memory") {
-        const memResult = value as IMemory | null;
-        newMemory = memResult;
+          if (newMemory) {
+            enqueueEvent(
+              streamController,
+              encoder,
+              makeStatusEvent("memory", "completed", "Stored a new memory from this conversation.")
+            );
 
-        if (memResult) {
+            newEvents.push({
+              name: ZenkaiEvent.MemoryAdmitted,
+              payload: {
+                uid,
+                workflowId,
+                memoryId: newMemory._id.toString(),
+                category: (newMemory as any).category ?? "general",
+                content: (newMemory as any).content ?? "",
+              },
+              emittedAt: new Date().toISOString(),
+            });
+          } else {
+            enqueueEvent(
+              streamController,
+              encoder,
+              makeStatusEvent("memory", "skipped", "No new memory required for this conversation.")
+            );
+          }
+        } catch (memErr) {
+          console.error("[BackgroundNode] Memory agent failed:", memErr);
           enqueueEvent(
             streamController,
             encoder,
-            makeStatusEvent("memory", "completed", "Stored a new memory from this conversation.")
+            makeStatusEvent("memory", "skipped", "Memory agent evaluation failed.")
           );
+        }
+      } else {
+        console.log("[BackgroundNode] AI budget exhausted. Deferring memory evaluation.");
+        newEvents.push({
+          name: "BackgroundWorkDeferred",
+          payload: {
+            uid,
+            workflowId,
+            agent: "memory",
+            reason: "AI budget exhausted",
+          },
+          emittedAt: new Date().toISOString(),
+        });
+        enqueueEvent(
+          streamController,
+          encoder,
+          makeStatusEvent("memory", "skipped", "Memory check deferred (AI budget limit).")
+        );
+      }
+    }
 
-          newEvents.push({
-            name: ZenkaiEvent.MemoryAdmitted,
-            payload: {
-              uid,
-              workflowId,
-              memoryId: memResult._id.toString(),
-              category: (memResult as IMemory & { category?: string }).category ?? "general",
-              content: (memResult as IMemory & { content?: string }).content ?? "",
-            } as import("../events/event-types").MemoryAdmittedPayload,
-            emittedAt: new Date().toISOString(),
-          });
+    // ── 3. Gated Parallel Execution of Identity and Reflection Evolution ──────
+    const shouldEvolveIdentity = background.includes("identity");
+    const shouldEvolveReflection = background.includes("reflection");
+
+    if (shouldEvolveIdentity || shouldEvolveReflection) {
+      const isMemoryAdmitted = newMemory !== null;
+      const isHighConfidence = newMemory && (newMemory.confidence >= 0.70);
+
+      if (!isMemoryAdmitted || !isHighConfidence) {
+        console.log(`[BackgroundNode] Skipping evolution. Admitted: ${isMemoryAdmitted}, High confidence: ${isHighConfidence}`);
+        if (shouldEvolveIdentity) {
+          enqueueEvent(
+            streamController,
+            encoder,
+            makeStatusEvent("identity", "skipped", "Gated: No new high-confidence memories.")
+          );
+        }
+        if (shouldEvolveReflection) {
+          enqueueEvent(
+            streamController,
+            encoder,
+            makeStatusEvent("reflection", "skipped", "Gated: No new high-confidence memories.")
+          );
+        }
+      } else {
+        // Gated memory check passed! Now check budget.
+        const currentRemainingBudget = state.maxAiCallsAllowed - (state.aiCallsCount + backgroundCallsCount);
+        
+        if (currentRemainingBudget > 0) {
+          const evolutionTasks: { agent: "identity" | "reflection"; promise: Promise<boolean> }[] = [];
+          
+          if (shouldEvolveIdentity) {
+            evolutionTasks.push({
+              agent: "identity",
+              promise: IdentityAgent.evaluateAndEvolve(uid, state),
+            });
+          }
+          if (shouldEvolveReflection) {
+            evolutionTasks.push({
+              agent: "reflection",
+              promise: ReflectionAgent.evaluateAndEvolve(uid, state),
+            });
+          }
+
+          console.log(`[BackgroundNode] Budget allows (${currentRemainingBudget} left). Running evolution in parallel: ${evolutionTasks.map(t => t.agent).join(", ")}`);
+          
+          const settledEv = await Promise.allSettled(evolutionTasks.map(t => t.promise));
+          backgroundCallsCount += evolutionTasks.length; // Each task consumes 1 Gemini call
+
+          for (let i = 0; i < evolutionTasks.length; i++) {
+            const task = evolutionTasks[i];
+            const result = settledEv[i];
+
+            if (result.status === "rejected") {
+              console.error(`[BackgroundNode] Agent "${task.agent}" failed:`, result.reason);
+              enqueueEvent(
+                streamController,
+                encoder,
+                makeStatusEvent(task.agent, "skipped", `${task.agent} evolution failed.`)
+              );
+              continue;
+            }
+
+            const evolved = result.value;
+            if (task.agent === "identity") {
+              evolvedTraits = evolved;
+              enqueueEvent(
+                streamController,
+                encoder,
+                makeStatusEvent(
+                  "identity",
+                  evolved ? "completed" : "skipped",
+                  evolved ? "Profile updated with new traits." : "Profile checked. No new traits detected."
+                )
+              );
+
+              if (evolved) {
+                newEvents.push({
+                  name: ZenkaiEvent.IdentityTraitEvolved,
+                  payload: { uid, workflowId },
+                  emittedAt: new Date().toISOString(),
+                });
+              }
+            }
+
+            if (task.agent === "reflection") {
+              evolvedReflections = evolved;
+              enqueueEvent(
+                streamController,
+                encoder,
+                makeStatusEvent(
+                  "reflection",
+                  evolved ? "completed" : "skipped",
+                  evolved ? "Recorded growth patterns." : "No new growth patterns recorded."
+                )
+              );
+
+              if (evolved) {
+                newEvents.push({
+                  name: ZenkaiEvent.ReflectionUpdated,
+                  payload: { uid, workflowId, action: "updated" },
+                  emittedAt: new Date().toISOString(),
+                });
+              }
+            }
+          }
         } else {
-          enqueueEvent(
-            streamController,
-            encoder,
-            makeStatusEvent("memory", "skipped", "No new memory required for this conversation.")
-          );
-        }
-      }
-
-      if (task.agent === "identity") {
-        const identityResult = value as boolean;
-        evolvedTraits = identityResult;
-
-        enqueueEvent(
-          streamController,
-          encoder,
-          makeStatusEvent(
-            "identity",
-            identityResult ? "completed" : "skipped",
-            identityResult
-              ? "Profile updated with new traits."
-              : "Profile checked. No new traits detected."
-          )
-        );
-
-        if (identityResult) {
-          newEvents.push({
-            name: ZenkaiEvent.IdentityTraitEvolved,
-            payload: {
-              uid,
-              workflowId,
-            },
-            emittedAt: new Date().toISOString(),
-          });
-        }
-      }
-
-      if (task.agent === "reflection") {
-        const reflectionResult = value as boolean;
-        evolvedReflections = reflectionResult;
-
-        enqueueEvent(
-          streamController,
-          encoder,
-          makeStatusEvent(
-            "reflection",
-            reflectionResult ? "completed" : "skipped",
-            reflectionResult
-              ? "Recorded growth patterns."
-              : "No new growth patterns recorded."
-          )
-        );
-
-        if (reflectionResult) {
-          newEvents.push({
-            name: ZenkaiEvent.ReflectionUpdated,
-            payload: {
-              uid,
-              workflowId,
-              action: "updated",
-            },
-            emittedAt: new Date().toISOString(),
-          });
+          // Defer background evolution tasks since budget is exhausted
+          console.log("[BackgroundNode] AI budget exhausted for identity/reflection. Deferring background tasks.");
+          if (shouldEvolveIdentity) {
+            newEvents.push({
+              name: "BackgroundWorkDeferred",
+              payload: {
+                uid,
+                workflowId,
+                agent: "identity",
+                reason: "AI budget exhausted",
+              },
+              emittedAt: new Date().toISOString(),
+            });
+            enqueueEvent(
+              streamController,
+              encoder,
+              makeStatusEvent("identity", "skipped", "Identity evolution deferred (AI budget limit).")
+            );
+          }
+          if (shouldEvolveReflection) {
+            newEvents.push({
+              name: "BackgroundWorkDeferred",
+              payload: {
+                uid,
+                workflowId,
+                agent: "reflection",
+                reason: "AI budget exhausted",
+              },
+              emittedAt: new Date().toISOString(),
+            });
+            enqueueEvent(
+              streamController,
+              encoder,
+              makeStatusEvent("reflection", "skipped", "Reflection evolution deferred (AI budget limit).")
+            );
+          }
         }
       }
     }
@@ -254,12 +326,13 @@ export async function backgroundNode(
         evolvedTraits,
         evolvedReflections,
         emittedEvents: [...emittedEvents, ...newEvents],
+        aiCallsCount: state.aiCallsCount + backgroundCallsCount,
       },
       metadata: {
         success: true,
         duration: Date.now() - startedAt,
         skipped: false,
-        reason: `Background complete — memory: ${!!newMemory}, identity: ${evolvedTraits}, reflection: ${evolvedReflections}`,
+        reason: `Background complete — memory: ${!!newMemory}, identity: ${evolvedTraits}, reflection: ${evolvedReflections} | Calls: ${backgroundCallsCount}`,
       },
     };
   } catch (err) {
@@ -271,6 +344,7 @@ export async function backgroundNode(
         newMemory: null,
         evolvedTraits: false,
         evolvedReflections: false,
+        aiCallsCount: state.aiCallsCount,
       },
       metadata: {
         success: false,

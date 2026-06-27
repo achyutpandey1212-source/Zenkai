@@ -107,13 +107,15 @@ export async function planningNode(
   );
 
   try {
-    // ── Core planning call
+    // ── Core planning call (pass state to reuse loaded DB context)
     const rawResult = await PlanningAgent.generateOrEvolvePlan(
       state.uid,
       state.intent,
       state.userMessage,
-      state.lifeEvents
+      state.lifeEvents,
+      state
     );
+    const callsMade = rawResult ? 1 : 0;
 
     // ── Guard: agent returned null (e.g. DB error inside PlanningAgent)
     if (rawResult === null) {
@@ -126,6 +128,7 @@ export async function planningNode(
       return {
         patch: {
           planResult: { success: false, milestonesCreated: 0, tasksCreated: 0 },
+          aiCallsCount: state.aiCallsCount + callsMade,
         },
         metadata: {
           success: false,
@@ -195,6 +198,7 @@ export async function planningNode(
       patch: {
         planResult,
         emittedEvents: [...state.emittedEvents, ...newEvents],
+        aiCallsCount: state.aiCallsCount + callsMade,
       },
       metadata: {
         success: true,

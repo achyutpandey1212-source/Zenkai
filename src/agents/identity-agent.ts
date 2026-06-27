@@ -3,6 +3,7 @@ import { MemoryRepository } from "@/repositories/memory.repository";
 import { IdentityRepository } from "@/repositories/identity.repository";
 import { IdentityProposalRepository } from "@/repositories/identity-proposal.repository";
 import { IIdentityTrait, IdentityTraitCategory } from "@/models/IdentityTrait";
+import type { GraphState } from "@/orchestration/graph/state";
 
 const IDENTITY_AGENT_SYSTEM_PROMPT = `
 You are the Identity Engine Agent for Zenkai.
@@ -50,13 +51,15 @@ export class IdentityAgent {
    * Run the Identity Engine evolution process.
    * Compares user's long-term memories with their current traits and generates updates and proposals.
    */
-  static async evaluateAndEvolve(uid: string): Promise<boolean> {
+  static async evaluateAndEvolve(uid: string, state?: GraphState): Promise<boolean> {
     try {
       console.log(`[IdentityAgent] Starting identity evolution for user: ${uid}`);
 
-      // 1. Fetch memories, current traits, and proposals
-      const approvedMemories = await MemoryRepository.findApprovedByUser(uid);
-      const activeTraits = await IdentityRepository.findActiveByUser(uid);
+      // 1. Fetch memories, current traits, and proposals — reuse GraphState where possible
+      const approvedMemories = state?.memoryContext?.memories ?? await MemoryRepository.findApprovedByUser(uid);
+      const activeTraits = (state?.activeTraits && state.activeTraits.length > 0)
+        ? state.activeTraits
+        : await IdentityRepository.findActiveByUser(uid);
       const candidateTraits = await IdentityRepository.findCandidatesByUser(uid);
       const pendingProposals = await IdentityProposalRepository.findPendingByUser(uid);
 

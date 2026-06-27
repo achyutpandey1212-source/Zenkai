@@ -9,6 +9,7 @@ import { IdentityRepository } from "@/repositories/identity.repository";
 import { ReflectionRepository } from "@/repositories/reflection.repository";
 import { PlanRepository } from "@/repositories/plan.repository";
 import { Types } from "mongoose";
+import type { GraphState } from "@/orchestration/graph/state";
 
 // Re-exported so chat route can import them
 export type LifeEvent = {
@@ -80,6 +81,42 @@ For "create_or_modify": identify planType ("career" | "learning" | "exams" | "pr
 For "task_update": extract the EXACT taskTitle and taskStatus ("completed" | "in_progress" | "todo"). Leave taskTitle empty string if no specific task name is mentioned.
 
 Return a JSON object matching the requested schema.
+`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UNIFIED ROUTER & EXTRACTION PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
+const MERGED_ROUTER_SYSTEM_PROMPT = `
+You are the Unified Routing and Extraction Agent for Zenkai's Growth Engine.
+Your job is to analyse the user's latest message and recent conversation history to perform intent classification AND life event extraction in a single, unified pass.
+
+PART 1: INTENT CLASSIFICATION
+Classifications:
+1. "create_or_modify" — User wants to create a new plan or evolve an existing roadmap/study plan/project/career goal. Examples: "I want to become an SDE", "Plan my semester", "Help me prepare for placements", "I no longer want to build a startup", sharing exam dates/schedules, describing academic or career goals.
+2. "task_update" — User is updating the status of a specific, named task. Examples: "I've completed Arrays", "I finished my revision task", "I am working on Linked Lists now". IMPORTANT: Only classify as task_update if a SPECIFIC named task is mentioned.
+3. "execution_inquiry" — User is asking what to do TODAY specifically. Examples: "What should I do today?", "What should I study?", "Plan my day", "What's on my agenda?".
+4. "none" — Standard conversation with no planning, task, or execution relevance.
+
+For "create_or_modify": identify planType ("career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal") and a goalTitle (short, descriptive goal).
+For "task_update": extract the EXACT taskTitle and taskStatus ("completed" | "in_progress" | "todo"). Leave taskTitle empty string if no specific task name is mentioned.
+
+PART 2: LIFE EVENT EXTRACTION
+Silently determine whether the message contains structured, actionable life information that Zenkai should autonomously act on — WITHOUT the user explicitly asking for a plan.
+Detect these life signals:
+- Upcoming exams, tests, or assessments (with or without dates)
+- Project deadlines or submission dates
+- Career goals, job/internship targets, placements
+- Skill or learning goals ("I want to learn X", "I need to clear Y", "I'm preparing for Z")
+- Events, hackathons, meetups, interviews scheduled
+- Habits the user wants to build or break
+- Constraints ("I only have 2 hours a day", "I'm available on weekends only")
+- Long-term goals or aspirations shared in passing
+
+Rules:
+- If the message contains ANY of the above life signals — even implicitly — set hasActionableContent: true.
+- Set suggestsPlanning: true if Zenkai should proactively create or update a roadmap based on this message. (Note: If suggestsPlanning is true, the intentType should generally be "create_or_modify").
+
+You must return a JSON response matching the requested schema.
 `;
 
 const PLANNER_SYSTEM_PROMPT = `
@@ -159,6 +196,245 @@ export class PlanningAgent {
       this.client = new GoogleGenAI({ apiKey });
     }
     return this.client;
+  }
+
+  /**
+   * Deterministically classifies common casual messages (greetings, thanks, acknowledgements)
+   * or simple task updates to bypass Gemini router calls completely.
+   */
+  static detectLocalIntentShortcut(
+    message: string,
+    history: { role: "user" | "model"; content: string }[]
+  ): { intent: PlanningIntent; lifeEvents: LifeEventExtraction; budget: number } | null {
+    const text = message.trim().toLowerCase();
+
+    // Helper patterns
+    const greetings = ["hi", "hello", "hey", "yo", "sup", "greetings", "good morning", "good afternoon", "good evening"];
+    const thanks = ["thanks", "thank you", "thankyou", "thx", "appreciate it"];
+    const acknowledgements = ["ok", "okay", "yep", "yup", "sure", "cool", "nice", "awesome", "great", "perfect", "got it", "fine", "indeed"];
+
+    const isGreeting = greetings.includes(text) || greetings.some(g => text.startsWith(g + " "));
+    const isThanks = thanks.includes(text) || thanks.some(th => text.startsWith(th + " "));
+    const isAck = acknowledgements.includes(text) || text.length <= 3;
+    const isEmoji = /^[\p{Emoji_Presentation}\p{Emoji}\u200d\uFE0F\s]+$/u.test(text);
+
+    if (isGreeting || isThanks || isAck || isEmoji) {
+      // Make the AI budget configurable per workflow type rather than hardcoded. For example:
+      // Greeting: 2
+      // General chat: 3
+      // Planning: 5
+      // Future premium workflows can increase this budget without changing orchestration logic.
+      const budget = isGreeting ? 2 : 3;
+      return {
+        intent: { type: "none", details: "Deterministic casual classification" },
+        lifeEvents: {
+          hasActionableContent: false,
+          suggestsPlanning: false,
+          extractionReason: "Deterministic casual bypass",
+          detectedEvents: []
+        },
+        budget
+      };
+    }
+
+    // Deterministic task updates
+    const completedPatterns = [
+      /^(?:i\s+)?(?:completed|finished|done\s+with|marked|checked)\s+([a-zA-Z0-9\s-_]{3,50})$/i,
+      /^([a-zA-Z0-9\s-_]{3,50})\s+(?:is\s+)?(?:completed|finished|done|checked)$/i
+    ];
+
+    const todoPatterns = [
+      /^(?:i\s+)?(?:unchecked|reset|reopened)\s+([a-zA-Z0-9\s-_]{3,50})$/i,
+      /^([a-zA-Z0-9\s-_]{3,50})\s+(?:is\s+)?(?:unchecked|reset|reopened)$/i
+    ];
+
+    for (const pat of completedPatterns) {
+      const match = text.match(pat);
+      if (match) {
+        return {
+          intent: {
+            type: "task_update",
+            taskTitle: match[1].trim(),
+            taskStatus: "completed",
+            details: "Deterministic task completion bypass"
+          },
+          lifeEvents: {
+            hasActionableContent: false,
+            suggestsPlanning: false,
+            extractionReason: "Deterministic task update bypass",
+            detectedEvents: []
+          },
+          budget: 3 // Task updates are general chat level budget
+        };
+      }
+    }
+
+    for (const pat of todoPatterns) {
+      const match = text.match(pat);
+      if (match) {
+        return {
+          intent: {
+            type: "task_update",
+            taskTitle: match[1].trim(),
+            taskStatus: "todo",
+            details: "Deterministic task reopening bypass"
+          },
+          lifeEvents: {
+            hasActionableContent: false,
+            suggestsPlanning: false,
+            extractionReason: "Deterministic task update bypass",
+            detectedEvents: []
+          },
+          budget: 3
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Merged Gemini API call that detects both intent and life events in a single call.
+   */
+  static async detectIntentAndExtractLifeEvents(
+    message: string,
+    history: { role: "user" | "model"; content: string }[]
+  ): Promise<{ intent: PlanningIntent; lifeEvents: LifeEventExtraction; budget: number }> {
+    try {
+      const ai = this.getClient();
+      const chatHistoryText = history
+        .slice(-6)
+        .map((h) => `${h.role === "user" ? "User" : "Zenkai"}: ${h.content}`)
+        .join("\n");
+
+      const prompt = `
+Conversation History:
+\${chatHistoryText}
+
+Latest Message:
+User: \${message}
+
+Determine the intent and extract any life events:
+`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+          systemInstruction: MERGED_ROUTER_SYSTEM_PROMPT.trim(),
+          temperature: 0.1,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              intentType: {
+                type: "STRING",
+                enum: ["create_or_modify", "task_update", "execution_inquiry", "none"],
+              },
+              taskTitle: { type: "STRING" },
+              taskStatus: { type: "STRING" },
+              planType: { type: "STRING" },
+              goalTitle: { type: "STRING" },
+              details: { type: "STRING" },
+              lifeEvents: {
+                type: "OBJECT",
+                properties: {
+                  hasActionableContent: { type: "BOOLEAN" },
+                  suggestsPlanning: { type: "BOOLEAN" },
+                  extractionReason: { type: "STRING" },
+                  detectedEvents: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        type: {
+                          type: "STRING",
+                          enum: ["exam", "deadline", "project", "goal", "event", "constraint", "career", "habit"],
+                        },
+                        title: { type: "STRING" },
+                        date: { type: "STRING" },
+                        description: { type: "STRING" },
+                      },
+                      required: ["type", "title", "description"],
+                    },
+                  },
+                },
+                required: ["hasActionableContent", "suggestsPlanning", "extractionReason", "detectedEvents"],
+              },
+            },
+            required: ["intentType", "lifeEvents"],
+          },
+        },
+      });
+
+      const text = response.text;
+      if (!text) {
+        return {
+          intent: { type: "none" },
+          lifeEvents: { hasActionableContent: false, suggestsPlanning: false, extractionReason: "No response", detectedEvents: [] },
+          budget: 3
+        };
+      }
+
+      const parsed = JSON.parse(text) as {
+        intentType: "create_or_modify" | "task_update" | "execution_inquiry" | "none";
+        taskTitle?: string;
+        taskStatus?: string;
+        planType?: string;
+        goalTitle?: string;
+        details?: string;
+        lifeEvents: {
+          hasActionableContent: boolean;
+          suggestsPlanning: boolean;
+          extractionReason: string;
+          detectedEvents: LifeEvent[];
+        };
+      };
+
+      const validTaskStatuses = ["completed", "in_progress", "todo"];
+      const validPlanTypes = ["career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"];
+
+      const intent: PlanningIntent = {
+        type: parsed.intentType,
+        taskTitle: parsed.taskTitle,
+        taskStatus: validTaskStatuses.includes(parsed.taskStatus || "")
+          ? (parsed.taskStatus as "completed" | "in_progress" | "todo")
+          : undefined,
+        planType: validPlanTypes.includes(parsed.planType || "")
+          ? (parsed.planType as PlanningIntent["planType"])
+          : undefined,
+        goalTitle: parsed.goalTitle,
+        details: parsed.details,
+      };
+
+      // Safety guard: task_update requires a non-empty taskTitle
+      if (intent.type === "task_update" && !intent.taskTitle?.trim()) {
+        intent.type = "none";
+      }
+
+      // Make the AI budget configurable per workflow type rather than hardcoded. For example:
+      // Greeting: 2
+      // General chat: 3
+      // Planning: 5
+      // Future premium workflows can increase this budget without changing orchestration logic.
+      let budget = 3;
+      if (intent.type === "create_or_modify" || parsed.lifeEvents.suggestsPlanning) {
+        budget = 5;
+      }
+
+      return {
+        intent,
+        lifeEvents: parsed.lifeEvents,
+        budget
+      };
+    } catch (error) {
+      console.error("[PlanningAgent] Unified intent and extraction error:", error);
+      return {
+        intent: { type: "none" },
+        lifeEvents: { hasActionableContent: false, suggestsPlanning: false, extractionReason: "Extraction failed", detectedEvents: [] },
+        budget: 3
+      };
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -330,17 +606,29 @@ Determine the intent:
     uid: string,
     intent: PlanningIntent,
     userMessage: string,
-    lifeEvents?: LifeEventExtraction
+    lifeEvents?: LifeEventExtraction,
+    state?: GraphState
   ): Promise<{ success: boolean; milestonesCreated: number; tasksCreated: number } | null> {
     const startTime = Date.now();
     try {
       console.log(`[PlanningAgent] Executing plan generation/evolution for user ${uid}`);
-      // 1. Fetch user context
-      const profile = await ProfileRepository.findByFirebaseUid(uid);
-      const memories = await MemoryRepository.findApprovedByUser(uid);
-      const traits = await IdentityRepository.findActiveByUser(uid);
-      const reflections = await ReflectionRepository.findActiveByUser(uid);
-      const existingPlans = await PlanRepository.findFullTree(uid);
+      // 1. Fetch user context — reuse GraphState if available to avoid duplicate DB reads
+      const profile = state?.profile ?? await ProfileRepository.findByFirebaseUid(uid);
+      
+      // Use pruned top-N memories from GraphState, falls back to full list
+      const memories = state?.memoryContext?.memories ?? await MemoryRepository.findApprovedByUser(uid);
+      
+      const traits = (state?.activeTraits && state.activeTraits.length > 0) 
+        ? state.activeTraits 
+        : await IdentityRepository.findActiveByUser(uid);
+        
+      const reflections = (state?.activeReflections && state.activeReflections.length > 0) 
+        ? state.activeReflections 
+        : await ReflectionRepository.findActiveByUser(uid);
+        
+      const existingPlans = (state?.activePlans && state.activePlans.length > 0) 
+        ? state.activePlans 
+        : await PlanRepository.findFullTree(uid);
 
       // 2. Format context for prompt
       const lifeEventsContext = lifeEvents?.detectedEvents?.length
