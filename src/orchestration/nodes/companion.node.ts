@@ -122,6 +122,7 @@ export async function companionNode(
   state: Readonly<GraphState>
 ): Promise<NodeResult<GraphState>> {
   const startedAt = Date.now();
+  const { streamController, encoder } = state;
 
   try {
     const {
@@ -135,8 +136,6 @@ export async function companionNode(
       profilePromptText,
       reflectionPromptText,
       todayStr,
-      streamController,
-      encoder,
     } = state;
 
     let planPromptText = "";
@@ -396,9 +395,19 @@ export async function companionNode(
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error("[CompanionNode] Error:", err);
 
+    // Stream a friendly fallback error message directly to the client so the UI doesn't hang blankly
+    const fallbackText = "Oops! Zenkai is experiencing high request volume or a temporary rate limit. Please wait a moment and try again.";
+    try {
+      if (streamController && encoder) {
+        streamController.enqueue(encoder.encode(fallbackText));
+      }
+    } catch (e) {
+      console.error("[CompanionNode] Failed to stream fallback error:", e);
+    }
+
     return {
       patch: {
-        companionResponseDraft: "",
+        companionResponseDraft: fallbackText,
         taskUpdateExecuted: false,
         planPromptText: "",
       },

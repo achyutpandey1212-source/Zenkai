@@ -134,7 +134,7 @@ class MongoCheckpointStore {
         },
         { $replaceRoot: { newRoot: "$latest" } },
         { $sort: { checkpointedAt: -1 } }
-      ]).toArray();
+      ], { allowDiskUse: true }).toArray();
       return results as unknown as CheckpointRecord[];
     } catch (err) {
       console.error("[CheckpointManager] MongoDB listRecentWorkflows failed:", err);
@@ -164,6 +164,51 @@ export class CheckpointManager {
     const snapshot: Record<string, unknown> = { ...state };
     delete snapshot.streamController;
     delete snapshot.encoder;
+
+    // Prune activePlans inside the snapshot to remove heavy history and diagnostics
+    if (Array.isArray(snapshot.activePlans)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      snapshot.activePlans = snapshot.activePlans.map((p: any) => ({
+        id: p._id?.toString() || p.id,
+        title: p.title,
+        description: p.description || "",
+        status: p.status,
+        priority: p.priority,
+        estimatedDuration: p.estimatedDuration,
+        type: p.type,
+        progress: p.progress,
+        milestones: (p.milestones || []).map((m: any) => ({
+          id: m._id?.toString() || m.id,
+          title: m.title,
+          description: m.description || "",
+          status: m.status,
+          priority: m.priority,
+          estimatedDuration: m.estimatedDuration,
+          category: m.category,
+          startDate: m.startDate,
+          endDate: m.endDate,
+          progress: m.progress,
+          goals: (m.goals || []).map((g: any) => ({
+            id: g._id?.toString() || g.id,
+            title: g.title,
+            description: g.description || "",
+            status: g.status,
+            priority: g.priority,
+            progress: g.progress,
+            tasks: (g.tasks || []).map((t: any) => ({
+              id: t._id?.toString() || t.id,
+              title: t.title,
+              description: t.description || "",
+              status: t.status,
+              priority: t.priority,
+              suggestedDate: t.suggestedDate,
+              timeBlock: t.timeBlock,
+              dependencies: t.dependencies,
+            })),
+          })),
+        })),
+      }));
+    }
 
     const record: CheckpointRecord = {
       workflowId,
