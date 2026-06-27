@@ -1,5 +1,5 @@
 /**
- * Zenkai Graph Checkpoint Manager
+ * Zenkai Graph Checkpoint Manager - Rebuild Triggered
  *
  * Persists GraphState after major nodes (router, planning, execution, assembler).
  * Gives us a foundation for workflow resumability, debugging, and future observability.

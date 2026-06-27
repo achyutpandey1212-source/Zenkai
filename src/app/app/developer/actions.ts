@@ -1,5 +1,6 @@
 "use server";
 
+// Trigger Next.js compilation reload
 import { CheckpointManager } from "@/orchestration/utils/checkpoint";
 import { GlobalTelemetryTracker } from "@/lib/telemetry-context";
 import { dbConnect } from "@/lib/mongodb";
