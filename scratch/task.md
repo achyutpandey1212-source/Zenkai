@@ -1,0 +1,9 @@
+- [x] Create `src/lib/telemetry-context.ts` to manage AsyncLocalStorage and global RPM counters.
+- [x] Create `src/lib/gemini-telemetry.ts` to patch `@google/genai` and intercept token usage/prompts.
+- [x] Modify `src/lib/db.ts` to import `src/lib/gemini-telemetry` early in execution.
+- [x] Modify `src/orchestration/graph/state.ts` to add the `aiCalls` array to `GraphState`.
+- [x] Modify `src/orchestration/graph/engine.ts` to sync telemetry calls into the state before checkpoint saves.
+- [x] Modify `src/orchestration/graphs/main.graph.ts` to run `graph.invoke` within the telemetry storage.
+- [x] Modify `src/orchestration/utils/checkpoint.ts` to implement `listRecentWorkflows` for both memory and MongoDB.
+- [x] Create `src/app/app/developer/page.tsx` with the developer dashboard UI.
+- [x] Verify everything works correctly.

@@ -46,3 +46,69 @@ export async function getRpmTelemetry() {
     peakRpm: GlobalTelemetryTracker.getPeakRpm(),
   };
 }
+
+import { BriefingLog } from "@/models/BriefingLog";
+import { User } from "@/models/User";
+import { BriefComposerService } from "@/services/brief-composer.service";
+import { EmailService } from "@/services/email.service";
+
+export async function getBriefingLogs() {
+  await dbConnect();
+  try {
+    const logs = await BriefingLog.find({})
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    return JSON.parse(JSON.stringify(logs));
+  } catch (err) {
+    console.error("Error in getBriefingLogs action:", err);
+    return [];
+  }
+}
+
+export async function getDashboardUsers() {
+  await dbConnect();
+  try {
+    const users = await User.find({}).select("firebaseUid name email").lean();
+    return JSON.parse(JSON.stringify(users));
+  } catch (err) {
+    console.error("Error in getDashboardUsers action:", err);
+    return [];
+  }
+}
+
+export async function triggerBriefing(uid: string, type: "morning" | "evening") {
+  await dbConnect();
+  try {
+    const user = await User.findOne({ firebaseUid: uid }).lean();
+    if (!user) {
+      return { success: false, error: "User not found" };
+    }
+
+    if (type === "morning") {
+      const brief = await BriefComposerService.composeMorningBrief(uid);
+      await EmailService.sendMorningBrief(
+        uid,
+        brief.email,
+        brief.data,
+        brief.telemetry,
+        brief.skipped
+      );
+      return { success: true, message: `Successfully sent morning brief to ${brief.email}` };
+    } else {
+      const brief = await BriefComposerService.composeEveningBrief(uid);
+      await EmailService.sendEveningBrief(
+        uid,
+        brief.email,
+        brief.data,
+        brief.telemetry,
+        brief.skipped
+      );
+      return { success: true, message: `Successfully sent evening brief to ${brief.email}` };
+    }
+  } catch (err: any) {
+    console.error("Error in triggerBriefing action:", err);
+    return { success: false, error: err.message || "Unknown error" };
+  }
+}
+
