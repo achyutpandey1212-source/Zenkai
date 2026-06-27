@@ -3,15 +3,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import CompanionOrb, { OrbState } from "../ui/companion-orb";
-import { Sparkles, ArrowRight, BookOpen, CheckSquare, Compass, Clock, Calendar, AlertCircle } from "lucide-react";
-import MarkdownRenderer from "../ui/markdown-renderer";
+import { Sparkles, ArrowRight, BookOpen, CheckSquare, Compass } from "lucide-react";
 
 interface HomeProps {
-  messages: any[];
   sendMessage: (text: string) => Promise<void>;
   orbState: OrbState;
-  statusMessage: string;
-  hasStartedChat: boolean;
   setOrbState: React.Dispatch<React.SetStateAction<OrbState>>;
   userName: string;
   onNavigate?: (screen: "plans" | "chat" | "tasks" | "identity" | "reflection" | "settings" | "memory") => void;
@@ -27,24 +23,19 @@ interface ProactiveData {
 }
 
 export default function Home({
-  messages,
   sendMessage,
   orbState,
-  statusMessage,
-  hasStartedChat,
   setOrbState,
   userName,
   onNavigate,
 }: HomeProps) {
   const [query, setQuery] = useState("");
-  const [isChatActive, setIsChatActive] = useState(false);
   const [proactiveData, setProactiveData] = useState<ProactiveData | null>(null);
   const [agenda, setAgenda] = useState<any | null>(null);
   
   const [loadingProactive, setLoadingProactive] = useState(true);
   const [loadingAgenda, setLoadingAgenda] = useState(true);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const quickActions = [
@@ -146,23 +137,6 @@ export default function Home({
     }
   };
 
-  // Delayed transition from greeting → chat if prior messages exist
-  useEffect(() => {
-    if (hasStartedChat) {
-      const timer = setTimeout(() => setIsChatActive(true), 500);
-      return () => clearTimeout(timer);
-    } else {
-      setIsChatActive(false);
-    }
-  }, [hasStartedChat]);
-
-  // Auto-scroll messages
-  useEffect(() => {
-    if (isChatActive) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages, isChatActive]);
-
   // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -181,10 +155,14 @@ export default function Home({
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!query.trim()) return;
-    setIsChatActive(true);
     const textToSend = query;
     setQuery("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
+
+    // Switch to Companion Chat first, then send message
+    if (onNavigate) {
+      onNavigate("chat");
+    }
     await sendMessage(textToSend);
   };
 
@@ -235,7 +213,7 @@ export default function Home({
 
       {/* ── Temple Background ── */}
       <div
-        className="absolute right-0 top-0 h-full w-full md:w-1/2 pointer-events-none select-none z-0"
+        className="fixed right-0 top-0 h-full w-full md:w-1/2 pointer-events-none select-none z-0"
         style={{
           maskImage: "linear-gradient(to left, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%)",
           WebkitMaskImage: "linear-gradient(to left, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%)",
@@ -252,19 +230,19 @@ export default function Home({
       </div>
 
       {/* ── Main Layout ── */}
-      <div className="relative z-10 w-full max-w-4xl flex flex-col items-center min-h-screen px-4 md:px-6">
+      <div className="relative z-10 w-full max-w-5xl flex flex-col items-center min-h-screen px-4 md:px-6">
 
         {/* Top elastic spacer */}
         <div
           className="shrink-0 transition-all duration-700 ease-in-out"
-          style={{ height: isChatActive ? "16px" : "clamp(20px, 4vh, 36px)" }}
+          style={{ height: "clamp(20px, 4vh, 36px)" }}
         />
 
         {/* Companion Orb + Greeting */}
         <div className="shrink-0 flex flex-col items-center w-full">
           <CompanionOrb
             state={orbState}
-            size={isChatActive ? "xs" : "md"}
+            size="md"
             className="transition-all duration-700"
           />
 
@@ -278,15 +256,11 @@ export default function Home({
             {orbState === "generating_agenda" && "Generating Agenda..."}
             {orbState === "completed_task" && "Focus Locked"}
             {orbState === "typing" && "Zenkai Listening..."}
-            {orbState === "thinking" && (statusMessage || "Understanding your request...")}
-            {orbState === "writing" && (statusMessage || "Writing response...")}
+            {orbState === "thinking" && "Understanding..."}
+            {orbState === "writing" && "Writing response..."}
           </span>
 
-          <div
-            className={`text-center flex flex-col items-center transition-all duration-700 ease-in-out overflow-hidden ${
-              isChatActive ? "max-h-0 opacity-0 mt-0 pointer-events-none" : "max-h-36 opacity-100 mt-5"
-            }`}
-          >
+          <div className="text-center flex flex-col items-center mt-5">
             <span className="font-heading text-3xl md:text-4xl font-light text-muted-foreground italic">
               Good Morning,
             </span>
@@ -296,8 +270,8 @@ export default function Home({
           </div>
         </div>
 
-        {/* Proactive Daily Dashboard (Visible only when chat is not active) */}
-        {!isChatActive && !loadingAgenda && agenda && (
+        {/* Proactive Daily Dashboard */}
+        {!loadingAgenda && agenda && (
           <div className="w-full flex flex-col gap-6 mt-6 animate-fade-in transition-all duration-500 pb-4">
             
             {/* Today's Intention banner */}
@@ -479,72 +453,11 @@ export default function Home({
           </div>
         )}
 
-        {/* Chat Messages */}
-        <div
-          className={`w-full min-h-0 transition-all duration-700 ease-in-out overflow-y-auto scrollbar-custom ${
-            isChatActive ? "flex-1 opacity-100 mt-4" : "flex-none h-0 opacity-0 pointer-events-none overflow-hidden"
-          }`}
-        >
-          <div className="w-full mx-auto py-3 space-y-8 md:space-y-10 border-t border-border/20">
-            {messages.map((msg) => {
-              const isUser = msg.role === "user";
-              const timeString = msg.createdAt
-                ? new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-              
-              if (isUser) {
-                return (
-                  <div key={msg._id} className="flex w-full justify-end group">
-                    <div className="max-w-[85%] md:max-w-2xl flex flex-col gap-1.5 items-end">
-                      {userName && (
-                        <span className="text-[9px] font-sans tracking-widest text-muted-foreground/80 uppercase mr-1">
-                          {userName}
-                        </span>
-                      )}
-                      <div className="rounded-2xl px-6 py-4 bg-primary text-primary-foreground rounded-tr-none shadow-sm whitespace-pre-wrap font-sans text-sm md:text-[15px] leading-relaxed">
-                        {msg.content}
-                      </div>
-                      <span className="text-[8px] font-sans text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 mr-1">
-                        {timeString}
-                      </span>
-                    </div>
-                  </div>
-                );
-              } else {
-                return (
-                  <div key={msg._id} className="flex gap-3 items-start w-full group">
-                    <span className="text-accent text-[15px] select-none mt-1 shrink-0">✦</span>
-                    <div className="flex-1 flex flex-col gap-1.5 min-w-0">
-                      {msg.content === "" ? (
-                        <div className="flex gap-1.5 items-center py-2.5">
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
-                        </div>
-                      ) : (
-                        <MarkdownRenderer content={msg.content} />
-                      )}
-                      <span className="text-[8px] font-sans text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        {timeString}
-                      </span>
-                    </div>
-                  </div>
-                );
-              }
-            })}
-            <div ref={messagesEndRef} />
-          </div>
-        </div>
-
         {/* Input Area */}
         <div className="w-full px-4 shrink-0 pt-5 pb-7 z-10">
           
           {/* Quick Actions */}
-          <div
-            className={`flex flex-wrap gap-2 justify-center transition-all duration-500 ease-in-out overflow-hidden ${
-              isChatActive ? "max-h-0 opacity-0 mb-0 pointer-events-none" : "max-h-20 opacity-100 mb-4"
-            }`}
-          >
+          <div className="flex flex-wrap gap-2 justify-center mb-4">
             {quickActions.map((action) => (
               <button
                 key={action}

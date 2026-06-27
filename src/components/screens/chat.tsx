@@ -101,7 +101,7 @@ export default function Chat({
       <div className="relative z-10 h-full w-full flex flex-col items-center">
 
         {/* ─── Top: Orb + Status (mirrors home screen chat-active state) ─── */}
-        <div className="shrink-0 flex flex-col items-center pt-6 pb-4 w-full max-w-2xl px-6">
+        <div className="shrink-0 flex flex-col items-center pt-6 pb-4 w-full max-w-4xl px-6">
           {/* Companion Orb — xs, reacts to all states */}
           <CompanionOrb
             state={orbState}
@@ -126,7 +126,7 @@ export default function Chat({
 
         {/* ─── Messages ─── */}
         <div className="flex-1 min-h-0 w-full overflow-y-auto scrollbar-custom border-t border-border/20">
-          <div className="w-full max-w-3xl mx-auto px-4 py-4 space-y-8 md:space-y-10">
+          <div className="w-full max-w-5xl mx-auto px-4 py-4 space-y-8 md:space-y-10">
             {messages.length === 0 ? (
               /* Empty state — shown when navigating directly to chat with no messages */
               <div className="h-[50vh] flex flex-col items-center justify-center gap-3 opacity-50">
@@ -196,7 +196,7 @@ export default function Chat({
         </div>
 
         {/* ─── Input Area ─── */}
-        <div className="w-full max-w-2xl px-4 shrink-0 pt-3 pb-7 z-10">
+        <div className="w-full max-w-4xl px-4 shrink-0 pt-3 pb-7 z-10">
 
           {/* Quick action chips */}
           {((messages.length === 0) || (orbState === "idle" && messages[messages.length - 1]?.role === "assistant")) && (

@@ -307,11 +307,8 @@ export default function Shell({ initialUser }: ShellProps) {
       case "home":
         return (
           <Home
-            messages={messages}
             sendMessage={sendMessage}
             orbState={orbState}
-            statusMessage={statusMessage}
-            hasStartedChat={hasStartedChat}
             setOrbState={setOrbState}
             userName={userName}
             onNavigate={setCurrentScreen}
@@ -343,11 +340,8 @@ export default function Shell({ initialUser }: ShellProps) {
       default:
         return (
           <Home
-            messages={messages}
             sendMessage={sendMessage}
             orbState={orbState}
-            statusMessage={statusMessage}
-            hasStartedChat={hasStartedChat}
             setOrbState={setOrbState}
             userName={userName}
             onNavigate={setCurrentScreen}

@@ -178,7 +178,7 @@ export default function Tasks({ userName }: TasksProps) {
 
   return (
     <div className="h-full w-full overflow-y-auto p-6 md:p-12 bg-background flex flex-col items-center">
-      <div className="max-w-2xl w-full flex flex-col gap-10 mt-4 pb-20">
+      <div className="max-w-4xl w-full flex flex-col gap-10 mt-4 pb-20">
         
         {/* Header: Intention & Overarching Focus */}
         <header className="flex flex-col gap-5 border-b border-border/40 pb-8 relative">
