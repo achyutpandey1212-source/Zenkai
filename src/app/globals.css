@@ -369,3 +369,19 @@
 .dark * {
   scrollbar-color: rgba(160, 160, 160, 0.25) transparent;
 }
+
+/* Custom smooth slide-down + fade-in animation (like a curtain rolling down) */
+@keyframes slideDownFade {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-down-fade {
+  animation: slideDownFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

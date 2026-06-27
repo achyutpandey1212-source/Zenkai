@@ -270,9 +270,32 @@ export default function Home({
           </div>
         </div>
 
+        {/* Proactive Daily Dashboard Skeleton Loader */}
+        {loadingAgenda && (
+          <div className="w-full flex flex-col gap-6 mt-6 animate-pulse pb-4 opacity-40">
+            {/* Intention banner skeleton */}
+            <div className="h-[76px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
+            
+            {/* Grid skeleton */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Left Column */}
+              <div className="md:col-span-2 flex flex-col gap-5">
+                <div className="h-[82px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
+                <div className="h-[280px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
+              </div>
+              {/* Right Column */}
+              <div className="flex flex-col gap-5">
+                <div className="h-[210px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
+                <div className="h-[80px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
+                <div className="h-[120px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Proactive Daily Dashboard */}
         {!loadingAgenda && agenda && (
-          <div className="w-full flex flex-col gap-6 mt-6 animate-fade-in transition-all duration-500 pb-4">
+          <div className="w-full flex flex-col gap-6 mt-6 animate-slide-down-fade pb-4">
             
             {/* Today's Intention banner */}
             <div className="text-center bg-secondary/20 border border-border/30 px-6 py-4 rounded-2xl">
