@@ -42,6 +42,11 @@ export default function Shell({ initialUser }: ShellProps) {
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [hasStartedChat, setHasStartedChat] = useState<boolean>(false);
+  const [planningCardStats, setPlanningCardStats] = useState<{
+    milestonesCreated: number;
+    tasksCreated: number;
+    agendaBuilt: boolean;
+  } | null>(null);
 
   // On mount: read onboardingCompleted from MongoDB (via /api/auth/me)
   useEffect(() => {
@@ -178,14 +183,12 @@ export default function Shell({ initialUser }: ShellProps) {
         setActiveConversation({ _id: returnedConvId });
       }
 
-      // Check header to see if a plan was generated/updated and we should redirect
-      const planGenerated = res.headers.get("x-plan-generated");
-
-      // 4. Read body stream chunk-by-chunk
+      // 4. Read body stream chunk-by-chunk, parsing null-byte delimited control events
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let streamFinished = false;
       let accumulatedText = "";
+      let rawBuffer = ""; // Buffer for parsing control events
 
       setOrbState("writing");
       setStatusMessage("Writing response...");
@@ -197,25 +200,63 @@ export default function Shell({ initialUser }: ShellProps) {
           break;
         }
 
-        const chunkText = decoder.decode(value, { stream: true });
-        accumulatedText += chunkText;
+        const rawChunk = decoder.decode(value, { stream: true });
+        rawBuffer += rawChunk;
 
-        // Update the streaming companion message in-place
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._id === companionTempId ? { ...m, content: accumulatedText } : m
-          )
-        );
+        // Parse null-byte delimited control events out of buffer
+        // Protocol: \0{json}\0 = control event; everything else = chat text
+        let processedText = "";
+        let remaining = rawBuffer;
+
+        while (remaining.includes("\0")) {
+          const nullIdx = remaining.indexOf("\0");
+          // Text before the first null byte is chat content
+          processedText += remaining.slice(0, nullIdx);
+          remaining = remaining.slice(nullIdx + 1);
+
+          // Check if we have a complete control event (ends at next null byte)
+          const endNullIdx = remaining.indexOf("\0");
+          if (endNullIdx !== -1) {
+            const jsonStr = remaining.slice(0, endNullIdx);
+            remaining = remaining.slice(endNullIdx + 1);
+            try {
+              const event = JSON.parse(jsonStr);
+              if (event.__type === "status") {
+                setStatusMessage(event.message || "");
+              } else if (event.__type === "planning_complete") {
+                setPlanningCardStats(event.stats);
+                // Navigate to plans screen to show the new roadmap
+                setCurrentScreen("plans");
+              }
+            } catch {
+              // Not valid JSON; treat as text
+              processedText += `\0${jsonStr}\0`;
+            }
+          } else {
+            // Incomplete event — put back and wait for more data
+            remaining = remaining.slice(0, nullIdx);
+            break;
+          }
+        }
+
+        // Whatever remains after control event parsing is chat text
+        processedText += remaining;
+        rawBuffer = ""; // Buffer consumed for this chunk
+
+        if (processedText) {
+          accumulatedText += processedText;
+          // Update the streaming companion message in-place
+          setMessages((prev) =>
+            prev.map((m) =>
+              m._id === companionTempId ? { ...m, content: accumulatedText } : m
+            )
+          );
+        }
       }
 
       // Reset Companion status
       setOrbState("idle");
       setStatusMessage("");
-
-      // Redirect user to the Plans screen if a plan was generated
-      if (planGenerated === "true") {
-        setCurrentScreen("plans");
-      }
 
       // 5. Fetch fresh canonical messages list with exact database IDs and timestamps
       const historyRes = await fetch("/api/chat/history");

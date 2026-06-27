@@ -10,6 +10,21 @@ import { ReflectionRepository } from "@/repositories/reflection.repository";
 import { PlanRepository } from "@/repositories/plan.repository";
 import { Types } from "mongoose";
 
+// Re-exported so chat route can import them
+export type LifeEvent = {
+  type: "exam" | "deadline" | "project" | "goal" | "event" | "constraint" | "career" | "habit";
+  title: string;
+  date?: string;
+  description: string;
+};
+
+export type LifeEventExtraction = {
+  hasActionableContent: boolean;
+  suggestsPlanning: boolean;
+  extractionReason: string;
+  detectedEvents: LifeEvent[];
+};
+
 export type PlanningIntent = {
   type: "create_or_modify" | "task_update" | "execution_inquiry" | "none";
   taskTitle?: string;
@@ -19,16 +34,50 @@ export type PlanningIntent = {
   details?: string;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LIFE EVENT EXTRACTION PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
+const LIFE_EVENT_EXTRACTION_PROMPT = `
+You are a context extractor for Zenkai, an AI growth companion.
+
+Your job is to silently analyse every user message and determine whether it contains structured, actionable life information that Zenkai should autonomously act on — WITHOUT the user explicitly asking for a plan.
+
+Every user message is an opportunity for autonomous work.
+
+Detect these life signals:
+- Upcoming exams, tests, or assessments (with or without dates)
+- Project deadlines or submission dates
+- Career goals, job/internship targets, placements
+- Skill or learning goals ("I want to learn X", "I need to clear Y", "I'm preparing for Z")
+- Events, hackathons, meetups, interviews scheduled
+- Habits the user wants to build or break
+- Constraints ("I only have 2 hours a day", "I'm available on weekends only")
+- Long-term goals or aspirations shared in passing
+
+Rules:
+- If the message is purely casual conversation ("hey", "thanks", "how are you", small talk), set hasActionableContent: false, suggestsPlanning: false.
+- If the message contains ANY of the above life signals — even implicitly — set hasActionableContent: true.
+- Set suggestsPlanning: true if Zenkai should proactively create or update a roadmap based on this message.
+- Always provide a brief extractionReason explaining your decision.
+
+Return a JSON object matching the schema.
+`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INTENT DETECTION PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
 const INTENT_DETECTION_SYSTEM_PROMPT = `
 You are the Intent Detection Agent for Zenkai's Planning Engine.
-Your job is to analyze the user's latest message and the recent conversation history to classify if they want to:
-1. Create a new plan or modify/evolve an existing roadmap/study plan/project plan/career goal (e.g. "I want to become an SDE", "Plan my semester", "Help me prepare for placements", "I no longer want to build a startup"). Classification: "create_or_modify".
-2. Update the status of a specific task (e.g., "I've completed Arrays", "I finished my revise formula sheet task", "I am working on Linked Lists"). Classification: "task_update".
-3. Ask what tasks they should do today, what they should study, or request to plan their day (e.g., "What should I do today?", "What should I study?", "What should I work on?", "Plan my day"). Classification: "execution_inquiry".
-4. Continue standard, ordinary conversation without any planning, task changes, or daily execution questions. Classification: "none".
+Your job is to analyse the user's latest message and recent conversation history to classify intent.
 
-For "create_or_modify", try to identify the planType ("career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"), and a descriptive goalTitle.
-For "task_update", extract the taskTitle and taskStatus ("completed", "in_progress", "todo").
+Classifications:
+1. "create_or_modify" — User wants to create a new plan or evolve an existing roadmap/study plan/project/career goal. Examples: "I want to become an SDE", "Plan my semester", "Help me prepare for placements", "I no longer want to build a startup", sharing exam dates/schedules, describing academic or career goals.
+2. "task_update" — User is updating the status of a specific, named task. Examples: "I've completed Arrays", "I finished my revision task", "I am working on Linked Lists now". IMPORTANT: Only classify as task_update if a SPECIFIC named task is mentioned.
+3. "execution_inquiry" — User is asking what to do TODAY specifically. Examples: "What should I do today?", "What should I study?", "Plan my day", "What's on my agenda?".
+4. "none" — Standard conversation with no planning, task, or execution relevance.
+
+For "create_or_modify": identify planType ("career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal") and a descriptive goalTitle.
+For "task_update": extract the EXACT taskTitle and taskStatus ("completed" | "in_progress" | "todo"). Leave taskTitle empty string if no specific task name is mentioned.
 
 Return a JSON object matching the requested schema.
 `;
@@ -95,11 +144,85 @@ export class PlanningAgent {
     return this.client;
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // LIFE EVENT EXTRACTION
+  // ───────────────────────────────────────────────────────────────────────────
+  /**
+   * Fast, lightweight extraction pass on every user message.
+   * Detects whether the message contains actionable life context (exams, goals,
+   * deadlines, constraints) and whether Zenkai should autonomously trigger planning.
+   * Every user message is an opportunity for autonomous work.
+   */
+  static async extractLifeEvents(message: string): Promise<LifeEventExtraction> {
+    try {
+      const ai = this.getClient();
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: `Analyse this message:\n"${message}"` }] }],
+        config: {
+          systemInstruction: LIFE_EVENT_EXTRACTION_PROMPT.trim(),
+          temperature: 0,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              hasActionableContent: { type: "BOOLEAN" },
+              suggestsPlanning: { type: "BOOLEAN" },
+              extractionReason: { type: "STRING" },
+              detectedEvents: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    type: {
+                      type: "STRING",
+                      enum: ["exam", "deadline", "project", "goal", "event", "constraint", "career", "habit"],
+                    },
+                    title: { type: "STRING" },
+                    date: { type: "STRING" },
+                    description: { type: "STRING" },
+                  },
+                  required: ["type", "title", "description"],
+                },
+              },
+            },
+            required: ["hasActionableContent", "suggestsPlanning", "extractionReason", "detectedEvents"],
+          },
+        },
+      });
+
+      const text = response.text;
+      if (!text) {
+        return { hasActionableContent: false, suggestsPlanning: false, extractionReason: "No response", detectedEvents: [] };
+      }
+      return JSON.parse(text) as LifeEventExtraction;
+    } catch (error) {
+      console.error("[PlanningAgent] Life event extraction error:", error);
+      return { hasActionableContent: false, suggestsPlanning: false, extractionReason: "Extraction failed", detectedEvents: [] };
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // INTENT DETECTION
+  // ───────────────────────────────────────────────────────────────────────────
   /**
    * Detect planning or task update intent.
+   * If life event extraction already flagged planning, skips the Gemini call (saves ~1-2s).
    */
-  static async detectIntent(message: string, history: { role: "user" | "model"; content: string }[]): Promise<PlanningIntent> {
+  static async detectIntent(
+    message: string,
+    history: { role: "user" | "model"; content: string }[],
+    lifeEvents?: LifeEventExtraction
+  ): Promise<PlanningIntent> {
     try {
+      // Fast-path: life event extraction already determined planning is needed
+      if (lifeEvents?.suggestsPlanning) {
+        console.log(
+          `[PlanningAgent] Life events suggest planning (${lifeEvents.extractionReason}). Fast-pathing to create_or_modify.`
+        );
+        return { type: "create_or_modify", details: lifeEvents.extractionReason };
+      }
+
       const ai = this.getClient();
       const chatHistoryText = history
         .slice(-6)
@@ -126,10 +249,13 @@ Determine the intent:
           responseSchema: {
             type: "OBJECT",
             properties: {
-              intentType: { type: "STRING", enum: ["create_or_modify", "task_update", "execution_inquiry", "none"] },
+              intentType: {
+                type: "STRING",
+                enum: ["create_or_modify", "task_update", "execution_inquiry", "none"],
+              },
               taskTitle: { type: "STRING" },
-              taskStatus: { type: "STRING", enum: ["completed", "in_progress", "todo"] },
-              planType: { type: "STRING", enum: ["career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"] },
+              taskStatus: { type: "STRING" },
+              planType: { type: "STRING" },
               goalTitle: { type: "STRING" },
               details: { type: "STRING" },
             },
@@ -144,17 +270,30 @@ Determine the intent:
       const parsed = JSON.parse(text) as {
         intentType: "create_or_modify" | "task_update" | "execution_inquiry" | "none";
         taskTitle?: string;
-        taskStatus?: "completed" | "in_progress" | "todo";
-        planType?: "career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal";
+        taskStatus?: string;
+        planType?: string;
         goalTitle?: string;
         details?: string;
       };
 
+      // Safety guard: task_update requires a non-empty taskTitle
+      if (parsed.intentType === "task_update" && !parsed.taskTitle?.trim()) {
+        console.warn("[PlanningAgent] task_update detected but no taskTitle extracted. Falling back to none.");
+        return { type: "none" };
+      }
+
+      const validTaskStatuses = ["completed", "in_progress", "todo"];
+      const validPlanTypes = ["career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"];
+
       return {
         type: parsed.intentType,
         taskTitle: parsed.taskTitle,
-        taskStatus: parsed.taskStatus,
-        planType: parsed.planType,
+        taskStatus: validTaskStatuses.includes(parsed.taskStatus || "")
+          ? (parsed.taskStatus as "completed" | "in_progress" | "todo")
+          : undefined,
+        planType: validPlanTypes.includes(parsed.planType || "")
+          ? (parsed.planType as PlanningIntent["planType"])
+          : undefined,
         goalTitle: parsed.goalTitle,
         details: parsed.details,
       };
@@ -164,14 +303,21 @@ Determine the intent:
     }
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // PLAN GENERATION / EVOLUTION
+  // ───────────────────────────────────────────────────────────────────────────
   /**
-   * Generate or evolve a plan.
+   * Generate or evolve a plan. Returns plan stats on success, null on failure.
    */
-  static async generateOrEvolvePlan(uid: string, intent: PlanningIntent, userMessage: string): Promise<boolean> {
+  static async generateOrEvolvePlan(
+    uid: string,
+    intent: PlanningIntent,
+    userMessage: string,
+    lifeEvents?: LifeEventExtraction
+  ): Promise<{ success: boolean; milestonesCreated: number; tasksCreated: number } | null> {
     const startTime = Date.now();
     try {
       console.log(`[PlanningAgent] Executing plan generation/evolution for user ${uid}`);
-
       // 1. Fetch user context
       const profile = await ProfileRepository.findByFirebaseUid(uid);
       const memories = await MemoryRepository.findApprovedByUser(uid);
@@ -180,6 +326,10 @@ Determine the intent:
       const existingPlans = await PlanRepository.findFullTree(uid);
 
       // 2. Format context for prompt
+      const lifeEventsContext = lifeEvents?.detectedEvents?.length
+        ? `\nDetected Life Events (auto-extracted):\n${JSON.stringify(lifeEvents.detectedEvents, null, 2)}\n`
+        : "";
+
       const contextPrompt = `
 User Profile:
 - Long-term goal: ${profile?.longTermGoal || "None"}
@@ -189,14 +339,14 @@ User Profile:
 - Working Style: ${profile?.workStyle || "None"}
 
 Memories:
-${JSON.stringify(memories.map(m => m.summary), null, 2)}
+${JSON.stringify(memories.map((m) => m.summary), null, 2)}
 
 Active Traits:
-${JSON.stringify(traits.map(t => ({ trait: t.trait, description: t.description })), null, 2)}
+${JSON.stringify(traits.map((t) => ({ trait: t.trait, description: t.description })), null, 2)}
 
 Active Reflections:
-${JSON.stringify(reflections.map(r => ({ title: r.title, summary: r.summary })), null, 2)}
-
+${JSON.stringify(reflections.map((r) => ({ title: r.title, summary: r.summary })), null, 2)}
+${lifeEventsContext}
 Existing Plans Tree:
 ${JSON.stringify(existingPlans, null, 2)}
 `;
@@ -211,9 +361,10 @@ Detected Intent Details: ${JSON.stringify(intent)}
 Create a new plan or modify/evolve an existing plan based on the request.
 Remember:
 - If a plan is for a goal/career/project the user no longer wants, mark its status as "archived" and create a new plan.
-- If evolving an existing plan, PRESERVE the exact database "id" (re-mapped to "id" field in JSON) for existing Plans, Milestones, Goals, and Tasks.
+- If evolving an existing plan, PRESERVE the exact database "id" for existing Plans, Milestones, Goals, and Tasks.
 - Break the plan down into Milestones. Each Milestone must have Goals. Each Goal must have actionable Tasks.
-- Keep the number of tasks high quality and structured.
+- Every milestone MUST have startDate, endDate, category, importance, flexibility.
+- Every task MUST have suggestedDate (YYYY-MM-DD).
 `;
 
       const ai = this.getClient();
@@ -227,6 +378,13 @@ Remember:
           responseSchema: {
             type: "OBJECT",
             properties: {
+              // ── Diagnostic fields MUST be in properties AND required ──
+              plannerReasoning: { type: "STRING" },
+              changeSummary: { type: "STRING" },
+              detectedConstraints: { type: "STRING" },
+              mergeStrategy: { type: "STRING" },
+              timelineRecalculation: { type: "STRING" },
+              // ── Plan tree ──
               plan: {
                 type: "OBJECT",
                 properties: {
@@ -236,7 +394,10 @@ Remember:
                   status: { type: "STRING", enum: ["active", "completed", "archived"] },
                   priority: { type: "NUMBER" },
                   estimatedDuration: { type: "STRING" },
-                  type: { type: "STRING", enum: ["career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"] },
+                  type: {
+                    type: "STRING",
+                    enum: ["career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"],
+                  },
                   milestones: {
                     type: "ARRAY",
                     items: {
@@ -248,6 +409,26 @@ Remember:
                         status: { type: "STRING", enum: ["todo", "in_progress", "completed", "cancelled"] },
                         priority: { type: "NUMBER" },
                         estimatedDuration: { type: "STRING" },
+                        startDate: { type: "STRING" },
+                        endDate: { type: "STRING" },
+                        category: {
+                          type: "STRING",
+                          enum: [
+                            "Exam",
+                            "Study",
+                            "Hackathon",
+                            "Meetup",
+                            "Content Creation",
+                            "Startup",
+                            "Coding",
+                            "Reading",
+                            "Fitness",
+                            "Interview",
+                            "Personal",
+                          ],
+                        },
+                        importance: { type: "NUMBER" },
+                        flexibility: { type: "NUMBER" },
                         goals: {
                           type: "ARRAY",
                           items: {
@@ -270,12 +451,14 @@ Remember:
                                     status: { type: "STRING", enum: ["todo", "in_progress", "completed", "missed"] },
                                     priority: { type: "NUMBER" },
                                     estimatedDuration: { type: "STRING" },
+                                    suggestedDate: { type: "STRING" },
+                                    timeBlock: { type: "STRING" },
                                     dependencies: {
                                       type: "ARRAY",
                                       items: { type: "STRING" },
                                     },
                                   },
-                                  required: ["title", "status", "priority", "estimatedDuration"],
+                                  required: ["title", "status", "priority", "estimatedDuration", "suggestedDate"],
                                 },
                               },
                             },
@@ -283,20 +466,38 @@ Remember:
                           },
                         },
                       },
-                      required: ["title", "status", "priority", "estimatedDuration", "goals"],
+                      required: [
+                        "title",
+                        "status",
+                        "priority",
+                        "estimatedDuration",
+                        "startDate",
+                        "endDate",
+                        "category",
+                        "importance",
+                        "flexibility",
+                        "goals",
+                      ],
                     },
                   },
                 },
                 required: ["title", "status", "priority", "estimatedDuration", "type", "milestones"],
               },
             },
-            required: ["plan", "plannerReasoning", "changeSummary", "detectedConstraints", "mergeStrategy", "timelineRecalculation"],
+            required: [
+              "plan",
+              "plannerReasoning",
+              "changeSummary",
+              "detectedConstraints",
+              "mergeStrategy",
+              "timelineRecalculation",
+            ],
           },
         },
       });
 
       const responseText = response.text;
-      if (!responseText) return false;
+      if (!responseText) return null;
 
       const result = JSON.parse(responseText) as {
         plan: any;
@@ -308,6 +509,10 @@ Remember:
       };
       const normalizedPlan = result.plan;
       const executionTimeMs = Date.now() - startTime;
+
+      // Track stats
+      let totalTasksCreated = 0;
+      let totalMilestonesCreated = 0;
 
       // 3. Persist to Database
       let planDoc: any;
@@ -408,6 +613,7 @@ Remember:
             flexibility: milestone.flexibility || 5,
           });
           milestoneIdsInPayload.add(milestoneDoc._id.toString());
+          totalMilestonesCreated++;
         }
 
         const milestoneId = milestoneDoc._id;
@@ -485,31 +691,37 @@ Remember:
                 timeBlock: task.timeBlock || "",
               });
               taskIdsInPayload.add(taskDoc._id.toString());
+              totalTasksCreated++;
             }
           }
         }
       }
 
-      // Sync deletes: Find orphaned elements and remove them
-      // 1. Tasks: Find all tasks linked to this plan's goals that are NOT in payload, and delete them
+      // Sync deletes: Remove orphaned elements NOT in the new payload.
+      // Guard: only delete if payload is non-empty (protects against truncated LLM responses).
       const goalsOfThisPlan = await Goal.find({ planId });
       const goalIdsOfThisPlan = goalsOfThisPlan.map((g) => g._id);
-      await Task.deleteMany({
-        goalId: { $in: goalIdsOfThisPlan },
-        _id: { $nin: Array.from(taskIdsInPayload).map((id) => new Types.ObjectId(id)) },
-      });
 
-      // 2. Goals: Delete goals of this plan that are NOT in payload
-      await Goal.deleteMany({
-        planId,
-        _id: { $nin: Array.from(goalIdsInPayload).map((id) => new Types.ObjectId(id)) },
-      });
+      if (taskIdsInPayload.size > 0) {
+        await Task.deleteMany({
+          goalId: { $in: goalIdsOfThisPlan },
+          _id: { $nin: Array.from(taskIdsInPayload).map((id) => new Types.ObjectId(id)) },
+        });
+      }
 
-      // 3. Milestones: Delete milestones of this plan that are NOT in payload
-      await Milestone.deleteMany({
-        planId,
-        _id: { $nin: Array.from(milestoneIdsInPayload).map((id) => new Types.ObjectId(id)) },
-      });
+      if (goalIdsInPayload.size > 0) {
+        await Goal.deleteMany({
+          planId,
+          _id: { $nin: Array.from(goalIdsInPayload).map((id) => new Types.ObjectId(id)) },
+        });
+      }
+
+      if (milestoneIdsInPayload.size > 0) {
+        await Milestone.deleteMany({
+          planId,
+          _id: { $nin: Array.from(milestoneIdsInPayload).map((id) => new Types.ObjectId(id)) },
+        });
+      }
 
       // 4. Trigger progress recalculation for the entire plan structure to sync numbers
       await this.recalculatePlanProgress(planId.toString());
@@ -532,7 +744,7 @@ Remember:
         milestones: milestoneTrees
       };
 
-      const changeSummary = result.changeSummary || (normalizedPlan.id ? "Updated plan" : "Original plan");
+      const changeSummary = result.changeSummary || (normalizedPlan.id ? "Updated plan" : "New plan");
       await Plan.findByIdAndUpdate(planId, {
         $push: {
           history: {
@@ -543,10 +755,18 @@ Remember:
         },
       });
 
-      return true;
+      console.log(
+        `[PlanningAgent] Plan complete in ${Date.now() - startTime}ms. Milestones: ${updatedMilestones.length}, New tasks: ${totalTasksCreated}`
+      );
+
+      return {
+        success: true,
+        milestonesCreated: updatedMilestones.length,
+        tasksCreated: totalTasksCreated,
+      };
     } catch (error) {
       console.error("[PlanningAgent] Plan generation/evolution error:", error);
-      return false;
+      return null;
     }
   }
 
