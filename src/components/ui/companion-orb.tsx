@@ -3,7 +3,18 @@
 import React from "react";
 import Image from "next/image";
 
-export type OrbState = "idle" | "typing" | "thinking" | "writing" | "generating_agenda" | "completed_task" | "all_completed";
+export type OrbState =
+  | "idle"
+  | "listening"
+  | "typing"
+  | "thinking"
+  | "writing"
+  | "memory_retrieval"
+  | "planning"
+  | "execution"
+  | "identity_update"
+  | "reflection"
+  | "completion";
 
 interface CompanionOrbProps {
   state: OrbState;
@@ -20,26 +31,34 @@ export default function CompanionOrb({ state, size = "md", className = "" }: Com
     lg: "w-44 h-44 md:w-60 md:h-60",
   }[size];
 
-  // Determine glow animation class
+  // Determine glow animation class matching Phase 9 requirements
   const glowClasses = {
     idle: "bg-accent/10 animate-glow-idle",
+    listening: "bg-accent/15 animate-glow-listening",
     typing: "bg-accent/20 animate-glow-typing",
     thinking: "bg-accent/25 animate-glow-thinking",
     writing: "bg-accent/20 animate-glow-writing",
-    generating_agenda: "bg-accent/30 animate-glow-breath",
-    completed_task: "bg-accent/40 animate-glow-pulse",
-    all_completed: "bg-amber-500/35 animate-glow-golden",
+    memory_retrieval: "bg-teal-500/20 animate-glow-memory",
+    planning: "bg-amber-500/25 animate-glow-planning",
+    execution: "bg-accent/30 animate-glow-execution",
+    identity_update: "bg-yellow-500/20 animate-glow-identity animate-pulse",
+    reflection: "bg-indigo-500/15 animate-glow-reflection",
+    completion: "bg-green-500/30 animate-glow-completion",
   }[state];
 
   // Determine orb movement/rotation classes
   const orbClasses = {
     idle: "animate-orb-float",
+    listening: "animate-orb-listening",
     typing: "animate-orb-float",
     thinking: "animate-orb-rotate-slow",
     writing: "animate-orb-rotate-writing",
-    generating_agenda: "animate-orb-breath",
-    completed_task: "animate-orb-pulse-scale",
-    all_completed: "animate-orb-float-golden",
+    memory_retrieval: "animate-orb-memory-inward",
+    planning: "animate-orb-planning-rings",
+    execution: "animate-orb-execution-orbit",
+    identity_update: "animate-orb-identity-shimmer",
+    reflection: "animate-orb-reflection-glow",
+    completion: "animate-orb-completion-pulse",
   }[state];
 
   return (

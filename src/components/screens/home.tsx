@@ -90,7 +90,7 @@ export default function Home({
       const totalCritical = agenda.workBlocks.reduce((acc: number, wb: any) => acc + wb.tasks.length, 0);
       const completedCritical = agenda.workBlocks.reduce((acc: number, wb: any) => acc + wb.tasks.filter((t: any) => t.status === "completed").length, 0);
       if (totalCritical > 0 && completedCritical === totalCritical) {
-        setOrbState("all_completed");
+        setOrbState("completion");
       } else {
         setOrbState("idle");
       }
@@ -104,7 +104,7 @@ export default function Home({
 
     try {
       // Pulse the orb
-      setOrbState("completed_task");
+      setOrbState("completion");
 
       const res = await fetch("/api/execution/task-action", {
         method: "POST",
@@ -124,7 +124,7 @@ export default function Home({
           
           setTimeout(() => {
             if (totalCritical > 0 && completedCritical === totalCritical) {
-              setOrbState("all_completed");
+              setOrbState("completion");
             } else {
               setOrbState("idle");
             }
@@ -248,13 +248,13 @@ export default function Home({
 
           <span
             className={`font-sans text-[9px] tracking-[0.3em] font-medium uppercase mt-2.5 transition-all duration-500 ${
-              orbState === "idle" || orbState === "all_completed" ? "text-accent/50" : "text-accent animate-pulse"
+              orbState === "idle" || orbState === "completion" ? "text-accent/50" : "text-accent animate-pulse"
             }`}
           >
             {orbState === "idle" && "Zenkai Listening"}
-            {orbState === "all_completed" && "Day Complete — Golden Glow"}
-            {orbState === "generating_agenda" && "Generating Agenda..."}
-            {orbState === "completed_task" && "Focus Locked"}
+            {orbState === "completion" && "Day Complete — Golden Glow"}
+            {orbState === "execution" && "Generating Agenda..."}
+            {orbState === "listening" && "Zenkai Listening..."}
             {orbState === "typing" && "Zenkai Listening..."}
             {orbState === "thinking" && "Understanding..."}
             {orbState === "writing" && "Writing response..."}

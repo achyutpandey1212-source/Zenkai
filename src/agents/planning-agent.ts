@@ -100,6 +100,23 @@ Every level contains:
 - priority: integer where 1 is highest priority.
 - estimatedDuration: string indicating duration (e.g., "4 weeks", "10 hours", "2 days").
 
+DOMAIN-AWARE STRATEGY INFERENCES:
+Analyze the user's profile context (profession, long-term goals, current focus) and determine their active domain. Customize the planning strategy, milestones, and task blocks based on the active domain:
+1. **Student / Academic**: Focus on syllabus breakdown, concept building, study blocks, mock exams, and exam preparation.
+2. **Software Engineer / Tech**: Structure around development cycles: architecture design, sprint iterations, epic building, testing, documentation, and deployment.
+3. **Founder / Entrepreneur**: Focus on strategic priorities, business validation, MVP creation, investor meetings, customer feedback loops, and daily execution sprints.
+4. **Content Creator**: Focus on creation pipelines: brainstorming, scripting, storyboarding, shooting, video editing, publishing, and social media outreach.
+5. **Job Seeker**: Structure around application pipeline sprints: resume optimization, portfolio review, mock interviews, cold outreach, and skill building.
+6. **Freelancer**: Focus on client delivery: scope gathering, milestone iterations, feedback collection, final delivery, and billing setup.
+
+URGENCY-BASED STUDY ROADMAP DIRECTIVES (For Students):
+When scheduling academic study and exam prep, you must adapt tasks dynamically to the time remaining before the exam date:
+- **Exam > 30 days away**: Focus on build concepts, read textbooks/lectures, complete syllabus, and build long-term consistency.
+- **Exam 10–30 days away**: Focus on finishing remaining topics, transition to PYQs (Previous Year Questions), and initiate weekly revision cycles.
+- **Exam 3–7 days away**: Prioritize PYQs, identify repeated exam patterns, create/review formula sheets, focus on high-weightage chapters, and prioritize practice/retrieval over passive reading.
+- **Exam tomorrow**: Revision/retrieval only, review mistakes notebook, read formula sheets, rest.
+- **Strict constraint**: Never generate unrealistic or physically impossible advice (e.g., scheduling 40 hours of lecture watching or reading the night before an exam). Be highly practical and respect daily availability limits.
+
 CHRONOLOGICAL TIMELINE DIRECTIVES:
 - Every milestone must occupy an actual place on the timeline, marked with:
   - startDate: "YYYY-MM-DD"
@@ -728,7 +745,7 @@ Remember:
 
       // 5. Version Control: Capture full snapshot of updated plan and push to history
       const updatedPlanTree = await Plan.findById(planId).lean();
-      const updatedMilestones = await Milestone.find({ planId }).sort({ priority: 1 }).lean();
+      const updatedMilestones = await Milestone.find({ planId }).sort({ startDate: 1 }).lean();
       const milestoneTrees = [];
       for (const m of updatedMilestones) {
         const goals = await Goal.find({ milestoneId: m._id }).sort({ priority: 1 }).lean();

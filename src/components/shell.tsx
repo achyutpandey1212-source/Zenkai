@@ -48,6 +48,14 @@ export default function Shell({ initialUser }: ShellProps) {
     agendaBuilt: boolean;
   } | null>(null);
 
+  const [workflow, setWorkflow] = useState({
+    memory: { status: "idle" as const, message: "Waiting..." },
+    planning: { status: "idle" as const, message: "Waiting..." },
+    execution: { status: "idle" as const, message: "Waiting..." },
+    identity: { status: "idle" as const, message: "Waiting..." },
+    reflection: { status: "idle" as const, message: "Waiting..." },
+  });
+
   // On mount: read onboardingCompleted from MongoDB (via /api/auth/me)
   useEffect(() => {
     async function checkOnboardingStatus() {
@@ -223,10 +231,32 @@ export default function Shell({ initialUser }: ShellProps) {
               const event = JSON.parse(jsonStr);
               if (event.__type === "status") {
                 setStatusMessage(event.message || "");
+                // Dynamically adjust orb State and Workflow Status based on active backend agent
+                if (event.agent) {
+                  setWorkflow((prev) => ({
+                    ...prev,
+                    [event.agent]: {
+                      status: event.status,
+                      message: event.message || "",
+                    },
+                  }));
+
+                  // Map active running agent to orbState
+                  if (event.status === "running") {
+                    const agentToOrbState: Record<string, OrbState> = {
+                      memory: "memory_retrieval",
+                      planning: "planning",
+                      execution: "execution",
+                      identity: "identity_update",
+                      reflection: "reflection",
+                    };
+                    if (agentToOrbState[event.agent]) {
+                      setOrbState(agentToOrbState[event.agent]);
+                    }
+                  }
+                }
               } else if (event.__type === "planning_complete") {
                 setPlanningCardStats(event.stats);
-                // Navigate to plans screen to show the new roadmap
-                setCurrentScreen("plans");
               }
             } catch {
               // Not valid JSON; treat as text
@@ -254,9 +284,15 @@ export default function Shell({ initialUser }: ShellProps) {
         }
       }
 
-      // Reset Companion status
-      setOrbState("idle");
-      setStatusMessage("");
+      // Satisfying completion pulse animation
+      setOrbState("completion");
+      setStatusMessage("Done ✓");
+      
+      // Let the pulse play, then reset to idle
+      setTimeout(() => {
+        setOrbState("idle");
+        setStatusMessage("");
+      }, 1200);
 
       // 5. Fetch fresh canonical messages list with exact database IDs and timestamps
       const historyRes = await fetch("/api/chat/history");
@@ -364,6 +400,8 @@ export default function Shell({ initialUser }: ShellProps) {
             statusMessage={statusMessage}
             setOrbState={setOrbState}
             userName={userName}
+            workflow={workflow}
+            onNavigate={setCurrentScreen}
           />
         );
       case "plans":

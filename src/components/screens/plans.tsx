@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Check, Clock, AlertCircle, Circle } from "lucide-react";
+import { Check, Clock, AlertCircle, Play, Sparkles } from "lucide-react";
 
 interface TaskData {
   _id: string;
@@ -76,10 +76,9 @@ export default function Plans() {
   const [plans, setPlans] = useState<PlanData[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
-  const [selectedMilestoneId, setSelectedMilestoneId] = useState<string | null>(null);
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useState<number | null>(null);
   const [devMode, setDevMode] = useState(false);
-  const [filter, setFilter] = useState<"all" | "completed" | "upcoming">("all");
+  const [filter, setFilter] = useState<"all" | "upcoming" | "completed">("all");
  
   const fetchPlans = async () => {
     try {
@@ -91,9 +90,6 @@ export default function Plans() {
           if (data.plans.length > 0) {
             const active = data.plans.find((p: any) => p.status === "active") || data.plans[0];
             setActivePlanId(active._id);
-            if (active.milestones.length > 0) {
-              setSelectedMilestoneId(active.milestones[0]._id);
-            }
           }
         }
       }
@@ -186,40 +182,67 @@ export default function Plans() {
   const activeMilestones = (planToRender.milestones || []).filter(
     (m) => selectedRevisionIndex !== null || m.status !== "cancelled"
   );
-  const selectedMilestone = activeMilestones.find((m) => m._id === selectedMilestoneId) || activeMilestones[0];
 
-const categoryIcons: Record<string, string> = {
-  Exam: "🎓",
-  Study: "📚",
-  Hackathon: "🏆",
-  Meetup: "🤝",
-  "Content Creation": "🎥",
-  Content: "🎥",
-  Startup: "🚀",
-  Reading: "📖",
-  Fitness: "🏋",
-  Interview: "📝",
-  Personal: "👤",
-  Coding: "💻"
-};
+  // Chronological Milestone sorting (pure chronological sort)
+  const sortedMilestones = [...activeMilestones].sort((a, b) => {
+    const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+    const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+    return dateA - dateB;
+  });
 
-const categoryBorders: Record<string, string> = {
-  Exam: "border-red-500/30 text-red-400",
-  Study: "border-teal-500/30 text-teal-400",
-  Hackathon: "border-amber-500/30 text-amber-400",
-  Meetup: "border-purple-500/30 text-purple-400",
-  "Content Creation": "border-pink-500/30 text-pink-400",
-  Content: "border-pink-500/30 text-pink-400",
-  Startup: "border-emerald-500/30 text-emerald-400",
-  Reading: "border-indigo-500/30 text-indigo-400",
-  Fitness: "border-orange-500/30 text-orange-400",
-  Interview: "border-cyan-500/30 text-cyan-400",
-  Personal: "border-neutral-500/30 text-neutral-455 text-neutral-400",
-  Coding: "border-blue-500/30 text-blue-400"
-};
+  // Urgency stats & answering questions
+  const totalMilestonesCount = sortedMilestones.length;
+  const completedMilestonesCount = sortedMilestones.filter((m) => m.status === "completed").length;
+  
+  // What should I do next? (First incomplete milestone)
+  const nextMilestone = sortedMilestones.find((m) => m.status !== "completed" && m.status !== "cancelled");
+
+  // Am I on track?
+  const isOnTrack = planToRender.progress > 0 || totalMilestonesCount === 0;
+
+  const categoryIcons: Record<string, string> = {
+    Exam: "🎓",
+    Study: "📚",
+    Hackathon: "🏆",
+    Meetup: "🤝",
+    "Content Creation": "🎥",
+    Content: "🎥",
+    Startup: "🚀",
+    Reading: "📖",
+    Fitness: "🏋",
+    Interview: "📝",
+    Personal: "👤",
+    Coding: "💻"
+  };
+
+  const categoryBorders: Record<string, string> = {
+    Exam: "border-red-500/30 text-red-400 bg-red-500/5",
+    Study: "border-teal-500/30 text-teal-400 bg-teal-500/5",
+    Hackathon: "border-amber-500/30 text-amber-400 bg-amber-500/5",
+    Meetup: "border-purple-500/30 text-purple-400 bg-purple-500/5",
+    "Content Creation": "border-pink-500/30 text-pink-400 bg-pink-500/5",
+    Content: "border-pink-500/30 text-pink-400 bg-pink-500/5",
+    Startup: "border-emerald-500/30 text-emerald-400 bg-emerald-500/5",
+    Reading: "border-indigo-500/30 text-indigo-400 bg-indigo-500/5",
+    Fitness: "border-orange-500/30 text-orange-400 bg-orange-500/5",
+    Interview: "border-cyan-500/30 text-cyan-400 bg-cyan-500/5",
+    Personal: "border-neutral-500/30 text-neutral-400 bg-neutral-500/5",
+    Coding: "border-blue-500/30 text-blue-400 bg-blue-500/5"
+  };
+
+  const getStars = (importance?: number) => {
+    const starCount = Math.max(1, Math.min(5, Math.ceil((importance || 5) / 2)));
+    return "★".repeat(starCount) + "☆".repeat(5 - starCount);
+  };
+
+  const formatDateLabel = (dateStr?: string) => {
+    if (!dateStr) return "TBD";
+    const date = new Date(dateStr);
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
 
   return (
-    <div className="h-full w-full overflow-y-auto p-6 md:p-12 lg:p-16 flex flex-col items-center bg-background scrollbar-none">
+    <div className="h-full w-full overflow-y-auto p-6 md:p-12 lg:p-16 flex flex-col items-center bg-background scrollbar-none transition-all duration-1000 animate-slide-down-fade">
       <div className="max-w-3xl w-full flex flex-col gap-10 mt-4 pb-24">
         
         {/* Header Block */}
@@ -292,276 +315,211 @@ const categoryBorders: Record<string, string> = {
           </section>
         )}
 
-        {/* Overall Progress Block */}
-        <section className="bg-secondary/40 border border-border/40 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex flex-col gap-2">
-            <span className="font-sans text-[10px] tracking-wider text-accent font-bold uppercase">
-              Current Progress
-            </span>
-            <div className="font-heading text-3xl font-light text-foreground">
-              {planToRender.progress}% <span className="font-sans text-sm text-muted-foreground">completed</span>
+        {/* Cognitive Dashboard: Answers 3 Key Questions */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-border/20 pb-8">
+          {/* Question 1: What have I finished? */}
+          <div className="bg-secondary/20 border border-border/40 p-4 rounded-xl flex flex-col gap-1.5">
+            <span className="font-sans text-[9px] tracking-wider text-muted-foreground uppercase">What have I finished?</span>
+            <div className="font-heading text-lg font-light text-foreground">
+              {completedMilestonesCount} of {totalMilestonesCount} Milestones
             </div>
-            <p className="font-sans text-xs text-muted-foreground/80 leading-relaxed">
-              Zenkai adjusts tasks based on your weekly rhythm. Focus on current milestones to stay aligned.
-            </p>
-          </div>
-          <div className="relative h-20 w-20 flex items-center justify-center shrink-0">
-            <svg className="w-full h-full transform -rotate-90">
-              <circle
-                cx="40"
-                cy="40"
-                r="34"
-                className="stroke-secondary-foreground/10 fill-none"
-                strokeWidth="4"
+            <div className="w-full bg-secondary/80 h-1.5 rounded-full overflow-hidden">
+              <div 
+                className="bg-green-500 h-full rounded-full transition-all duration-1000"
+                style={{ width: `${totalMilestonesCount ? (completedMilestonesCount / totalMilestonesCount) * 100 : 0}%` }}
               />
-              <circle
-                cx="40"
-                cy="40"
-                r="34"
-                className="stroke-accent fill-none transition-all duration-1000 ease-out"
-                strokeWidth="4"
-                strokeDasharray={2 * Math.PI * 34}
-                strokeDashoffset={2 * Math.PI * 34 * (1 - (planToRender.progress || 0) / 100)}
-                strokeLinecap="round"
-              />
-            </svg>
-            <span className="absolute font-sans text-sm font-semibold text-foreground">
-              {planToRender.progress}%
-            </span>
-          </div>
-        </section>
-
-        {/* Milestones timeline & priorities */}
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
-          
-          {/* Milestones Left Column */}
-          <div className="md:col-span-5 flex flex-col gap-5">
-            <span className="font-sans text-[10px] tracking-wider text-accent/80 font-bold uppercase">
-              Milestones
-            </span>
-            <div className="relative pl-4 border-l border-border/40 space-y-6">
-              {activeMilestones.map((m, index) => {
-                const isActive = selectedMilestoneId === m._id;
-                const isCancelled = m.status === "cancelled";
-                const catIcon = categoryIcons[m.category || "Personal"] || "👤";
-                const catBorder = categoryBorders[m.category || "Personal"] || "border-border/40 text-muted-foreground";
-
-                return (
-                  <div
-                    key={m._id}
-                    onClick={() => setSelectedMilestoneId(m._id)}
-                    className="relative cursor-pointer group flex flex-col gap-1 transition-all"
-                  >
-                    {/* Node indicator */}
-                    <div
-                      className={`absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border transition-all ${
-                        isActive
-                          ? "bg-accent border-accent scale-125"
-                          : isCancelled
-                          ? "bg-red-500/40 border-red-500/40"
-                          : m.status === "completed"
-                          ? "bg-green-500 border-green-500"
-                          : "bg-background border-muted-foreground/30 group-hover:border-accent"
-                      }`}
-                    />
-                    
-                    <div className="flex items-center gap-2">
-                      <span className="font-sans text-[9px] tracking-wider text-muted-foreground/50 uppercase">
-                        Phase {index + 1}
-                      </span>
-                      {m.category && (
-                        <span className={`px-2 py-0.5 border rounded-full text-[8px] font-semibold uppercase tracking-wider ${catBorder}`}>
-                          {catIcon} {m.category}
-                        </span>
-                      )}
-                    </div>
-                    <span
-                      className={`font-sans text-sm font-medium tracking-wide transition-all ${
-                        isActive
-                          ? "text-accent font-semibold"
-                          : isCancelled
-                          ? "line-through text-red-500/50"
-                          : m.status === "completed"
-                          ? "line-through text-muted-foreground/60"
-                          : "text-foreground group-hover:text-accent/80"
-                      }`}
-                    >
-                      {m.title}
-                    </span>
-                    <div className="flex flex-col gap-0.5 text-[9px] text-muted-foreground/65 font-sans">
-                      <span>{m.progress || 0}% progress</span>
-                      {m.startDate && m.endDate && (
-                        <span className="text-muted-foreground/50">{m.startDate} — {m.endDate}</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
             </div>
+            <span className="font-sans text-[9px] text-muted-foreground/60">{planToRender.progress}% of total tasks completed</span>
           </div>
 
-          {/* Goal & Task detail view Right Column */}
-          <div className="md:col-span-7 flex flex-col gap-6">
-            {selectedMilestone ? (
-              <div className="flex flex-col gap-6">
-                
-                {/* Milestone Detail Header */}
-                <div className="border-b border-border/30 pb-4 flex flex-col gap-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-sans text-[10px] font-semibold text-accent uppercase">
-                      Active Milestone Focus
-                    </span>
-                    <span className={`font-sans text-[10px] px-2.5 py-0.5 rounded-full border uppercase ${
-                      selectedMilestone.status === "cancelled" 
-                        ? "border-red-500/30 text-red-400 bg-red-500/5" 
-                        : "bg-secondary/60 text-muted-foreground border-border/30"
-                    }`}>
-                      {selectedMilestone.status}
-                    </span>
-                  </div>
-                  <h3 className="font-heading text-xl text-foreground">
-                    {selectedMilestone.title}
-                  </h3>
-                  <p className="font-sans text-xs text-muted-foreground/80 leading-relaxed">
-                    {selectedMilestone.description || "Active milestone objectives."}
-                  </p>
-
-                  {/* Scheduling & Constraints Details */}
-                  <div className="grid grid-cols-2 gap-3 pt-2 text-[10px] font-sans text-muted-foreground/85 border-t border-border/10">
-                    {selectedMilestone.startDate && selectedMilestone.endDate && (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-bold text-accent/80 uppercase tracking-wide">Scheduled Dates</span>
-                        <span>{selectedMilestone.startDate} — {selectedMilestone.endDate} ({selectedMilestone.estimatedDuration || "TBD"})</span>
-                      </div>
-                    )}
-                    <div className="flex flex-col gap-0.5">
-                      <span className="font-bold text-accent/80 uppercase tracking-wide">Importance & Flexibility</span>
-                      <div className="flex items-center gap-3">
-                        <span>Importance: <strong className="text-foreground">{selectedMilestone.importance || 5}/10</strong></span>
-                        <span>Flexibility: <strong className="text-foreground">{selectedMilestone.flexibility || 5}/10</strong></span>
-                      </div>
-                    </div>
-                  </div>
+          {/* Question 2: What should I do next? */}
+          <div className="bg-secondary/20 border border-border/40 p-4 rounded-xl flex flex-col gap-1.5 relative overflow-hidden group">
+            <span className="font-sans text-[9px] tracking-wider text-muted-foreground uppercase">What should I do next?</span>
+            {nextMilestone ? (
+              <>
+                <div className="font-heading text-[13px] font-medium text-accent tracking-wide line-clamp-1">
+                  {nextMilestone.title}
                 </div>
-
-                {/* Filters */}
-                <div className="flex items-center gap-2 border-b border-border/20 pb-3">
-                  {(["all", "upcoming", "completed"] as const).map((type) => (
-                    <button
-                      key={type}
-                      onClick={() => setFilter(type)}
-                      className={`font-sans text-[10px] tracking-wider uppercase px-3 py-1 rounded-full border transition-all ${
-                        filter === type
-                          ? "bg-accent/15 border-accent/40 text-accent font-semibold"
-                          : "border-transparent text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Goals & Tasks checklist */}
-                <div className="space-y-6">
-                  {selectedMilestone.goals.map((g) => {
-                    const filteredTasks = g.tasks.filter((t) => {
-                      if (filter === "completed") return t.status === "completed";
-                      if (filter === "upcoming") return t.status !== "completed";
-                      return true;
-                    });
-
-                    if (filteredTasks.length === 0) return null;
-
-                    return (
-                      <div key={g._id} className="bg-card border border-border/50 rounded-2xl p-5 flex flex-col gap-4 shadow-sm">
-                        <div className="flex items-center justify-between border-b border-border/20 pb-2">
-                          <div className="flex flex-col">
-                            <span className="font-sans text-[10px] text-accent/80 font-bold uppercase tracking-wider">
-                              Goal Area
-                            </span>
-                            <span className="font-sans text-sm font-semibold text-foreground tracking-wide mt-0.5">
-                              {g.title}
-                            </span>
-                          </div>
-                          <span className="font-sans text-[10px] text-muted-foreground">
-                            {g.progress || 0}% complete
-                          </span>
-                        </div>
-
-                        {/* Task List */}
-                        <div className="space-y-3.5">
-                          {filteredTasks.map((t) => {
-                            const isCompleted = t.status === "completed";
-                            return (
-                              <div
-                                key={t._id}
-                                onClick={() => handleToggleTask(t._id, t.status)}
-                                className={`flex items-start gap-4 p-3.5 rounded-xl border cursor-pointer transition-all hover:bg-secondary/20 ${
-                                  isCompleted
-                                    ? "bg-secondary/30 border-border/30 opacity-70"
-                                    : "bg-background/40 border-border hover:border-accent/35"
-                                }`}
-                              >
-                                <button
-                                  type="button"
-                                  className={`h-5 w-5 rounded-full flex items-center justify-center shrink-0 border transition-all duration-300 mt-0.5 ${
-                                    isCompleted
-                                      ? "bg-accent border-accent text-foreground"
-                                      : "border-muted-foreground/30 text-transparent"
-                                  }`}
-                                >
-                                  {isCompleted && <Check size={11} className="text-primary-foreground stroke-[3px]" />}
-                                </button>
-
-                                <div className="flex-1 flex flex-col gap-1 min-w-0">
-                                  <span
-                                    className={`font-sans text-xs font-medium tracking-wide transition-all ${
-                                      isCompleted ? "line-through text-muted-foreground" : "text-foreground"
-                                    }`}
-                                  >
-                                    {t.title}
-                                  </span>
-                                  {t.description && (
-                                    <p className="font-sans text-[10px] text-muted-foreground/80 leading-relaxed">
-                                      {t.description}
-                                    </p>
-                                  )}
-                                  <div className="flex items-center gap-4 mt-1 text-[9px] text-muted-foreground/60 font-sans flex-wrap">
-                                    {t.suggestedDate && (
-                                      <span className="flex items-center gap-1 text-accent font-semibold">
-                                        <Clock size={10} />
-                                        {t.suggestedDate} {t.timeBlock ? `[${t.timeBlock}]` : ""}
-                                      </span>
-                                    )}
-                                    {t.estimatedDuration && (
-                                      <span className="flex items-center gap-1">
-                                        Estimated: {t.estimatedDuration}
-                                      </span>
-                                    )}
-                                    {t.dependencies && t.dependencies.length > 0 && (
-                                      <span>Depends: {t.dependencies.join(", ")}</span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-              </div>
+                <span className="font-sans text-[9px] text-muted-foreground/80 flex items-center gap-1">
+                  <Clock size={10} /> Starting {formatDateLabel(nextMilestone.startDate)}
+                </span>
+                {/* Pulse indicator */}
+                <div className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-accent animate-ping" />
+              </>
             ) : (
-              <div className="h-40 flex items-center justify-center text-muted-foreground font-sans text-xs border border-dashed border-border rounded-2xl">
-                Select a milestone to display tasks.
-              </div>
+              <span className="font-sans text-xs text-green-400 italic">All milestones completed!</span>
             )}
           </div>
+
+          {/* Question 3: Am I on track? */}
+          <div className="bg-secondary/20 border border-border/40 p-4 rounded-xl flex flex-col gap-1.5 items-start justify-center">
+            <span className="font-sans text-[9px] tracking-wider text-muted-foreground uppercase">Am I on track?</span>
+            <div className="flex items-center gap-2">
+              <span className={`h-2.5 w-2.5 rounded-full ${isOnTrack ? "bg-green-500 animate-pulse" : "bg-amber-500"}`} />
+              <span className="font-heading text-lg font-light text-foreground">
+                {isOnTrack ? "On Track" : "Needs Focus"}
+              </span>
+            </div>
+            <span className="font-sans text-[9px] text-muted-foreground/60">Adapting rhythm to your daily availability</span>
+          </div>
         </section>
 
-        {/* Diagnostics Mode */}
+        {/* Unified Chronological Itinerary Timeline */}
+        <section className="relative flex flex-col pl-4 border-l border-border/20 ml-2 space-y-12">
+          
+          {sortedMilestones.map((m, mIdx) => {
+            const isCompleted = m.status === "completed";
+            const isCancelled = m.status === "cancelled";
+            const isNext = nextMilestone && nextMilestone._id === m._id;
+            const catIcon = categoryIcons[m.category || "Personal"] || "👤";
+            const catBorder = categoryBorders[m.category || "Personal"] || "border-border/40 text-muted-foreground";
+
+            // Determine if timeline line connecting this node should be green
+            const timelineNodeColor = isCompleted
+              ? "bg-green-500 border-green-500"
+              : isCancelled
+              ? "bg-red-500/40 border-red-500/40"
+              : isNext
+              ? "bg-accent border-accent scale-110 shadow-[0_0_8px_rgba(201,168,106,0.8)]"
+              : "bg-background border-muted-foreground/30";
+
+            return (
+              <div 
+                key={m._id} 
+                className={`relative flex flex-col gap-4 transition-all duration-700 ${
+                  isCompleted ? "opacity-60" : "opacity-100"
+                }`}
+              >
+                
+                {/* Timeline node */}
+                <div className={`absolute -left-[22px] top-4 h-3 w-3 rounded-full border-2 transition-all duration-500 z-10 ${timelineNodeColor}`} />
+
+                {/* Itinerary Milestone Card */}
+                <div 
+                  className={`bg-card border rounded-2xl p-6 flex flex-col gap-4 shadow-sm transition-all duration-500 ${
+                    isNext 
+                      ? "border-accent/40 shadow-[0_0_20px_rgba(201,168,106,0.1)] ring-1 ring-accent/10" 
+                      : "border-border/50"
+                  }`}
+                >
+                  {/* Card Header */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-border/20 pb-3">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-sans text-[10px] tracking-wider text-muted-foreground/80 uppercase font-semibold">
+                          {formatDateLabel(m.startDate)} — {formatDateLabel(m.endDate)}
+                        </span>
+                        {m.category && (
+                          <span className={`px-2.5 py-0.5 border rounded-full text-[8px] font-semibold uppercase tracking-wider ${catBorder}`}>
+                            {catIcon} {m.category}
+                          </span>
+                        )}
+                        {isNext && (
+                          <span className="px-2 py-0.5 border border-accent/40 text-accent bg-accent/5 rounded-full text-[8px] font-bold uppercase tracking-wider flex items-center gap-1 animate-pulse">
+                            <Sparkles size={8} /> NEXT FOCUS
+                          </span>
+                        )}
+                      </div>
+                      <h3 className={`font-heading text-lg font-normal tracking-wide transition-all ${
+                        isCompleted ? "line-through text-muted-foreground" : "text-foreground"
+                      }`}>
+                        {m.title}
+                      </h3>
+                      {m.description && (
+                        <p className="font-sans text-xs text-muted-foreground/80 leading-relaxed mt-0.5">
+                          {m.description}
+                        </p>
+                      )}
+                    </div>
+                    
+                    {/* Metadata: Stars, Progress */}
+                    <div className="flex flex-col items-end shrink-0 gap-1 font-sans text-xs text-muted-foreground/70">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground/50">Priority:</span>
+                        <span className="text-accent text-[11px] tracking-widest select-none">{getStars(m.importance)}</span>
+                      </div>
+                      <div className="text-[10px]">
+                        Milestone progress: <strong className="text-foreground">{m.progress || 0}%</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tasks list within this milestone */}
+                  <div className="space-y-6">
+                    {m.goals.map((g) => {
+                      if (g.tasks.length === 0) return null;
+                      return (
+                        <div key={g._id} className="flex flex-col gap-3">
+                          <span className="font-sans text-[9px] tracking-wider text-muted-foreground/50 uppercase font-bold">
+                            Goal Area: {g.title}
+                          </span>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {g.tasks.map((t) => {
+                              const isTaskCompleted = t.status === "completed";
+                              return (
+                                <div
+                                  key={t._id}
+                                  onClick={() => handleToggleTask(t._id, t.status)}
+                                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all duration-500 hover:bg-secondary/20 ${
+                                    isTaskCompleted
+                                      ? "bg-secondary/20 border-border/30 opacity-70"
+                                      : "bg-background/45 border-border hover:border-accent/40"
+                                  }`}
+                                >
+                                  {/* Checkbox */}
+                                  <button
+                                    type="button"
+                                    className={`h-4.5 w-4.5 rounded-full flex items-center justify-center shrink-0 border transition-all duration-300 mt-0.5 ${
+                                      isTaskCompleted
+                                        ? "bg-green-500 border-green-500 text-foreground"
+                                        : "border-muted-foreground/30 text-transparent hover:border-accent"
+                                    }`}
+                                  >
+                                    {isTaskCompleted && <Check size={10} className="text-primary-foreground stroke-[3px]" />}
+                                  </button>
+
+                                  <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                                    <span
+                                      className={`font-sans text-[13px] font-medium tracking-wide transition-all duration-500 ${
+                                        isTaskCompleted ? "line-through text-muted-foreground/60" : "text-foreground"
+                                      }`}
+                                    >
+                                      {t.title}
+                                    </span>
+                                    {t.description && (
+                                      <p className="font-sans text-[10px] text-muted-foreground/80 leading-relaxed">
+                                        {t.description}
+                                      </p>
+                                    )}
+                                    <div className="flex items-center gap-3 mt-1 text-[9px] text-muted-foreground/50 font-sans flex-wrap">
+                                      {t.suggestedDate && (
+                                        <span className="flex items-center gap-1 text-accent/80 font-medium">
+                                          <Clock size={9} />
+                                          {formatDateLabel(t.suggestedDate)} {t.timeBlock ? `[${t.timeBlock}]` : ""}
+                                        </span>
+                                      )}
+                                      {t.estimatedDuration && (
+                                        <span>Est: {t.estimatedDuration}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
+              </div>
+            );
+          })}
+        </section>
+
+        {/* Diagnostics Panel (Developer Mode) */}
         {devMode && activePlan.diagnostics && (
           <section className="border border-red-500/20 bg-red-500/5 rounded-2xl p-6 flex flex-col gap-4">
             <div className="flex items-center gap-2 border-b border-red-500/10 pb-2 text-red-500/80 font-sans text-xs font-bold uppercase tracking-wider">
@@ -601,34 +559,11 @@ const categoryBorders: Record<string, string> = {
                 </p>
               </div>
             )}
-
-            {activePlan.diagnostics.timelineRecalculation && (
-              <div className="flex flex-col gap-2">
-                <span className="font-sans text-xs font-semibold text-foreground">Timeline Recalculation</span>
-                <p className="font-sans text-xs text-muted-foreground leading-relaxed font-mono text-[11px] whitespace-pre-wrap">
-                  {activePlan.diagnostics.timelineRecalculation}
-                </p>
-              </div>
-            )}
             
             <div className="flex flex-col gap-2">
               <span className="font-sans text-xs font-semibold text-foreground">Planning Prompt</span>
               <pre className="p-3 bg-background border rounded-lg text-[10px] font-mono overflow-x-auto text-muted-foreground whitespace-pre-wrap max-h-48">
                 {activePlan.diagnostics.planningPrompt}
-              </pre>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <span className="font-sans text-xs font-semibold text-foreground">Raw Gemini Output</span>
-              <pre className="p-3 bg-background border rounded-lg text-[10px] font-mono overflow-x-auto text-muted-foreground whitespace-pre-wrap max-h-48">
-                {activePlan.diagnostics.rawGeminiOutput}
-              </pre>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <span className="font-sans text-xs font-semibold text-foreground">Normalized Plan Tree</span>
-              <pre className="p-3 bg-background border rounded-lg text-[10px] font-mono overflow-x-auto text-muted-foreground whitespace-pre-wrap max-h-48">
-                {activePlan.diagnostics.normalizedPlan}
               </pre>
             </div>
           </section>
