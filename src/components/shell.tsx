@@ -378,6 +378,14 @@ export default function Shell({ initialUser }: ShellProps) {
       setStatusMessage("");
     }
   };
+  const changeScreen = (screen: ScreenType) => {
+    setCurrentScreen(screen);
+    if (screen === "home") {
+      setActiveConversation(null);
+      setMessages([]);
+      setHasStartedChat(false);
+    }
+  };
 
   const renderScreen = () => {
     switch (currentScreen) {
@@ -388,7 +396,7 @@ export default function Shell({ initialUser }: ShellProps) {
             orbState={orbState}
             setOrbState={setOrbState}
             userName={userName}
-            onNavigate={setCurrentScreen}
+            onNavigate={changeScreen}
           />
         );
       case "chat":
@@ -401,7 +409,7 @@ export default function Shell({ initialUser }: ShellProps) {
             setOrbState={setOrbState}
             userName={userName}
             workflow={workflow}
-            onNavigate={setCurrentScreen}
+            onNavigate={changeScreen}
           />
         );
       case "plans":
@@ -423,7 +431,7 @@ export default function Shell({ initialUser }: ShellProps) {
             orbState={orbState}
             setOrbState={setOrbState}
             userName={userName}
-            onNavigate={setCurrentScreen}
+            onNavigate={changeScreen}
           />
         );
     }
@@ -442,7 +450,7 @@ export default function Shell({ initialUser }: ShellProps) {
       {/* Navigation Left Sidebar */}
       <Sidebar 
         currentScreen={currentScreen} 
-        onScreenChange={setCurrentScreen} 
+        onScreenChange={changeScreen} 
         isDarkMode={isDarkMode}
         onToggleTheme={toggleTheme}
         activeConversationId={activeConversation?._id}

@@ -72,14 +72,12 @@ export async function POST(request: Request) {
       conversation = await MessageRepository.findConversationById(conversationId);
     }
     if (!conversation) {
-      const conversations = await MessageRepository.findConversationsByUser(user.firebaseUid);
-      if (conversations.length > 0) {
-        conversation = conversations[0];
-        conversationId = conversation._id.toString();
+      let initialTitle = "Zenkai Dialogue";
+      const cleanMessage = message.trim();
+      if (cleanMessage) {
+        initialTitle = cleanMessage.length > 40 ? cleanMessage.slice(0, 40) + "..." : cleanMessage;
       }
-    }
-    if (!conversation) {
-      conversation = await MessageRepository.createConversation(user.firebaseUid, "Zenkai Dialogue");
+      conversation = await MessageRepository.createConversation(user.firebaseUid, initialTitle);
       conversationId = conversation._id.toString();
     }
 
@@ -89,6 +87,20 @@ export async function POST(request: Request) {
       role: msg.role === "user" ? ("user" as const) : ("model" as const),
       content: msg.content,
     }));
+
+    // If this is the first message in this conversation, and the title is a generic placeholder, auto-rename it
+    if (history.length === 0 && conversation) {
+      if (conversation.title === "New Conversation" || conversation.title === "Zenkai Dialogue") {
+        let newTitle = "Zenkai Dialogue";
+        const cleanMessage = message.trim();
+        if (cleanMessage) {
+          newTitle = cleanMessage.length > 40 ? cleanMessage.slice(0, 40) + "..." : cleanMessage;
+        }
+        await MessageRepository.renameConversation(conversationId, newTitle).catch((err) => {
+          console.error("[Chat API] Failed to auto-rename conversation:", err);
+        });
+      }
+    }
 
     // ── 6. Persist user message ─────────────────────────────────────────────────
     await MessageRepository.addMessage(conversationId, "user", message);
