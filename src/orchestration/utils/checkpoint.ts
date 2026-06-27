@@ -125,6 +125,17 @@ class MongoCheckpointStore {
       const mongoose = await dbConnect();
       const col = mongoose.connection.db!.collection(this.collectionName);
       const results = await col.aggregate([
+        {
+          $project: {
+            "snapshot.activePlans": 0,
+            "snapshot.memoryContext": 0,
+            "snapshot.history": 0,
+            "snapshot.activeTraits": 0,
+            "snapshot.activeReflections": 0,
+            "snapshot.memories": 0,
+            "snapshot.todayAgenda": 0
+          }
+        },
         { $sort: { checkpointedAt: -1 } },
         {
           $group: {
