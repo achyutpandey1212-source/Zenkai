@@ -686,6 +686,11 @@ User Profile:
 - Peak focus availability: ${profile?.dailyAvailability || "None"}
 - Working Style: ${profile?.workStyle || "None"}
 
+Current Date/Time Context:
+- Current Timestamp: ${new Date().toString()}
+- Current Date: ${new Date().toLocaleDateString("en-US", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+- Current Local Time: ${new Date().toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit' })}
+
 Memories:
 ${JSON.stringify(memories.map((m) => m.summary), null, 2)}
 
@@ -713,6 +718,7 @@ Remember:
 - Break the plan down into Milestones. Each Milestone must have Goals. Each Goal must have actionable Tasks.
 - Every milestone MUST have startDate, endDate, category, importance, flexibility.
 - Every task MUST have suggestedDate (YYYY-MM-DD).
+- CRITICAL Date & Time Reasoning: Reason about relative time terms (like "today", "tomorrow", "this evening", "this weekend", "next week") relative to the Current Date/Time Context. If the user sends a message in the very early morning (e.g. 1:00 AM - 5:00 AM) stating "tomorrow", they typically mean the evening of the same waking calendar day. Schedule the tasks with the correct YYYY-MM-DD strings based on this logic.
 `;
 
       const ai = this.getClient();

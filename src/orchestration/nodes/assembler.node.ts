@@ -104,17 +104,33 @@ export async function assemblerNode(
       },
     };
 
-    const summaryMessageContent = `\0${JSON.stringify(summaryCardData)}\0`;
+    // ── 3. Persist and stream summary card ONLY if modifications were made ────
+    const hasModifications =
+      state.intent?.type === "create_or_modify" ||
+      state.intent?.type === "task_update" ||
+      (state.planResult?.milestonesCreated ?? 0) > 0 ||
+      (state.planResult?.tasksCreated ?? 0) > 0 ||
+      state.agendaBuilt ||
+      state.taskUpdateExecuted;
 
-    // ── 3. Persist summary card as assistant message ──────────────────────────
-    if (conversationId) {
-      await MessageRepository.addMessage(conversationId, "assistant", summaryMessageContent);
+    if (hasModifications) {
+      const summaryMessageContent = `\0${JSON.stringify(summaryCardData)}\0`;
+
+      if (conversationId) {
+        await MessageRepository.addMessage(conversationId, "assistant", summaryMessageContent);
+      }
+
+      if (streamController && encoder) {
+        streamController.enqueue(encoder.encode(summaryMessageContent));
+      }
     }
 
-    // ── 4. Stream summary card and close stream ────────────────────────────────
-    if (streamController && encoder) {
-      streamController.enqueue(encoder.encode(summaryMessageContent));
-      streamController.close();
+    if (streamController) {
+      try {
+        streamController.close();
+      } catch {
+        // Ignore double-close errors
+      }
     }
 
     // ── 5. Emit WorkflowCompleted event ───────────────────────────────────────
