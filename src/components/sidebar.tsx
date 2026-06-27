@@ -244,151 +244,149 @@ export default function Sidebar({
       }`}
     >
       {/* ── Top: Logo / Toggle ── */}
-      <div className="flex flex-col shrink-0">
-        <div className="flex items-center px-3 mb-6">
-          {isExpanded ? (
-            /* Expanded header: logo + name + close button */
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center gap-2.5">
-                <Image
-                  src="/assets/logo/logo_1.png"
-                  alt="Zenkai Logo"
-                  width={26}
-                  height={26}
-                  className="object-contain shrink-0"
-                />
-                <span className="font-heading text-lg font-bold tracking-widest text-foreground">
-                  ZENKAI
-                </span>
-              </div>
-              <button
-                onClick={() => setIsExpanded(false)}
-                className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors duration-200 shrink-0"
-                title="Close sidebar"
-              >
-                <PanelLeftClose size={17} />
-              </button>
-            </div>
-          ) : (
-            /* Collapsed header: logo morphs to toggle icon on hover */
-            <div
-              className="relative group/toggle cursor-pointer w-8 h-8 flex items-center justify-center mx-auto"
-              onClick={() => setIsExpanded(true)}
-              title="Open sidebar"
-            >
-              {/* Logo — visible by default */}
+      <div className="flex items-center px-3 mb-6 shrink-0">
+        {isExpanded ? (
+          /* Expanded header: logo + name + close button */
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2.5">
               <Image
                 src="/assets/logo/logo_1.png"
-                alt="Zenkai"
+                alt="Zenkai Logo"
                 width={26}
                 height={26}
-                className="absolute object-contain transition-opacity duration-200 opacity-100 group-hover/toggle:opacity-0"
+                className="object-contain shrink-0"
               />
-              {/* Sidebar open icon — appears on hover */}
-              <PanelLeftOpen
-                size={18}
-                className="absolute transition-opacity duration-200 opacity-0 group-hover/toggle:opacity-100 text-foreground"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* ── Navigation ── */}
-        <nav className="px-2 space-y-1">
-          {/* New Chat Button */}
-          <button
-            onClick={onNewChat}
-            className={`w-full flex items-center rounded-lg p-2.5 text-sm font-medium transition-all duration-200 bg-accent/15 border border-accent/25 hover:bg-accent/25 hover:text-foreground text-accent shadow-sm mb-3 ${
-              isExpanded ? "gap-2.5 justify-start px-3" : "justify-center"
-            }`}
-            title="New Chat"
-          >
-            <span className="text-base font-bold leading-none">+</span>
-            {isExpanded && (
-              <span className="font-sans tracking-wide text-[13px]">New Chat</span>
-            )}
-          </button>
-
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentScreen === item.id;
-
-            return (
-              <button
-                key={item.id}
-                onClick={() => onScreenChange(item.id)}
-                className={`w-full flex items-center rounded-lg p-2.5 text-sm font-medium transition-all duration-200 group relative ${
-                  isExpanded ? "gap-3 px-3" : "justify-center"
-                } ${
-                  isActive
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-background/50 hover:text-foreground"
-                }`}
-              >
-                <Icon
-                  size={19}
-                  className={`shrink-0 transition-transform duration-200 ${
-                    isActive
-                      ? "text-accent"
-                      : "text-muted-foreground group-hover:text-foreground group-hover:scale-105"
-                  }`}
-                />
-
-                {isExpanded && (
-                  <span className="font-sans tracking-wide whitespace-nowrap text-[13px]">
-                    {item.label}
-                  </span>
-                )}
-
-                {/* Tooltip shown when collapsed */}
-                {!isExpanded && (
-                  <div className="absolute left-12 md:left-14 scale-0 rounded-md bg-foreground text-background px-2 py-1.5 text-xs font-semibold shadow-md transition-all duration-100 origin-left group-hover:scale-100 z-50 whitespace-nowrap">
-                    {item.label}
-                  </div>
-                )}
-              </button>
-            );
-          })}
-
-          {/* Conversation History (expanded only) */}
-          {isExpanded && conversations.length > 0 && (
-            <div className="pt-4 border-t border-border/40 space-y-2.5 mt-2">
-              <span className="text-[10px] font-sans font-bold tracking-wider text-muted-foreground uppercase block px-1">
-                History
+              <span className="font-heading text-lg font-bold tracking-widest text-foreground">
+                ZENKAI
               </span>
-              <div className="space-y-3 max-h-[28vh] overflow-y-auto scrollbar-custom pr-0.5">
-                {today.length > 0 && (
-                  <div className="space-y-0.5">
-                    <span className="text-[9px] text-muted-foreground/60 font-semibold px-1 font-mono uppercase block">
-                      Today
-                    </span>
-                    {today.map(renderConvItem)}
-                  </div>
-                )}
-                {yesterday.length > 0 && (
-                  <div className="space-y-0.5">
-                    <span className="text-[9px] text-muted-foreground/60 font-semibold px-1 font-mono uppercase block">
-                      Yesterday
-                    </span>
-                    {yesterday.map(renderConvItem)}
-                  </div>
-                )}
-                {older.length > 0 && (
-                  <div className="space-y-0.5">
-                    <span className="text-[9px] text-muted-foreground/60 font-semibold px-1 font-mono uppercase block">
-                      Older
-                    </span>
-                    {older.map(renderConvItem)}
-                  </div>
-                )}
-              </div>
             </div>
-          )}
-        </nav>
+            <button
+              onClick={() => setIsExpanded(false)}
+              className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors duration-200 shrink-0"
+              title="Close sidebar"
+            >
+              <PanelLeftClose size={17} />
+            </button>
+          </div>
+        ) : (
+          /* Collapsed header: logo morphs to toggle icon on hover */
+          <div
+            className="relative group/toggle cursor-pointer w-8 h-8 flex items-center justify-center mx-auto"
+            onClick={() => setIsExpanded(true)}
+            title="Open sidebar"
+          >
+            {/* Logo — visible by default */}
+            <Image
+              src="/assets/logo/logo_1.png"
+              alt="Zenkai"
+              width={26}
+              height={26}
+              className="absolute object-contain transition-opacity duration-200 opacity-100 group-hover/toggle:opacity-0"
+            />
+            {/* Sidebar open icon — appears on hover */}
+            <PanelLeftOpen
+              size={18}
+              className="absolute transition-opacity duration-200 opacity-0 group-hover/toggle:opacity-100 text-foreground"
+            />
+          </div>
+        )}
       </div>
 
-      {/* ── Bottom: Theme toggle + User ── */}
-      <div className="px-2 space-y-3 shrink-0">
+      {/* ── Navigation (Scrollable center section) ── */}
+      <nav className="flex-1 overflow-y-auto px-2 space-y-1 scrollbar-custom min-h-0 mb-4">
+        {/* New Chat Button */}
+        <button
+          onClick={onNewChat}
+          className={`w-full flex items-center rounded-lg p-2.5 text-sm font-medium transition-all duration-200 bg-accent/15 border border-accent/25 hover:bg-accent/25 hover:text-foreground text-accent shadow-sm mb-3 ${
+            isExpanded ? "gap-2.5 justify-start px-3" : "justify-center"
+          }`}
+          title="New Chat"
+        >
+          <span className="text-base font-bold leading-none">+</span>
+          {isExpanded && (
+            <span className="font-sans tracking-wide text-[13px]">New Chat</span>
+          )}
+        </button>
+
+        {menuItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = currentScreen === item.id;
+
+          return (
+            <button
+              key={item.id}
+              onClick={() => onScreenChange(item.id)}
+              className={`w-full flex items-center rounded-lg p-2.5 text-sm font-medium transition-all duration-200 group relative ${
+                isExpanded ? "gap-3 px-3" : "justify-center"
+              } ${
+                isActive
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-background/50 hover:text-foreground"
+              }`}
+            >
+              <Icon
+                size={19}
+                className={`shrink-0 transition-transform duration-200 ${
+                  isActive
+                    ? "text-accent"
+                    : "text-muted-foreground group-hover:text-foreground group-hover:scale-105"
+                }`}
+              />
+
+              {isExpanded && (
+                <span className="font-sans tracking-wide whitespace-nowrap text-[13px]">
+                  {item.label}
+                </span>
+              )}
+
+              {/* Tooltip shown when collapsed */}
+              {!isExpanded && (
+                <div className="absolute left-12 md:left-14 scale-0 rounded-md bg-foreground text-background px-2 py-1.5 text-xs font-semibold shadow-md transition-all duration-100 origin-left group-hover:scale-100 z-50 whitespace-nowrap">
+                  {item.label}
+                </div>
+              )}
+            </button>
+          );
+        })}
+
+        {/* Conversation History (expanded only) */}
+        {isExpanded && conversations.length > 0 && (
+          <div className="pt-4 border-t border-border/40 space-y-2.5 mt-2">
+            <span className="text-[10px] font-sans font-bold tracking-wider text-muted-foreground uppercase block px-1">
+              History
+            </span>
+            <div className="space-y-3 scrollbar-custom pr-0.5">
+              {today.length > 0 && (
+                <div className="space-y-0.5">
+                  <span className="text-[9px] text-muted-foreground/60 font-semibold px-1 font-mono uppercase block">
+                    Today
+                  </span>
+                  {today.map(renderConvItem)}
+                </div>
+              )}
+              {yesterday.length > 0 && (
+                <div className="space-y-0.5">
+                  <span className="text-[9px] text-muted-foreground/60 font-semibold px-1 font-mono uppercase block">
+                    Yesterday
+                  </span>
+                  {yesterday.map(renderConvItem)}
+                </div>
+              )}
+              {older.length > 0 && (
+                <div className="space-y-0.5">
+                  <span className="text-[9px] text-muted-foreground/60 font-semibold px-1 font-mono uppercase block">
+                    Older
+                  </span>
+                  {older.map(renderConvItem)}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </nav>
+
+      {/* ── Bottom: Theme toggle + User (Pinned bottom section) ── */}
+      <div className="px-2 space-y-3 shrink-0 mt-auto pt-4 border-t border-border/40">
         <button
           onClick={onToggleTheme}
           className={`w-full flex items-center rounded-lg p-2.5 text-sm font-medium transition-all duration-200 text-muted-foreground hover:bg-background/50 hover:text-foreground group relative ${
