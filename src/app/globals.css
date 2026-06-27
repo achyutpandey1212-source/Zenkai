@@ -598,3 +598,19 @@
 .animate-glow-completion {
   animation: glow-completion-pop 1.2s cubic-bezier(0.16, 1, 0.3, 1) 1;
 }
+
+/* 8. Strategy Roadmap: Next Milestone Pulse/Glow */
+@keyframes milestone-next-glow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(201, 168, 106, 0.1), inset 0 0 0px rgba(201, 168, 106, 0);
+    border-color: rgba(201, 168, 106, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(201, 168, 106, 0.25), inset 0 0 10px rgba(201, 168, 106, 0.05);
+    border-color: rgba(201, 168, 106, 0.6);
+    transform: scale(1.005);
+  }
+}
+.animate-milestone-next-glow {
+  animation: milestone-next-glow 2.5s ease-in-out infinite;
+}

@@ -77,6 +77,9 @@ export default function Plans() {
   const [loading, setLoading] = useState(true);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useState<number | null>(null);
+  const [animatingMilestoneId, setAnimatingMilestoneId] = useState<string | null>(null);
+  const [lineAnimationProgress, setLineAnimationProgress] = useState(false);
+  const [pulseMilestoneId, setPulseMilestoneId] = useState<string | null>(null);
   const [devMode, setDevMode] = useState(false);
   const [filter, setFilter] = useState<"all" | "upcoming" | "completed">("all");
  
@@ -110,6 +113,42 @@ export default function Plans() {
  
   const handleToggleTask = async (taskId: string, currentStatus: string) => {
     const newStatus = currentStatus === "completed" ? "todo" : "completed";
+    
+    // Check if this task toggle triggers milestone completion
+    let transitioningMilestoneId: string | null = null;
+    let nextMilestoneId: string | null = null;
+    
+    const active = plans.find((p) => p._id === activePlanId) || plans[0];
+    const planToUse = selectedRevisionIndex !== null && active.history?.[selectedRevisionIndex]
+      ? JSON.parse(active.history[selectedRevisionIndex].snapshot)
+      : active;
+      
+    const activeM = (planToUse.milestones || []).filter(
+      (m: any) => selectedRevisionIndex !== null || m.status !== "cancelled"
+    );
+
+    const sorted = [...activeM].sort((a: any, b: any) => {
+      const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+      const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+      return dateA - dateB;
+    });
+
+    for (let i = 0; i < sorted.length; i++) {
+      const m = sorted[i];
+      const task = m.goals.flatMap((g: any) => g.tasks).find((t: any) => t._id === taskId);
+      if (task) {
+        const allTasks = m.goals.flatMap((g: any) => g.tasks);
+        const otherTasksCompleted = allTasks.filter((t: any) => t._id !== taskId).every((t: any) => t.status === "completed");
+        if (newStatus === "completed" && otherTasksCompleted) {
+          transitioningMilestoneId = m._id;
+          if (i < sorted.length - 1) {
+            nextMilestoneId = sorted[i + 1]._id;
+          }
+        }
+        break;
+      }
+    }
+
     try {
       // Optimistic update
       setPlans((prevPlans) =>
@@ -126,6 +165,31 @@ export default function Plans() {
           })),
         }))
       );
+
+      // Trigger animations sequentially if milestone is transitioning to completed
+      if (transitioningMilestoneId) {
+        setAnimatingMilestoneId(transitioningMilestoneId);
+        setLineAnimationProgress(false);
+
+        // Phase 1: Node checkmark transition (300ms)
+        setTimeout(() => {
+          setLineAnimationProgress(true);
+
+          // Phase 2: Connecting branch line fills to next milestone (500ms)
+          setTimeout(() => {
+            setAnimatingMilestoneId(null);
+            setLineAnimationProgress(false);
+
+            // Phase 3: Pulse/Glow the next recommended milestone (2000ms)
+            if (nextMilestoneId) {
+              setPulseMilestoneId(nextMilestoneId);
+              setTimeout(() => {
+                setPulseMilestoneId(null);
+              }, 2500);
+            }
+          }, 500);
+        }, 300);
+      }
  
       const res = await fetch(`/api/tasks/${taskId}`, {
         method: "PATCH",
@@ -355,7 +419,7 @@ export default function Plans() {
           <div className="bg-secondary/20 border border-border/40 p-4 rounded-xl flex flex-col gap-1.5 items-start justify-center">
             <span className="font-sans text-[9px] tracking-wider text-muted-foreground uppercase">Am I on track?</span>
             <div className="flex items-center gap-2">
-              <span className={`h-2.5 w-2.5 rounded-full ${isOnTrack ? "bg-green-500 animate-pulse" : "bg-amber-500"}`} />
+            <span className={`h-2.5 w-2.5 rounded-full ${isOnTrack ? "bg-green-500 animate-pulse" : "bg-amber-500"}`} />
               <span className="font-heading text-lg font-light text-foreground">
                 {isOnTrack ? "On Track" : "Needs Focus"}
               </span>
@@ -365,23 +429,44 @@ export default function Plans() {
         </section>
 
         {/* Unified Chronological Itinerary Timeline */}
-        <section className="relative flex flex-col pl-4 border-l border-border/20 ml-2 space-y-12">
+        <section className="relative flex flex-col pl-6 space-y-12">
           
           {sortedMilestones.map((m, mIdx) => {
             const isCompleted = m.status === "completed";
             const isCancelled = m.status === "cancelled";
             const isNext = nextMilestone && nextMilestone._id === m._id;
+            
+            // Check dynamic animation/pulse states
+            const isAnimating = animatingMilestoneId === m._id;
+            const isPulsing = pulseMilestoneId === m._id;
+
             const catIcon = categoryIcons[m.category || "Personal"] || "👤";
             const catBorder = categoryBorders[m.category || "Personal"] || "border-border/40 text-muted-foreground";
 
-            // Determine if timeline line connecting this node should be green
-            const timelineNodeColor = isCompleted
-              ? "bg-green-500 border-green-500"
+            // Next focus glow animation state
+            const borderGlowClass = isPulsing
+              ? "animate-milestone-next-glow shadow-[0_0_20px_rgba(201,168,106,0.2)]"
+              : isNext
+              ? "border-accent/40 shadow-[0_0_15px_rgba(201,168,106,0.06)]"
+              : "border-border/50";
+
+            // Node checkmark color classes
+            const timelineNodeColor = (isCompleted || isAnimating)
+              ? "bg-green-500 border-green-500 scale-110"
               : isCancelled
               ? "bg-red-500/40 border-red-500/40"
-              : isNext
-              ? "bg-accent border-accent scale-110 shadow-[0_0_8px_rgba(201,168,106,0.8)]"
+              : (isNext || isPulsing)
+              ? "bg-accent border-accent scale-110 shadow-[0_0_12px_rgba(201,168,106,0.65)]"
               : "bg-background border-muted-foreground/30";
+
+            // Flow line progress calculation
+            const isLast = mIdx === sortedMilestones.length - 1;
+            const isLineCompleted = isCompleted && !isAnimating;
+            const lineFillHeight = isLineCompleted
+              ? "100%"
+              : (isAnimating && lineAnimationProgress)
+              ? "100%"
+              : "0%";
 
             return (
               <div 
@@ -391,16 +476,29 @@ export default function Plans() {
                 }`}
               >
                 
-                {/* Timeline node */}
-                <div className={`absolute -left-[22px] top-4 h-3 w-3 rounded-full border-2 transition-all duration-500 z-10 ${timelineNodeColor}`} />
+                {/* Individual vertical connecting branch segment to next milestone */}
+                {!isLast && (
+                  <div className="absolute left-[-17px] top-8 bottom-[-56px] w-[2px] bg-border/20 z-0">
+                    {/* Animated Green progress fill overlay */}
+                    <div 
+                      className="w-full bg-green-500 transition-all duration-[500ms] ease-in-out origin-top"
+                      style={{ height: lineFillHeight }}
+                    />
+                  </div>
+                )}
+
+                {/* Timeline node checkmark indicator */}
+                <div 
+                  className={`absolute -left-[24px] top-4 h-4.5 w-4.5 rounded-full border-2 flex items-center justify-center transition-all duration-[300ms] ease-in-out z-10 ${timelineNodeColor}`}
+                >
+                  {(isCompleted || isAnimating) && (
+                    <Check size={9} className="text-primary-foreground stroke-[3.5px] transition-all duration-300 animate-slide-down-fade" />
+                  )}
+                </div>
 
                 {/* Itinerary Milestone Card */}
                 <div 
-                  className={`bg-card border rounded-2xl p-6 flex flex-col gap-4 shadow-sm transition-all duration-500 ${
-                    isNext 
-                      ? "border-accent/40 shadow-[0_0_20px_rgba(201,168,106,0.1)] ring-1 ring-accent/10" 
-                      : "border-border/50"
-                  }`}
+                  className={`bg-card border rounded-2xl p-6 flex flex-col gap-4 shadow-sm transition-all duration-500 ${borderGlowClass}`}
                 >
                   {/* Card Header */}
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-border/20 pb-3">
