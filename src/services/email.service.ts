@@ -40,12 +40,16 @@ export class EmailService {
           break;
         }
 
-        await resend.emails.send({
+        const res = await resend.emails.send({
           from: `Zenkai <${FROM_EMAIL}>`,
           to: email,
           subject: `Your Morning Briefing — Zenkai`,
           html,
         });
+
+        if (res.error) {
+          throw new Error(res.error.message || JSON.stringify(res.error));
+        }
 
         status = "success";
         break;
@@ -110,12 +114,16 @@ export class EmailService {
           break;
         }
 
-        await resend.emails.send({
+        const res = await resend.emails.send({
           from: `Zenkai <${FROM_EMAIL}>`,
           to: email,
           subject: `Your Evening Reflection — Zenkai`,
           html,
         });
+
+        if (res.error) {
+          throw new Error(res.error.message || JSON.stringify(res.error));
+        }
 
         status = "success";
         break;
