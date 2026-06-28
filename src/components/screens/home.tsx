@@ -35,6 +35,7 @@ export default function Home({
   
   const [loadingProactive, setLoadingProactive] = useState(true);
   const [loadingAgenda, setLoadingAgenda] = useState(true);
+  const [greeting, setGreeting] = useState("Good Morning,");
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -82,6 +83,17 @@ export default function Home({
   useEffect(() => {
     fetchProactiveData();
     fetchAgenda();
+
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) {
+      setGreeting("Good Morning,");
+    } else if (hour >= 12 && hour < 17) {
+      setGreeting("Good Afternoon,");
+    } else if (hour >= 17 && hour < 22) {
+      setGreeting("Good Evening,");
+    } else {
+      setGreeting("Good Night,");
+    }
   }, []);
 
   // Update Orb behavior based on agenda completion on mount/load
@@ -262,7 +274,7 @@ export default function Home({
 
           <div className="text-center flex flex-col items-center mt-5">
             <span className="font-heading text-3xl md:text-4xl font-light text-muted-foreground italic">
-              Good Morning,
+              {greeting}
             </span>
             <span className="font-signature text-5xl md:text-6xl text-accent leading-none mt-1">
               {userName}
