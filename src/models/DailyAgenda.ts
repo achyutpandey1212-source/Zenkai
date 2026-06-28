@@ -18,6 +18,7 @@ export interface IDailyAgenda extends Document {
   upcomingDeadline: string;
   executionReasoning: string;
   deferredExplanation?: string;
+  isStale?: boolean;
   diagnostics?: {
     priorityCalculations?: string;
     constraintEvaluation?: string;
@@ -50,6 +51,7 @@ const DailyAgendaSchema = new Schema<IDailyAgenda>(
     upcomingDeadline: { type: String, default: "" },
     executionReasoning: { type: String, default: "" },
     deferredExplanation: { type: String, default: "" },
+    isStale: { type: Boolean, default: false },
     diagnostics: {
       priorityCalculations: { type: String, default: "" },
       constraintEvaluation: { type: String, default: "" },

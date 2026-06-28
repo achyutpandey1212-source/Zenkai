@@ -26,10 +26,10 @@ export class UserIntelligenceSnapshotBuilder {
       bp,
       cp,
       activeTraits,
-      activeGoals,
-      plans,
-      milestones,
-      tasks,
+      rawActiveGoals,
+      rawPlans,
+      rawMilestones,
+      rawTasks,
       agendas,
       syncLogs,
       memories,
@@ -54,6 +54,14 @@ export class UserIntelligenceSnapshotBuilder {
       PredictionProfile.findOne({ uid }).lean(),
       RiskProfile.findOne({ uid }).lean()
     ]);
+
+    const plans = rawPlans.filter(p => p.status !== "archived");
+    const nonArchivedPlanIds = new Set(plans.map(p => p._id.toString()));
+
+    const milestones = rawMilestones.filter(m => nonArchivedPlanIds.has(m.planId?.toString()));
+    const activeGoals = rawActiveGoals.filter(g => !g.planId || nonArchivedPlanIds.has(g.planId.toString()));
+    const activeGoalIds = new Set(activeGoals.map(g => g._id.toString()));
+    const tasks = rawTasks.filter(t => !t.goalId || activeGoalIds.has(t.goalId.toString()));
 
     const primaryTrait = activeTraits.find(t => t.category === "core_identity") || 
                          activeTraits.find(t => t.category === "aspiration") || 

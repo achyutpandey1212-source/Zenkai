@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth-service";
-import { Plan } from "@/models/Plan";
-import { Milestone } from "@/models/Milestone";
-import { Goal } from "@/models/Goal";
-import { Task } from "@/models/Task";
 import { ReflectionRepository } from "@/repositories/reflection.repository";
 import { dbConnect } from "@/lib/mongodb";
+import { CurrentStateService } from "@/services/current-state.service";
+import { Goal } from "@/models/Goal";
+import { Task } from "@/models/Task";
 
 export const dynamic = "force-dynamic";
 
@@ -26,96 +25,59 @@ export async function GET() {
 
     await dbConnect();
 
-    // 1. Get active plan
-    const activePlan = await Plan.findOne({ firebaseUid: user.firebaseUid, status: "active" })
-      .sort({ updatedAt: -1 });
+    // Fetch the single source of truth workspace state
+    const state = await CurrentStateService.getCurrentState(user.firebaseUid);
 
-    let currentGoal = activePlan ? activePlan.title : null;
-    let activeMilestone = null;
-    let upcomingHardConstraint = null;
-    let priorities: any[] = [];
-    let planProgress = activePlan ? activePlan.progress : 0;
-
-    if (activePlan) {
-      // 2. Get current active milestone
-      const milestone = await Milestone.findOne({
-        planId: activePlan._id,
-        status: "in_progress"
-      }) || await Milestone.findOne({
-        planId: activePlan._id,
-        status: "todo"
-      }).sort({ priority: 1 });
-
-      if (milestone) {
-        activeMilestone = {
-          _id: milestone._id.toString(),
-          title: milestone.title,
-          progress: milestone.progress || 0,
-          category: milestone.category || "Personal",
-          startDate: milestone.startDate,
-          endDate: milestone.endDate,
-          estimatedDuration: milestone.estimatedDuration
-        };
-      }
-
-      // 3. Find today's planned tasks
-      const planGoals = await Goal.find({ planId: activePlan._id });
-      const goalIds = planGoals.map(g => g._id);
-      
-      const todayStr = new Date().toISOString().split("T")[0];
-      let todayTasks = await Task.find({
-        goalId: { $in: goalIds },
-        suggestedDate: todayStr
-      }).sort({ priority: 1 }).lean();
-
-      if (todayTasks.length === 0) {
-        // Fallback: top 3 unfinished tasks of active milestone or plan
-        if (milestone) {
-          const milestoneGoals = await Goal.find({ milestoneId: milestone._id });
-          const milestoneGoalIds = milestoneGoals.map(g => g._id);
-          todayTasks = await Task.find({
-            goalId: { $in: milestoneGoalIds },
-            status: { $in: ["todo", "in_progress"] }
-          }).sort({ priority: 1 }).limit(3).lean();
-        } else {
-          todayTasks = await Task.find({
-            goalId: { $in: goalIds },
-            status: { $in: ["todo", "in_progress"] }
-          }).sort({ priority: 1 }).limit(3).lean();
-        }
-      }
-
-      priorities = todayTasks;
-
-      // 4. Get next upcoming hard constraint (Exam or Interview)
-      const hardConstraint = await Milestone.findOne({
-        planId: activePlan._id,
-        category: { $in: ["Exam", "Interview"] },
-        status: { $in: ["todo", "in_progress"] }
-      }).sort({ startDate: 1, priority: 1 });
-
-      if (hardConstraint) {
-        upcomingHardConstraint = {
-          _id: hardConstraint._id.toString(),
-          title: hardConstraint.title,
-          category: hardConstraint.category,
-          startDate: hardConstraint.startDate,
-          endDate: hardConstraint.endDate
-        };
-      }
-    }
-
-    // 5. Get recent active reflection
+    // Get recent active reflection
     const activeReflections = await ReflectionRepository.findActiveByUser(user.firebaseUid);
     const recentReflection = activeReflections.length > 0 ? activeReflections[0] : null;
+
+    // Gather priorities (today's agenda tasks or fallback to milestone tasks)
+    let priorities: any[] = [];
+    if (state.todayAgenda) {
+      const agendaTasks: any[] = [];
+      state.todayAgenda.workBlocks.forEach((wb: any) => wb.tasks.forEach((t: any) => {
+        if (t) agendaTasks.push(t);
+      }));
+      state.todayAgenda.optionalTasks.forEach((t: any) => {
+        if (t) agendaTasks.push(t);
+      });
+      state.todayAgenda.stretchGoals.forEach((t: any) => {
+        if (t) agendaTasks.push(t);
+      });
+      priorities = agendaTasks;
+    } else if (state.activePlan) {
+      const goalIds = state.activeGoals.map(g => g._id);
+      if (state.activeMilestone) {
+        const milestoneGoals = await Goal.find({ milestoneId: state.activeMilestone._id });
+        const milestoneGoalIds = milestoneGoals.map(g => g._id);
+        priorities = await Task.find({
+          goalId: { $in: milestoneGoalIds },
+          status: { $in: ["todo", "in_progress"] }
+        }).sort({ priority: 1 }).limit(3).lean();
+      } else {
+        priorities = await Task.find({
+          goalId: { $in: goalIds },
+          status: { $in: ["todo", "in_progress"] }
+        }).sort({ priority: 1 }).limit(3).lean();
+      }
+    }
 
     return NextResponse.json({
       success: true,
       proactiveData: {
-        currentGoal,
-        activeMilestone,
-        upcomingHardConstraint,
-        planProgress,
+        currentGoal: state.activePlan ? state.activePlan.title : null,
+        activeMilestone: state.activeMilestone ? {
+          _id: state.activeMilestone._id.toString(),
+          title: state.activeMilestone.title,
+          progress: state.activeMilestone.progress || 0,
+          category: state.activeMilestone.category || "Personal",
+          startDate: state.activeMilestone.startDate,
+          endDate: state.activeMilestone.endDate,
+          estimatedDuration: state.activeMilestone.estimatedDuration
+        } : null,
+        upcomingHardConstraint: state.upcomingDeadline ? { title: state.upcomingDeadline } : null,
+        planProgress: state.activePlan ? state.activePlan.progress : 0,
         priorities: priorities.map(p => ({
           id: p._id.toString(),
           title: p.title,

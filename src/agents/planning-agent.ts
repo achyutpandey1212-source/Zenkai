@@ -3,6 +3,7 @@ import { Plan, IPlan } from "@/models/Plan";
 import { Milestone, IMilestone } from "@/models/Milestone";
 import { Goal, IGoal } from "@/models/Goal";
 import { Task, ITask } from "@/models/Task";
+import { User } from "@/models/User";
 import { ProfileRepository } from "@/repositories/profile.repository";
 import { MemoryRepository } from "@/repositories/memory.repository";
 import { IdentityRepository } from "@/repositories/identity.repository";
@@ -1222,6 +1223,53 @@ Remember:
       console.log(
         `[PlanningAgent] Plan complete in ${Date.now() - startTime}ms. Milestones: ${updatedMilestones.length}, New tasks: ${totalTasksCreated}, Version: ${newPlanVersion}`
       );
+
+      // 4. Synchronization and Invalidation (Phase 15A)
+      try {
+        const user = await User.findOne({ firebaseUid: uid }).lean();
+        const timezone = user?.briefSettings?.timezone || "UTC";
+        const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+
+        // A. Set today's daily agenda as stale (instead of deleting it, keeping history)
+        const DailyAgendaModule = await import("@/models/DailyAgenda");
+        await DailyAgendaModule.DailyAgenda.updateOne(
+          { firebaseUid: uid, date: todayStr },
+          { $set: { isStale: true } }
+        );
+
+        // B. Ensure there is only 1 active plan at a time. If the current plan is active, auto-archive others.
+        if (planDoc.status === "active") {
+          const plansToArchive = await Plan.find({
+            firebaseUid: uid,
+            _id: { $ne: planDoc._id },
+            status: "active"
+          });
+          const planIdsToArchive = plansToArchive.map(p => p._id.toString());
+
+          if (planIdsToArchive.length > 0) {
+            await Plan.updateMany(
+              { firebaseUid: uid, _id: { $in: planIdsToArchive } },
+              { $set: { status: "archived" } }
+            );
+
+            // Clean up mirrored Google Calendar events for newly archived plans
+            const { CalendarSyncService } = await import("@/services/calendar-sync.service");
+            for (const pid of planIdsToArchive) {
+              await CalendarSyncService.cleanObsoleteEvents(uid, pid).catch(err => {
+                console.error("[PlanningAgent] Failed to clean obsolete events for auto-archived plan:", pid, err);
+              });
+            }
+          }
+        } else if (planDoc.status === "archived") {
+          // If the evolved plan itself was archived, clean it up
+          const { CalendarSyncService } = await import("@/services/calendar-sync.service");
+          await CalendarSyncService.cleanObsoleteEvents(uid, planDoc._id.toString()).catch(err => {
+            console.error("[PlanningAgent] Failed to clean obsolete events for evolved plan:", planDoc._id, err);
+          });
+        }
+      } catch (syncErr) {
+        console.error("[PlanningAgent] Error during workspace active-state synchronization:", syncErr);
+      }
 
       // Notify BehaviorEngine
       await BehaviorEngine.updateFromPlan(uid, planId, "update").catch(err =>

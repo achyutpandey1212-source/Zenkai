@@ -28,7 +28,13 @@ export async function GET(request: Request) {
     await dbConnect();
 
     // Fetch or generate the daily agenda
-    const agenda = await ExecutionAgent.getOrCreateDailyAgenda(user.firebaseUid, clientDate);
+    let agenda = await ExecutionAgent.getOrCreateDailyAgenda(user.firebaseUid, clientDate);
+    if (agenda && agenda.isStale) {
+      console.log(`[AgendaRoute] Today's agenda is stale. Force regenerating...`);
+      agenda = await ExecutionAgent.getOrCreateDailyAgenda(user.firebaseUid, clientDate, true);
+      agenda.isStale = false;
+      await agenda.save();
+    }
 
     return NextResponse.json({
       success: true,

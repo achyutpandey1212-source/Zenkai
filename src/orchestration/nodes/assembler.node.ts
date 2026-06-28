@@ -19,6 +19,8 @@ import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
 import { GraphLogger } from "../utils/graph-logger";
 
+import { CurrentStateService } from "@/services/current-state.service";
+
 function makeStatusEvent(
   agent: string,
   status: "idle" | "running" | "completed" | "skipped",
@@ -58,28 +60,14 @@ export async function assemblerNode(
     }
 
     // ── 2. Build execution summary card ──────────────────────────────────────
-    const agenda = state.todayAgenda as Record<string, unknown> | null;
-    const workloadStr = agenda
-      ? `${(((agenda.estimatedFocusTime as number) ?? 0) / 60).toFixed(1)} hrs/day`
-      : "0.0 hrs/day";
-    const priorityStr =
-      (agenda?.focus as string) || (agenda?.currentPriority as string) || "General focus";
-
-    // Next upcoming milestone
-    const upcomingMilestones = await Milestone.find({
-      firebaseUid: uid,
-      status: { $in: ["todo", "in_progress"] },
-    })
-      .sort({ startDate: 1 })
-      .limit(1)
-      .lean();
-
-    const nextMilestoneStr =
-      upcomingMilestones.length > 0
-        ? `${upcomingMilestones[0].title} • ${new Date(
-            upcomingMilestones[0].startDate || ""
-          ).toLocaleDateString([], { month: "short", day: "numeric" })}`
-        : "None scheduled";
+    const currentState = await CurrentStateService.getCurrentState(uid);
+    const workloadStr = currentState.estimatedWorkload;
+    const priorityStr = currentState.highestPriority;
+    const nextMilestoneStr = currentState.activeMilestone
+      ? `${currentState.activeMilestone.title} • ${new Date(
+          currentState.activeMilestone.startDate || ""
+        ).toLocaleDateString([], { month: "short", day: "numeric" })}`
+      : "None scheduled";
 
     const summaryCardData = {
       __type: "execution_summary",

@@ -575,4 +575,60 @@ export class CalendarSyncService {
       return false;
     }
   }
+
+  /**
+   * Cleans up mirrored Google Calendar events for tasks belonging to an archived/replaced plan.
+   */
+  static async cleanObsoleteEvents(uid: string, planId: string): Promise<void> {
+    try {
+      const user = await User.findOne({ firebaseUid: uid }).lean();
+      if (!user || !user.googleCalendarSettings?.connected) {
+        console.log(`[CalendarSyncService] Calendar not connected for ${uid}. Skipping cleanObsoleteEvents.`);
+        return;
+      }
+
+      // Find goals belonging to this plan
+      const goals = await Goal.find({ planId });
+      const goalIds = goals.map(g => g._id);
+
+      // Find tasks belonging to these goals that have Google Calendar events
+      const tasks = await Task.find({
+        firebaseUid: uid,
+        goalId: { $in: goalIds },
+        googleCalendarEventId: { $ne: "" }
+      });
+
+      console.log(`[CalendarSyncService] Cleaning up ${tasks.length} obsolete calendar events for plan ${planId}`);
+      for (const task of tasks) {
+        if (task.googleCalendarEventId) {
+          await GoogleCalendarService.deleteEvent(uid, task.googleCalendarEventId).catch(err => {
+            console.error(`[CalendarSyncService] Failed to delete obsolete event ${task.googleCalendarEventId}:`, err);
+          });
+          await Task.updateOne(
+            { _id: task._id },
+            {
+              $unset: {
+                googleCalendarEventId: "",
+                googleCalendarEventHash: "",
+                googleCalendarConflict: "",
+                googleCalendarConflictDetails: ""
+              }
+            }
+          );
+        }
+      }
+
+      // Update user count
+      const totalSynced = await Task.countDocuments({
+        firebaseUid: uid,
+        googleCalendarEventId: { $ne: null }
+      });
+      await User.updateOne(
+        { firebaseUid: uid },
+        { $set: { "googleCalendarSettings.syncedEventsCount": totalSynced } }
+      );
+    } catch (err) {
+      console.error(`[CalendarSyncService] Error cleaning obsolete events for plan ${planId}:`, err);
+    }
+  }
 }

@@ -7,6 +7,7 @@ import { PlanRepository } from "@/repositories/plan.repository";
 import { DailyAgendaRepository } from "@/repositories/daily-agenda.repository";
 import { Task, ITask } from "@/models/Task";
 import { Milestone } from "@/models/Milestone";
+import { Goal } from "@/models/Goal";
 import { Types } from "mongoose";
 import type { GraphState } from "@/orchestration/graph/state";
 import { CalendarSyncService } from "@/services/calendar-sync.service";
@@ -100,10 +101,16 @@ export class ExecutionAgent {
 
     // Get all tasks for this user
     // We fetch tasks that are suggested for today, or have been deferred/todo/in-progress
-    const allTasks = await Task.find({
+    const rawAllTasks = await Task.find({
       firebaseUid: uid,
       status: { $in: ["todo", "in_progress", "deferred", "blocked"] }
     }).lean() as ITask[];
+
+    // Ensure we only schedule tasks from active plans (or general tasks)
+    const activePlanIds = new Set(activePlans.map((p: any) => p._id.toString()));
+    const activeGoals = await Goal.find({ firebaseUid: uid, planId: { $in: Array.from(activePlanIds) } }).lean();
+    const activeGoalIds = new Set(activeGoals.map((g: any) => g._id.toString()));
+    const allTasks = rawAllTasks.filter((t: any) => !t.goalId || activeGoalIds.has(t.goalId.toString()));
 
     // Find upcoming hard constraints (Milestones with category Exam or Interview)
     let upcomingHardConstraints: any[] = [];

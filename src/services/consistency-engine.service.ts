@@ -48,10 +48,10 @@ export class ConsistencyEngine {
       user,
       bp,
       activeTraits,
-      activeGoals,
-      plans,
-      milestones,
-      completedTasks,
+      rawActiveGoals,
+      rawPlans,
+      rawMilestones,
+      rawCompletedTasks,
       briefingLogs,
       agendas
     ] = await Promise.all([
@@ -65,6 +65,15 @@ export class ConsistencyEngine {
       BriefingLog.find({ uid, status: "success" }).sort({ createdAt: -1 }).limit(14).lean(),
       DailyAgenda.find({ firebaseUid: uid }).sort({ date: -1 }).limit(14).lean()
     ]);
+
+    const nonArchivedPlans = rawPlans.filter(p => p.status !== "archived");
+    const nonArchivedPlanIds = new Set(nonArchivedPlans.map(p => p._id.toString()));
+
+    const milestones = rawMilestones.filter(m => nonArchivedPlanIds.has(m.planId?.toString()));
+    const activeGoals = rawActiveGoals.filter(g => !g.planId || nonArchivedPlanIds.has(g.planId.toString()));
+    const activeGoalIds = new Set(activeGoals.map(g => g._id.toString()));
+    const completedTasks = rawCompletedTasks.filter(t => !t.goalId || activeGoalIds.has(t.goalId.toString()));
+    const plans = nonArchivedPlans;
 
     const timezone = user?.briefSettings?.timezone || "UTC";
 

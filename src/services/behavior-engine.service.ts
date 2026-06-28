@@ -3,6 +3,7 @@ import { BehaviorProfile, IBehaviorProfile } from "@/models/BehaviorProfile";
 import { Task } from "@/models/Task";
 import { Plan } from "@/models/Plan";
 import { Milestone } from "@/models/Milestone";
+import { Goal } from "@/models/Goal";
 import { DailyAgenda } from "@/models/DailyAgenda";
 import { BriefingLog } from "@/models/BriefingLog";
 import { CalendarSyncLog } from "@/models/CalendarSyncLog";
@@ -66,8 +67,16 @@ export class BehaviorEngine {
     const profile = await this.getOrCreateProfile(uid);
     const todayStr = this.getLocalDateString(new Date(), timezone);
 
-    // 2. Fetch all collections for the user
-    const allTasks = await Task.find({ firebaseUid: uid }).lean();
+    // 2. Fetch all collections for the user, filtering out archived plan dependencies
+    const plans = await Plan.find({ firebaseUid: uid }).lean();
+    const activeAndCompletedPlanIds = new Set(plans.filter((p: any) => p.status !== "archived").map((p: any) => p._id.toString()));
+
+    const allGoals = await Goal.find({ firebaseUid: uid }).lean();
+    const activeGoals = allGoals.filter((g: any) => !g.planId || activeAndCompletedPlanIds.has(g.planId.toString()));
+    const activeGoalIds = new Set(activeGoals.map((g: any) => g._id.toString()));
+
+    const rawAllTasks = await Task.find({ firebaseUid: uid }).lean();
+    const allTasks = rawAllTasks.filter((t: any) => !t.goalId || activeGoalIds.has(t.goalId.toString()));
     const completedTasks = allTasks.filter(t => t.status === "completed");
     const skippedTasks = allTasks.filter(t => t.status === "skipped");
     
@@ -189,14 +198,14 @@ export class BehaviorEngine {
     const weekendCompletionRate = getGroupCompletionRate(weekendTasks);
 
     // 7. Planning Behavior
-    const plans = await Plan.find({ firebaseUid: uid }).lean();
-    const plansCreated = plans.length;
-    const plansCompleted = plans.filter(p => p.status === "completed").length;
-    const plansAbandoned = plans.filter(p => p.status === "archived").length;
+    const allPlans = await Plan.find({ firebaseUid: uid }).lean();
+    const plansCreated = allPlans.length;
+    const plansCompleted = allPlans.filter((p: any) => p.status === "completed").length;
+    const plansAbandoned = allPlans.filter((p: any) => p.status === "archived").length;
 
-    const lifetimePlans = plans.filter(p => ["completed", "archived"].includes(p.status));
+    const lifetimePlans = allPlans.filter((p: any) => ["completed", "archived"].includes(p.status));
     let totalLifetimeDays = 0;
-    lifetimePlans.forEach(p => {
+    lifetimePlans.forEach((p: any) => {
       const diffMs = new Date(p.updatedAt).getTime() - new Date(p.createdAt).getTime();
       totalLifetimeDays += diffMs / (1000 * 60 * 60 * 24);
     });
@@ -277,25 +286,34 @@ export class BehaviorEngine {
     // 1. Gather all activity dates
     const activityDates = new Set<string>();
 
+    const plans = await Plan.find({ firebaseUid: uid }).lean();
+    const activeAndCompletedPlanIds = new Set(plans.filter((p: any) => p.status !== "archived").map((p: any) => p._id.toString()));
+
+    const allGoals = await Goal.find({ firebaseUid: uid }).lean();
+    const activeGoals = allGoals.filter((g: any) => !g.planId || activeAndCompletedPlanIds.has(g.planId.toString()));
+    const activeGoalIds = new Set(activeGoals.map((g: any) => g._id.toString()));
+
     // Completed Tasks
-    const tasks = await Task.find({ firebaseUid: uid, status: "completed" }).select("completedAt").lean();
-    tasks.forEach(t => {
+    const rawTasks = await Task.find({ firebaseUid: uid, status: "completed" }).select("completedAt goalId").lean();
+    const tasks = rawTasks.filter((t: any) => !t.goalId || activeGoalIds.has(t.goalId.toString()));
+    tasks.forEach((t: any) => {
       if (t.completedAt) activityDates.add(this.getLocalDateString(t.completedAt, timezone));
     });
 
     // Completed Milestones
-    const milestones = await Milestone.find({ firebaseUid: uid, status: "completed" }).select("updatedAt").lean();
-    milestones.forEach(m => {
+    const rawMilestones = await Milestone.find({ firebaseUid: uid, status: "completed" }).select("updatedAt planId").lean();
+    const milestones = rawMilestones.filter((m: any) => activeAndCompletedPlanIds.has(m.planId?.toString()));
+    milestones.forEach((m: any) => {
       if (m.updatedAt) activityDates.add(this.getLocalDateString(m.updatedAt, timezone));
     });
 
     // Plan modifications (createdAt, updatedAt, history timestamps)
-    const plans = await Plan.find({ firebaseUid: uid }).select("createdAt updatedAt history.timestamp").lean();
-    plans.forEach(p => {
+    const activePlans = plans.filter((p: any) => p.status !== "archived");
+    activePlans.forEach((p: any) => {
       activityDates.add(this.getLocalDateString(p.createdAt, timezone));
       activityDates.add(this.getLocalDateString(p.updatedAt, timezone));
       if (p.history) {
-        p.history.forEach(h => {
+        p.history.forEach((h: any) => {
           activityDates.add(this.getLocalDateString(h.timestamp, timezone));
         });
       }
