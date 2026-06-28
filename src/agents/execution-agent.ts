@@ -9,6 +9,7 @@ import { Task, ITask } from "@/models/Task";
 import { Milestone } from "@/models/Milestone";
 import { Types } from "mongoose";
 import type { GraphState } from "@/orchestration/graph/state";
+import { CalendarSyncService } from "@/services/calendar-sync.service";
 
 const EXECUTION_AGENT_SYSTEM_PROMPT = `
 You are the Execution Agent for Zenkai, a luxury AI growth companion.
@@ -340,7 +341,14 @@ Remember:
       }
     };
 
-    return await DailyAgendaRepository.saveAgenda(uid, dateStr, agendaData);
+    const savedAgenda = await DailyAgendaRepository.saveAgenda(uid, dateStr, agendaData);
+
+    // Queue debounced calendar sync asynchronously (runs after agenda generation completes)
+    CalendarSyncService.queueSync(uid).catch((err) => {
+      console.error("[ExecutionAgent] Background calendar queue error:", err);
+    });
+
+    return savedAgenda;
   }
 
   /**

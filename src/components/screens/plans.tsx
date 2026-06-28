@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Check, Clock, AlertCircle, Play, Sparkles } from "lucide-react";
+import { Check, Clock, AlertCircle, Play, Sparkles, Calendar } from "lucide-react";
 
 interface TaskData {
   _id: string;
@@ -14,6 +14,8 @@ interface TaskData {
   completedAt?: string;
   suggestedDate?: string;
   timeBlock?: string;
+  googleCalendarEventId?: string;
+  googleCalendarConflict?: boolean;
 }
  
 interface GoalData {
@@ -72,7 +74,7 @@ interface PlanData {
   updatedAt: string;
 }
 
-export default function Plans() {
+export default function Plans({ planDataVersion }: { planDataVersion?: number }) {
   const [plans, setPlans] = useState<PlanData[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
@@ -105,7 +107,7 @@ export default function Plans() {
  
   useEffect(() => {
     fetchPlans();
-  }, []);
+  }, [planDataVersion]); // re-fetches when plan_version stream event increments this
  
   useEffect(() => {
     setSelectedRevisionIndex(null);
@@ -599,6 +601,23 @@ export default function Plans() {
                                       )}
                                       {t.estimatedDuration && (
                                         <span>Est: {t.estimatedDuration}</span>
+                                      )}
+                                      {t.googleCalendarConflict ? (
+                                        <span className="flex items-center gap-0.5 text-amber-500 font-semibold" title="Conflict detected: Edited on Google Calendar">
+                                          <Calendar size={9} /> Conflict
+                                        </span>
+                                      ) : t.googleCalendarEventId ? (
+                                        <span className="flex items-center gap-0.5 text-green-500 font-semibold" title="Synced with Google Calendar">
+                                          <Calendar size={9} /> Synced
+                                        </span>
+                                      ) : t.suggestedDate ? (
+                                        <span className="flex items-center gap-0.5 text-muted-foreground/60 font-medium" title="Pending Sync">
+                                          <Calendar size={9} className="opacity-75" /> Pending Sync
+                                        </span>
+                                      ) : (
+                                        <span className="flex items-center gap-0.5 text-muted-foreground/30 font-light" title="Not Synced">
+                                          <Calendar size={9} className="opacity-40" /> Not Synced
+                                        </span>
                                       )}
                                     </div>
                                   </div>

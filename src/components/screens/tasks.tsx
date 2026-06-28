@@ -14,6 +14,8 @@ interface TaskData {
   suggestedDate?: string;
   timeBlock?: string;
   deferredCount?: number;
+  googleCalendarEventId?: string;
+  googleCalendarConflict?: boolean;
 }
 
 interface WorkBlock {
@@ -308,9 +310,24 @@ export default function Tasks({ userName }: TasksProps) {
                             </button>
                             
                             <div className="flex flex-col min-w-0">
-                              <span className={`font-sans text-xs font-semibold tracking-wide text-foreground/90 ${isCompleted ? "line-through text-muted-foreground opacity-60" : ""}`}>
-                                {task.title}
-                              </span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`font-sans text-xs font-semibold tracking-wide text-foreground/90 ${isCompleted ? "line-through text-muted-foreground opacity-60" : ""}`}>
+                                  {task.title}
+                                </span>
+                                {task.googleCalendarConflict ? (
+                                  <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-500 font-medium px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20" title="Conflict detected: Edited on Google Calendar. Resolve in Settings.">
+                                    <Calendar size={9} /> Conflict
+                                  </span>
+                                ) : task.googleCalendarEventId ? (
+                                  <span className="inline-flex items-center gap-0.5 text-[9px] text-green-500 font-medium px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/20" title="Synced with Google Calendar">
+                                    <Calendar size={9} /> Synced
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground/50 font-medium px-1.5 py-0.5 rounded bg-secondary/40 border border-border/30" title="Pending Google Calendar Sync">
+                                    <Calendar size={9} className="opacity-55" /> Pending Sync
+                                  </span>
+                                )}
+                              </div>
                               {task.description && (
                                 <p className="font-sans text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
                                   {task.description}

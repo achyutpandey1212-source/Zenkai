@@ -28,6 +28,18 @@ export async function verifySession(sessionCookie: string | undefined): Promise<
       createdAt: user.createdAt,
       lastLogin: user.lastLogin,
       onboardingCompleted: user.onboardingCompleted,
+      briefSettings: user.briefSettings,
+      googleCalendarSettings: user.googleCalendarSettings ? {
+        connected: user.googleCalendarSettings.connected,
+        email: user.googleCalendarSettings.email,
+        syncNewTasks: user.googleCalendarSettings.syncNewTasks,
+        updateTasks: user.googleCalendarSettings.updateTasks,
+        deleteTasksAutomatically: user.googleCalendarSettings.deleteTasksAutomatically,
+        lastSuccessfulSync: user.googleCalendarSettings.lastSuccessfulSync,
+        syncedEventsCount: user.googleCalendarSettings.syncedEventsCount || 0,
+        syncHealth: user.googleCalendarSettings.syncHealth || "healthy",
+        calendarSyncPending: user.googleCalendarSettings.calendarSyncPending || false,
+      } : undefined
     };
   } catch (error) {
     console.error("Session verification failed:", error);

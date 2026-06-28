@@ -48,6 +48,12 @@ export default function Shell({ initialUser }: ShellProps) {
     agendaBuilt: boolean;
   } | null>(null);
 
+  // Tracks the last plan version the frontend has acknowledged.
+  // When the stream emits plan_version: N and N > lastKnownPlanVersion,
+  // we increment planDataVersion to trigger re-fetches in Plans/Home screens.
+  const [lastKnownPlanVersion, setLastKnownPlanVersion] = useState(0);
+  const [planDataVersion, setPlanDataVersion] = useState(0);
+
   const [workflow, setWorkflow] = useState({
     memory: { status: "idle" as const, message: "Waiting..." },
     planning: { status: "idle" as const, message: "Waiting..." },
@@ -257,6 +263,14 @@ export default function Shell({ initialUser }: ShellProps) {
                 }
               } else if (event.__type === "planning_complete") {
                 setPlanningCardStats(event.stats);
+              } else if (event.__type === "plan_version") {
+                // Only re-fetch if version actually increased
+                const incomingVersion = typeof event.version === "number" ? event.version : 0;
+                if (incomingVersion > lastKnownPlanVersion) {
+                  setLastKnownPlanVersion(incomingVersion);
+                  setPlanDataVersion(incomingVersion); // triggers useEffect in Plans screen
+                  console.log(`[Shell] Plan version updated: ${lastKnownPlanVersion} → ${incomingVersion}. Triggering re-fetch.`);
+                }
               }
             } catch {
               // Not valid JSON; treat as text
@@ -413,7 +427,7 @@ export default function Shell({ initialUser }: ShellProps) {
           />
         );
       case "plans":
-        return <Plans />;
+        return <Plans planDataVersion={planDataVersion} />;
       case "tasks":
         return <Tasks userName={userName} />;
       case "identity":

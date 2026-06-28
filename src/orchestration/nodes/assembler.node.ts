@@ -123,6 +123,18 @@ export async function assemblerNode(
       if (streamController && encoder) {
         streamController.enqueue(encoder.encode(summaryMessageContent));
       }
+
+      // Emit plan_version event so the frontend re-fetches plan data only when needed.
+      // Frontend checks: if (event.version > lastKnownPlanVersion) { refetch() }
+      if (state.planResult?.success && state.planResult?.planVersion) {
+        const versionEvent = `\0${JSON.stringify({
+          __type: "plan_version",
+          version: state.planResult.planVersion,
+        })}\0`;
+        if (streamController && encoder) {
+          streamController.enqueue(encoder.encode(versionEvent));
+        }
+      }
     }
 
     if (streamController) {

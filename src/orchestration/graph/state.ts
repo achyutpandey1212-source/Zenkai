@@ -84,6 +84,10 @@ export interface PlanResult {
   success: boolean;
   milestonesCreated: number;
   tasksCreated: number;
+  /** New version number of the plan after write (used for plan_version stream event) */
+  planVersion?: number;
+  /** True when confidence was below threshold — plan was intentionally not modified */
+  ignored?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

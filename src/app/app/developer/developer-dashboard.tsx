@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, AlertTriangle, Terminal, 
   Coins, Zap, RefreshCw, Search, Copy, 
   ChevronDown, ChevronUp, FileText, Activity, Info, 
-  Clock, ShieldAlert, Sparkles, Cpu, Mail, Send, AlertCircle, Calendar
+  Clock, ShieldAlert, Sparkles, Cpu, Mail, Send, AlertCircle, Calendar, Loader2
 } from "lucide-react";
 import { 
   getWorkflows, 
@@ -16,7 +16,10 @@ import {
   getRpmTelemetry,
   getBriefingLogs,
   getDashboardUsers,
-  triggerBriefing
+  triggerBriefing,
+  getCalendarSyncLogs,
+  getCalendarStats,
+  triggerManualCalendarSync
 } from "./actions";
 
 // Interfaces
@@ -105,14 +108,31 @@ export default function DeveloperDashboard() {
   const [expandedPromptIdx, setExpandedPromptIdx] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // Briefing states
-  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings">("workflows");
+  // Briefing and Calendar states
+  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar">("workflows");
   const [briefingLogs, setBriefingLogs] = useState<any[]>([]);
   const [dashboardUsers, setDashboardUsers] = useState<any[]>([]);
   const [selectedUserForBrief, setSelectedUserForBrief] = useState<string>("");
   const [briefType, setBriefType] = useState<"morning" | "evening">("morning");
   const [isTriggeringBrief, setIsTriggeringBrief] = useState(false);
   const [triggerResult, setTriggerResult] = useState<{ success?: boolean; message?: string; error?: string } | null>(null);
+
+  // Calendar states
+  const [calendarLogs, setCalendarLogs] = useState<any[]>([]);
+  const [calendarStats, setCalendarStats] = useState<any>({
+    connectedUsers: 0,
+    eventsCreated: 0,
+    eventsUpdated: 0,
+    eventsDeleted: 0,
+    eventsSkipped: 0,
+    googleRequests: 0,
+    avgDuration: 0,
+    failures: 0,
+    lastSync: null
+  });
+  const [selectedUserForCalendar, setSelectedUserForCalendar] = useState<string>("");
+  const [isTriggeringCalendar, setIsTriggeringCalendar] = useState(false);
+  const [calendarTriggerResult, setCalendarTriggerResult] = useState<any | null>(null);
 
   // Load dashboard data
   const loadData = () => {
@@ -126,9 +146,16 @@ export default function DeveloperDashboard() {
       setBriefingLogs(logs);
       const users = await getDashboardUsers();
       setDashboardUsers(users);
-      if (users.length > 0 && !selectedUserForBrief) {
-        setSelectedUserForBrief(users[0].firebaseUid);
+      if (users.length > 0) {
+        if (!selectedUserForBrief) setSelectedUserForBrief(users[0].firebaseUid);
+        if (!selectedUserForCalendar) setSelectedUserForCalendar(users[0].firebaseUid);
       }
+
+      // Fetch calendar telemetry
+      const calLogs = await getCalendarSyncLogs();
+      setCalendarLogs(calLogs);
+      const calStats = await getCalendarStats();
+      setCalendarStats(calStats);
     });
   };
 
@@ -145,6 +172,26 @@ export default function DeveloperDashboard() {
       setTriggerResult({ success: false, error: err.message || "Failed to trigger brief" });
     } finally {
       setIsTriggeringBrief(false);
+    }
+  };
+
+  const handleTriggerCalendarSync = async () => {
+    if (!selectedUserForCalendar) return;
+    setIsTriggeringCalendar(true);
+    setCalendarTriggerResult(null);
+    try {
+      const res = await triggerManualCalendarSync(selectedUserForCalendar);
+      setCalendarTriggerResult(res);
+      
+      // Reload telemetry logs and stats
+      const calLogs = await getCalendarSyncLogs();
+      setCalendarLogs(calLogs);
+      const calStats = await getCalendarStats();
+      setCalendarStats(calStats);
+    } catch (err: any) {
+      setCalendarTriggerResult({ success: false, error: err.message || "Failed to trigger calendar sync" });
+    } finally {
+      setIsTriggeringCalendar(false);
     }
   };
 
@@ -386,6 +433,16 @@ export default function DeveloperDashboard() {
               }`}
             >
               Proactive Briefings
+            </button>
+            <button
+              onClick={() => setDashboardView("calendar")}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition ${
+                dashboardView === "calendar"
+                  ? "bg-accent text-white"
+                  : "bg-secondary text-secondary-foreground hover:bg-muted"
+              }`}
+            >
+              Calendar Mirroring
             </button>
           </div>
         </div>
@@ -890,7 +947,7 @@ export default function DeveloperDashboard() {
             </main>
           </div>
         </>
-      ) : (
+      ) : dashboardView === "briefings" ? (
         <div className="space-y-6 flex-grow flex flex-col">
           {/* Briefing Telemetry Stats cards */}
           <section className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4">
@@ -1153,6 +1210,183 @@ export default function DeveloperDashboard() {
                         </td>
                         <td className="py-2.5 px-3 text-center font-mono text-muted-foreground">
                           {log.retryAttempts}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* 3. CALENDAR TELEMETRY VIEW */
+        <div className="space-y-6 flex-grow flex flex-col min-h-0">
+          
+          {/* Calendar Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4">
+            <div className="bg-card border border-border p-4 rounded-xl shadow-sm lg:col-span-2">
+              <div className="text-xs text-muted-foreground flex items-center justify-between">
+                <span>Connected Users</span>
+                <Calendar className="w-3.5 h-3.5 text-accent" />
+              </div>
+              <p className="text-2xl font-semibold mt-2 text-accent">{calendarStats.connectedUsers}</p>
+            </div>
+            <div className="bg-card border border-border p-4 rounded-xl shadow-sm lg:col-span-2">
+              <span className="text-xs text-muted-foreground font-medium block">Events Created</span>
+              <p className="text-2xl font-semibold mt-2 text-green-500">{calendarStats.eventsCreated}</p>
+            </div>
+            <div className="bg-card border border-border p-4 rounded-xl shadow-sm lg:col-span-2">
+              <span className="text-xs text-muted-foreground block">Events Updated</span>
+              <p className="text-2xl font-semibold mt-2 text-blue-500">{calendarStats.eventsUpdated}</p>
+            </div>
+            <div className="bg-card border border-border p-4 rounded-xl shadow-sm lg:col-span-2">
+              <span className="text-xs text-muted-foreground block">Events Deleted</span>
+              <p className="text-2xl font-semibold mt-2 text-red-500">{calendarStats.eventsDeleted}</p>
+            </div>
+            <div className="bg-card border border-border p-4 rounded-xl shadow-sm lg:col-span-2">
+              <span className="text-xs text-muted-foreground block">Events Skipped</span>
+              <p className="text-2xl font-semibold mt-2 text-muted-foreground">{calendarStats.eventsSkipped}</p>
+            </div>
+            <div className="bg-card border border-border p-4 rounded-xl shadow-sm lg:col-span-2">
+              <span className="text-xs text-muted-foreground block">Google API Requests</span>
+              <p className="text-2xl font-semibold mt-2 text-indigo-400">{calendarStats.googleRequests}</p>
+            </div>
+            <div className="bg-card border border-border p-4 rounded-xl shadow-sm lg:col-span-2">
+              <span className="text-xs text-muted-foreground block">Failures</span>
+              <p className={`text-2xl font-semibold mt-2 ${calendarStats.failures > 0 ? "text-destructive font-bold" : "text-muted-foreground/60"}`}>{calendarStats.failures}</p>
+            </div>
+            <div className="bg-card border border-border p-4 rounded-xl shadow-sm lg:col-span-2">
+              <span className="text-xs text-muted-foreground block">Avg Sync Duration</span>
+              <p className="text-2xl font-semibold mt-2 text-orange-400">{calendarStats.avgDuration}ms</p>
+            </div>
+          </div>
+
+          {/* User manual sync testing widget */}
+          <div className="bg-card border border-border p-5 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+                <Calendar className="w-4 h-4 text-accent" /> Trigger Calendar Sync
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Manually run today's agenda synchronization for any system user. Useful for checking Mock / Real OAuth passes.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedUserForCalendar}
+                onChange={(e) => setSelectedUserForCalendar(e.target.value)}
+                className="bg-secondary border border-border px-3 py-1.5 rounded text-xs font-semibold"
+              >
+                {dashboardUsers.map((user) => (
+                  <option key={user.firebaseUid} value={user.firebaseUid}>
+                    {user.name} ({user.email})
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleTriggerCalendarSync}
+                disabled={isTriggeringCalendar || !selectedUserForCalendar}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-accent hover:bg-accent/80 text-white rounded text-xs font-semibold transition disabled:opacity-50 cursor-pointer"
+              >
+                {isTriggeringCalendar ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    Trigger Sync
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Sync Trigger Result Banner */}
+          {calendarTriggerResult && (
+            <div className={`p-4 rounded-xl border flex items-start gap-2.5 text-xs ${
+              calendarTriggerResult.success 
+                ? "bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400" 
+                : "bg-destructive/10 border-destructive/20 text-destructive"
+            }`}>
+              {calendarTriggerResult.success ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <span className="font-semibold">Sync Successful!</span>
+                    <p className="text-muted-foreground text-[10px]">
+                      Created: {calendarTriggerResult.stats?.eventsCreated} | Updated: {calendarTriggerResult.stats?.eventsUpdated} | Deleted: {calendarTriggerResult.stats?.eventsDeleted} | Skipped: {calendarTriggerResult.stats?.eventsSkipped}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <span className="font-semibold">Sync Failed</span>
+                    <p className="text-muted-foreground/80 text-[10px]">{calendarTriggerResult.error}</p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Sync Log Entries Table */}
+          <div className="bg-card border border-border p-5 rounded-xl flex flex-col flex-grow min-h-0">
+            <h3 className="text-sm font-semibold mb-3">Calendar Sync Telemetry Logs</h3>
+            <div className="overflow-x-auto flex-grow max-h-[350px] scrollbar-custom text-xs">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border bg-secondary/30 text-muted-foreground font-semibold">
+                    <th className="py-2 px-3">Date/Time</th>
+                    <th className="py-2 px-3">User UID</th>
+                    <th className="py-2 px-3">Status</th>
+                    <th className="py-2 px-3 text-center">Created</th>
+                    <th className="py-2 px-3 text-center">Updated</th>
+                    <th className="py-2 px-3 text-center">Deleted</th>
+                    <th className="py-2 px-3 text-center">Skipped</th>
+                    <th className="py-2 px-3 text-center">Requests</th>
+                    <th className="py-2 px-3 text-right font-mono">Duration</th>
+                    <th className="py-2 px-3">Errors / Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {calendarLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="text-center py-6 text-muted-foreground">
+                        No calendar synchronization attempts have been logged yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    calendarLogs.map((log, idx) => (
+                      <tr key={idx} className="border-b border-border hover:bg-secondary/10">
+                        <td className="py-2.5 px-3 font-mono text-[10px]">
+                          {new Date(log.createdAt).toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 font-semibold text-muted-foreground">{log.uid}</td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                              log.status === "success"
+                                ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                : "bg-red-500/10 text-destructive border-red-500/20"
+                            }`}
+                          >
+                            {log.status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-semibold text-green-500">{log.eventsCreated}</td>
+                        <td className="py-2.5 px-3 text-center font-semibold text-blue-400">{log.eventsUpdated}</td>
+                        <td className="py-2.5 px-3 text-center font-semibold text-red-500">{log.eventsDeleted}</td>
+                        <td className="py-2.5 px-3 text-center text-muted-foreground">{log.eventsSkipped}</td>
+                        <td className="py-2.5 px-3 text-center font-semibold text-indigo-400">{log.googleRequests}</td>
+                        <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">{log.duration}ms</td>
+                        <td className="py-2.5 px-3 text-destructive max-w-[200px] truncate" title={log.error}>
+                          {log.error || "-"}
                         </td>
                       </tr>
                     ))

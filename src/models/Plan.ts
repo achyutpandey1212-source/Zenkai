@@ -16,6 +16,7 @@ export interface IPlan extends Document {
   priority: number;
   estimatedDuration?: string;
   progress: number; // 0 to 100
+  version: number; // auto-incremented on every plan write — used for frontend cache-busting
   type: string; // career, learning, exams, etc.
   diagnostics?: {
     planningPrompt: string;
@@ -45,6 +46,7 @@ const PlanSchema = new Schema<IPlan>(
     priority: { type: Number, default: 1 },
     estimatedDuration: { type: String, default: "" },
     progress: { type: Number, default: 0 },
+    version: { type: Number, default: 1 }, // incremented via $inc on every write
     type: { type: String, default: "personal" },
     diagnostics: {
       planningPrompt: { type: String },

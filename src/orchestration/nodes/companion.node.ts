@@ -56,20 +56,34 @@ function enqueueEvent(
 // Plan prompt builders — mirrors exact text from route.ts
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildProactivePlanningPrompt(extractionReason: string): string {
+function buildProactivePlanningPrompt(
+  extractionReason: string,
+  goalTitle?: string,
+  detectedEvents?: Array<{ type: string; title: string; description: string; date?: string }>
+): string {
+  const goalContext = goalTitle
+    ? `The user's explicit goal: "${goalTitle}"` 
+    : "";
+  const eventsContext = detectedEvents?.length
+    ? `Detected life events: ${detectedEvents.map((e) => `${e.type}: ${e.title}${e.date ? ` (${e.date})` : ""}`).join(", ")}`
+    : `Life signals: ${extractionReason || "Planning intent confirmed."}`;
+
   return `
 ## PROACTIVE OUTCOME-BASED PLANNING INSTRUCTION:
 Zenkai is currently building the user's roadmap in the background while you respond.
+${goalContext}
+${eventsContext}
 
 Your response MUST focus purely on OUTCOMES and reducing mental burden.
 - Do NOT say "I updated your roadmap" or "Planning agent has started".
-- Speak in terms of real-life relief:
-  - "Everything before your first exam has been organized."
-  - "You now have a clear study plan until [Date]."
-  - "I've adjusted your schedule to account for your hackathon on July 4."
-- DO NOT ask follow-up questions or prompt "how would you like to approach this?". Act like a competent assistant who has already taken full charge.
+- Speak in terms of real-life relief, referencing the specific goal/topic above:
+  - "Your 7-day DSA roadmap has been organized."
+  - "Everything before your first exam has been structured."
+  - "I've adjusted your schedule to account for your hackathon."
 
-Life signals detected: ${extractionReason || "Planning intent confirmed."}
+CRITICAL: You MUST NOT ask any questions. Planning is already executing.
+Simply confirm the outcome in 2-3 sentences, referencing the specific goal above.
+Do NOT say "Would you like...", "Shall I...", or ask anything.
 `.trim();
 }
 
@@ -156,7 +170,9 @@ export async function companionNode(
       );
 
       planPromptText = buildProactivePlanningPrompt(
-        lifeEvents?.extractionReason ?? ""
+        lifeEvents?.extractionReason ?? "",
+        intent?.goalTitle,
+        lifeEvents?.detectedEvents
       );
     }
 

@@ -24,6 +24,10 @@ export interface ITask extends Document {
   deferredCount?: number;      // number of times task has been postponed
   lastExecutedAt?: Date;       // timestamp of execution action
   executionOrder?: number;     // manual order in daily agenda
+  googleCalendarEventId?: string;     // Google Calendar event ID
+  googleCalendarEventHash?: string;   // hash of event details to detect changes
+  googleCalendarConflict?: boolean;   // flag indicating a manual conflict
+  googleCalendarConflictDetails?: any; // details of the Google event under conflict
   createdAt: Date;
   updatedAt: Date;
 }
@@ -50,6 +54,10 @@ const TaskSchema = new Schema<ITask>(
     deferredCount: { type: Number, default: 0 },
     lastExecutedAt: { type: Date },
     executionOrder: { type: Number },
+    googleCalendarEventId: { type: String, default: "" },
+    googleCalendarEventHash: { type: String, default: "" },
+    googleCalendarConflict: { type: Boolean, default: false },
+    googleCalendarConflictDetails: { type: Schema.Types.Mixed },
   },
   {
     timestamps: true,

@@ -137,51 +137,115 @@ Every level contains:
 - priority: integer where 1 is highest priority.
 - estimatedDuration: string indicating duration (e.g., "4 weeks", "10 hours", "2 days").
 
-DOMAIN-AWARE STRATEGY INFERENCES:
-Analyze the user's profile context (profession, long-term goals, current focus) and determine their active domain. Customize the planning strategy, milestones, and task blocks based on the active domain:
-1. **Student / Academic**: Focus on syllabus breakdown, concept building, study blocks, mock exams, and exam preparation.
-2. **Software Engineer / Tech**: Structure around development cycles: architecture design, sprint iterations, epic building, testing, documentation, and deployment.
-3. **Founder / Entrepreneur**: Focus on strategic priorities, business validation, MVP creation, investor meetings, customer feedback loops, and daily execution sprints.
-4. **Content Creator**: Focus on creation pipelines: brainstorming, scripting, storyboarding, shooting, video editing, publishing, and social media outreach.
-5. **Job Seeker**: Structure around application pipeline sprints: resume optimization, portfolio review, mock interviews, cold outreach, and skill building.
-6. **Freelancer**: Focus on client delivery: scope gathering, milestone iterations, feedback collection, final delivery, and billing setup.
+─── CONTEXT PRIORITY — STRICT ORDER (this determines what you plan) ───
 
-URGENCY-BASED STUDY ROADMAP DIRECTIVES (For Students):
-When scheduling academic study and exam prep, you must adapt tasks dynamically to the time remaining before the exam date:
-- **Exam > 30 days away**: Focus on build concepts, read textbooks/lectures, complete syllabus, and build long-term consistency.
-- **Exam 10–30 days away**: Focus on finishing remaining topics, transition to PYQs (Previous Year Questions), and initiate weekly revision cycles.
-- **Exam 3–7 days away**: Prioritize PYQs, identify repeated exam patterns, create/review formula sheets, focus on high-weightage chapters, and prioritize practice/retrieval over passive reading.
-- **Exam tomorrow**: Revision/retrieval only, review mistakes notebook, read formula sheets, rest.
-- **Strict constraint**: Never generate unrealistic or physically impossible advice (e.g., scheduling 40 hours of lecture watching or reading the night before an exam). Be highly practical and respect daily availability limits.
+You receive context from multiple sources. ALWAYS give them this exact priority:
 
-CHRONOLOGICAL TIMELINE DIRECTIVES:
-- Every milestone must occupy an actual place on the timeline, marked with:
+  1. EXPLICIT USER REQUEST (this session’s message + conversation context)
+     → This is ABSOLUTE ground truth. If the user names a topic, skill, domain,
+       or technology in their current message, that IS the plan’s subject.
+       Do NOT override or reinterpret with any other context.
+
+  2. CONVERSATION CONTEXT (recent message history)
+     → Use to understand follow-ups, confirmations, and clarifications.
+       “yes” or “go ahead” confirms whatever the assistant last proposed.
+
+  3. ONBOARDING INFORMATION (profession, long-term goal, current focus)
+     → Use to fill in gaps the user left unspecified (e.g., tech stack, daily
+       availability). Never use to override an explicit request.
+
+  4. LONG-TERM MEMORY (approved memories)
+     → Use to personalize tone and approach, not to determine what to plan.
+
+  5. PROFILE FIELDS (work style, availability, biggest challenge)
+     → Use for scheduling realism only. Lowest priority.
+
+Example: If the user says “I want to study DSA for a week” and their profile says
+“current focus: web development” — plan DSA. The profile is irrelevant here.
+
+─── CONFIDENCE SCORING & ACTION SELECTION ───
+
+Before generating a plan, assess your confidence that this message represents
+a genuine, deliberate intent to create or modify a roadmap.
+
+Return BOTH fields in your response:
+
+  planningConfidence (0.0 to 1.0):
+    0.9–1.0 — Explicit, unambiguous request. User clearly wants a plan NOW.
+              Examples: “I want to study DSA for a week, 3-5 hours daily”,
+                        “Plan my semester around these exam dates: ...”
+    0.7–0.89 — Strong implicit signal. User shared structured life info.
+              Examples: “My end-sem exams start May 25”,
+                        “I have a placement interview in 3 weeks”
+    0.5–0.69 — Ambiguous but plausible. Something might need updating.
+              Examples: “I might try competitive programming later”,
+                        “I’ve been thinking about fitness goals”
+    0.0–0.49 — Too vague, hypothetical, or contradictory to act on.
+              Examples: “Maybe I should learn Rust someday”,
+                        “I wonder if I should change careers”
+
+  planningAction: one of “create” | “modify” | “merge” | “ignore”
+    “create”  — Confidence ≥ 0.80, no existing plan covers this domain/goal.
+    “modify”  — Confidence ≥ 0.80, evolving or updating an existing plan.
+    “merge”   — Confidence 0.50–0.79, add new milestones without deleting existing ones.
+    “ignore”  — Confidence < 0.50, take no action. Return empty plan shell.
+
+CRITICAL: If planningAction is “ignore”, set plan.status to “archived” and return
+an empty milestones array. The system will discard this response safely.
+
+─── DOMAIN-AWARE STRATEGY INFERENCES ───
+
+Customize the planning strategy, milestones, and task blocks based on the identified domain:
+1. **Student / Academic**: Syllabus breakdown, concept building, study blocks, mock exams, exam prep.
+2. **Software Engineer / Tech**: Development cycles, architecture design, sprint iterations, testing, deployment.
+3. **Founder / Entrepreneur**: Strategic priorities, business validation, MVP creation, feedback loops, daily sprints.
+4. **Content Creator**: Creation pipelines: brainstorming, scripting, shooting, editing, publishing.
+5. **Job Seeker**: Application pipeline: resume, portfolio, mock interviews, cold outreach, skill building.
+6. **Freelancer**: Client delivery: scope gathering, milestone iterations, feedback, final delivery, billing.
+
+─── URGENCY-BASED STUDY ROADMAP DIRECTIVES (For Students) ───
+
+Adapt tasks dynamically to time remaining before the exam date:
+- **Exam > 30 days away**: Build concepts, read textbooks/lectures, complete syllabus, build consistency.
+- **Exam 10–30 days away**: Finish remaining topics, transition to PYQs, initiate weekly revision cycles.
+- **Exam 3–7 days away**: PYQs, identify repeated patterns, formula sheets, high-weightage chapters.
+- **Exam tomorrow**: Revision/retrieval only, review mistakes, read formula sheets, rest.
+- **Strict constraint**: Never generate unrealistic advice. Respect daily availability limits.
+
+─── CHRONOLOGICAL TIMELINE DIRECTIVES ───
+
+- Every milestone must occupy an actual place on the timeline:
   - startDate: "YYYY-MM-DD"
   - endDate: "YYYY-MM-DD"
 - Every task must contain:
   - suggestedDate: "YYYY-MM-DD"
   - timeBlock: optional time slot string (e.g. "09:00 AM - 10:30 AM" or empty)
-- Every milestone must be categorized into exactly one of the following activity categories:
-  - Exam, Study, Hackathon, Meetup, Content Creation, Startup, Coding, Reading, Fitness, Interview, Personal
+- Every milestone must be categorized into exactly one activity category:
+  Exam, Study, Hackathon, Meetup, Content Creation, Startup, Coding, Reading, Fitness, Interview, Personal
 
-SMART CONSTRAINTS (IMPORTANCE & FLEXIBILITY):
-- Classify events as Hard Constraints (e.g. Exams, Job Interviews, Medical appointments) or Soft Constraints (e.g. Meetups, Hackathons, Study sessions, Fitness, Content Creation, etc.).
-- Hard constraints have: importance: 10, flexibility: 0. They cannot move.
-- Soft constraints have flexible dates and lower importance (e.g. importance: 4-8, flexibility: 5-9).
-- You must schedule study and flexible milestones around hard constraints. For example, if there is an exam on July 6th, and a buildathon on July 5th-6th, digital communication exam preparation must be scheduled *before* the buildathon, and post-exam goals (like YouTube content creation) must start *strictly after* the exam period ends on July 9th.
+─── SMART CONSTRAINTS ───
 
-CORE DIRECTIVES FOR EVOLUTION & MERGING:
-- Zenkai plans are living systems. Do NOT recreate them from scratch.
-- If evolving an existing plan, PRESERVE the exact database "id" (re-mapped to "id" field in JSON) for existing Plans, Milestones, Goals, and Tasks. Omit the "id" field ONLY for brand new items.
-- If the user cancels or removes an event (e.g. "I am no longer attending the AIC meetup"), find its milestone and set its status to "cancelled". Do NOT remove it from the list — let it stay in the payload as "cancelled" so history preserves it.
-- In addition to the "plan" tree, you must return:
-  - plannerReasoning: Explaining how you resolved conflicts, rescheduled tasks, and respected hard/soft constraints.
-  - changeSummary: A concise description of the revision (e.g., "Cancelled AIC Developers Meet and rescheduled YouTube sprint").
-  - detectedConstraints: Summary of identified hard and soft constraints.
-  - mergeStrategy: Summary of how you preserved progress while updating dates.
+- Classify events as Hard Constraints (Exams, Interviews, Medical) or Soft Constraints (Meetups, Fitness, etc.).
+- Hard constraints: importance: 10, flexibility: 0. They cannot move.
+- Soft constraints: flexible dates, importance 4–8, flexibility 5–9.
+- Schedule study and flexible milestones around hard constraints.
+
+─── CORE DIRECTIVES FOR EVOLUTION & MERGING ───
+
+- Zenkai plans are living systems. Do NOT recreate from scratch unless planningAction is "create".
+- If planningAction is "modify": PRESERVE the exact database "id" for existing Plans, Milestones, Goals, and Tasks.
+  Omit the "id" field ONLY for brand new items.
+- If planningAction is "merge": ADD new milestones to the existing plan without deleting any existing items.
+  Do NOT change status of existing milestones. Only add.
+- If the user cancels/removes an event, set its milestone status to "cancelled" — do NOT delete it.
+- Return:
+  - plannerReasoning: How you resolved conflicts, rescheduled tasks, respected constraints.
+  - changeSummary: Concise description of revision.
+  - detectedConstraints: Hard and soft constraints identified.
+  - mergeStrategy: How you preserved progress while updating dates.
   - timelineRecalculation: Explanation of chronological date shifts.
 
-Return a JSON object containing the plan tree and these diagnostic details.
+Return a JSON object containing the plan tree, confidence fields, and these diagnostic details.
 `;
 
 export class PlanningAgent {
@@ -219,11 +283,18 @@ export class PlanningAgent {
     const isEmoji = /^[\p{Emoji_Presentation}\p{Emoji}\u200d\uFE0F\s]+$/u.test(text);
 
     if (isGreeting || isThanks || isAck || isEmoji) {
-      // Make the AI budget configurable per workflow type rather than hardcoded. For example:
-      // Greeting: 2
-      // General chat: 3
-      // Planning: 5
-      // Future premium workflows can increase this budget without changing orchestration logic.
+      // Before short-circuiting to 'none', check if the last model message proposed a plan.
+      // If so, this acknowledgement is a CONFIRMATION — route to Gemini for proper handling.
+      if (isAck || isEmoji) {
+        const lastModelMsg = history.filter((h) => h.role === "model").at(-1)?.content ?? "";
+        const modelProposedPlan = /would you like|shall i|here(?:'s| is) a|proposed schedule|study plan|dsa schedule|roadmap|plan your|organize your|structure your|schedule for/i.test(lastModelMsg);
+        if (modelProposedPlan) {
+          // Don't bypass — send to Gemini router with full history context
+          console.log(`[Router] Ack detected but model proposed a plan — escalating to Gemini router.`);
+          return null;
+        }
+      }
+
       const budget = isGreeting ? 2 : 3;
       return {
         intent: { type: "none", details: "Deterministic casual classification" },
@@ -303,7 +374,7 @@ export class PlanningAgent {
     try {
       const ai = this.getClient();
       const chatHistoryText = history
-        .slice(-6)
+        .slice(-10) // increased from 6 for better confirmation and context tracking
         .map((h) => `${h.role === "user" ? "User" : "Zenkai"}: ${h.content}`)
         .join("\n");
 
@@ -608,7 +679,7 @@ Determine the intent:
     userMessage: string,
     lifeEvents?: LifeEventExtraction,
     state?: GraphState
-  ): Promise<{ success: boolean; milestonesCreated: number; tasksCreated: number } | null> {
+  ): Promise<{ success: boolean; milestonesCreated: number; tasksCreated: number; planVersion?: number; ignored?: boolean } | null> {
     const startTime = Date.now();
     try {
       console.log(`[PlanningAgent] Executing plan generation/evolution for user ${uid}`);
@@ -673,25 +744,25 @@ Determine the intent:
         })),
       }));
 
-      // 2. Format context for prompt
+      // 2. Format context for prompt — ordered by priority (user request first)
       const lifeEventsContext = lifeEvents?.detectedEvents?.length
         ? `\nDetected Life Events (auto-extracted):\n${JSON.stringify(lifeEvents.detectedEvents, null, 2)}\n`
         : "";
 
       const contextPrompt = `
-User Profile:
-- Long-term goal: ${profile?.longTermGoal || "None"}
+## PRIORITY 1 — EXPLICIT USER REQUEST (ABSOLUTE GROUND TRUTH)
+Latest User Message: "${userMessage}"
+Detected Intent: ${JSON.stringify(intent)}
+${lifeEventsContext}
+## PRIORITY 2 — CONVERSATION CONTEXT
+(The recent message history provides follow-up and confirmation signals. "yes" or "go ahead" confirms the last proposed plan.)
+
+## PRIORITY 3 — ONBOARDING INFORMATION (fills gaps only, never overrides Priority 1)
 - Profession: ${profile?.profession || "None"}
+- Long-term goal: ${profile?.longTermGoal || "None"}
 - Current Focus: ${profile?.currentFocus || "None"}
-- Peak focus availability: ${profile?.dailyAvailability || "None"}
-- Working Style: ${profile?.workStyle || "None"}
 
-Current Date/Time Context:
-- Current Timestamp: ${new Date().toString()}
-- Current Date: ${new Date().toLocaleDateString("en-US", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-- Current Local Time: ${new Date().toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit' })}
-
-Memories:
+## PRIORITY 4 — LONG-TERM MEMORY (personalizes approach, does not determine what to plan)
 ${JSON.stringify(memories.map((m) => m.summary), null, 2)}
 
 Active Traits:
@@ -699,26 +770,31 @@ ${JSON.stringify(traits.map((t) => ({ trait: t.trait, description: t.description
 
 Active Reflections:
 ${JSON.stringify(reflections.map((r) => ({ title: r.title, summary: r.summary })), null, 2)}
-${lifeEventsContext}
-Existing Plans Tree (Pruned):
+
+## PRIORITY 5 — PROFILE FIELDS (scheduling realism only)
+- Peak focus availability: ${profile?.dailyAvailability || "None"}
+- Working Style: ${profile?.workStyle || "None"}
+
+## CURRENT DATE/TIME CONTEXT
+- Current Timestamp: ${new Date().toString()}
+- Current Date: ${new Date().toLocaleDateString("en-US", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+- Current Local Time: ${new Date().toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit' })}
+
+## EXISTING PLANS TREE (for evolution/merging)
 ${JSON.stringify(prunedPlans, null, 2)}
 `;
 
       const prompt = `
-User Context:
 ${contextPrompt}
 
-Latest User request: "${userMessage}"
-Detected Intent Details: ${JSON.stringify(intent)}
-
-Create a new plan or modify/evolve an existing plan based on the request.
+Based on the PRIORITY 1 user request above, decide your planningConfidence and planningAction, then generate the plan.
 Remember:
-- If a plan is for a goal/career/project the user no longer wants, mark its status as "archived" and create a new plan.
+- The user's explicit request in PRIORITY 1 determines the subject. NEVER infer from profile.
 - If evolving an existing plan, PRESERVE the exact database "id" for existing Plans, Milestones, Goals, and Tasks.
 - Break the plan down into Milestones. Each Milestone must have Goals. Each Goal must have actionable Tasks.
 - Every milestone MUST have startDate, endDate, category, importance, flexibility.
 - Every task MUST have suggestedDate (YYYY-MM-DD).
-- CRITICAL Date & Time Reasoning: Reason about relative time terms (like "today", "tomorrow", "this evening", "this weekend", "next week") relative to the Current Date/Time Context. If the user sends a message in the very early morning (e.g. 1:00 AM - 5:00 AM) stating "tomorrow", they typically mean the evening of the same waking calendar day. Schedule the tasks with the correct YYYY-MM-DD strings based on this logic.
+- CRITICAL Date & Time Reasoning: Reason about relative time terms (like "today", "tomorrow", "this evening", "this weekend", "next week") relative to the Current Date/Time Context.
 `;
 
       const ai = this.getClient();
@@ -732,7 +808,13 @@ Remember:
           responseSchema: {
             type: "OBJECT",
             properties: {
-              // ── Diagnostic fields MUST be in properties AND required ──
+              // ── Confidence gate fields (evaluated BEFORE any plan write) ──
+              planningConfidence: { type: "NUMBER" },
+              planningAction: {
+                type: "STRING",
+                enum: ["create", "modify", "merge", "ignore"],
+              },
+              // ── Diagnostic fields ──
               plannerReasoning: { type: "STRING" },
               changeSummary: { type: "STRING" },
               detectedConstraints: { type: "STRING" },
@@ -840,6 +922,8 @@ Remember:
             },
             required: [
               "plan",
+              "planningConfidence",
+              "planningAction",
               "plannerReasoning",
               "changeSummary",
               "detectedConstraints",
@@ -855,12 +939,29 @@ Remember:
 
       const result = JSON.parse(responseText) as {
         plan: any;
+        planningConfidence: number;
+        planningAction: "create" | "modify" | "merge" | "ignore";
         plannerReasoning: string;
         changeSummary: string;
         detectedConstraints: string;
         mergeStrategy: string;
         timelineRecalculation: string;
       };
+
+      // ── Confidence Gate ─────────────────────────────────────────────────────
+      const confidence = result.planningConfidence ?? 0;
+      const planningAction = result.planningAction ?? "ignore";
+
+      console.log(`[PlanningAgent] Confidence: ${confidence} | Action: ${planningAction}`);
+
+      if (planningAction === "ignore" || confidence < 0.50) {
+        console.log(`[PlanningAgent] Confidence ${confidence} below threshold (action=${planningAction}). Skipping plan write.`);
+        return { success: false, milestonesCreated: 0, tasksCreated: 0, ignored: true };
+      }
+
+      // merge mode: disable orphan deletion so no existing items are removed
+      const isMergeMode = planningAction === "merge" || (confidence >= 0.50 && confidence < 0.80);
+
       const normalizedPlan = result.plan;
       const executionTimeMs = Date.now() - startTime;
 
@@ -1053,28 +1154,33 @@ Remember:
 
       // Sync deletes: Remove orphaned elements NOT in the new payload.
       // Guard: only delete if payload is non-empty (protects against truncated LLM responses).
-      const goalsOfThisPlan = await Goal.find({ planId });
-      const goalIdsOfThisPlan = goalsOfThisPlan.map((g) => g._id);
+      // Merge mode: SKIP all deletions — only add new items, never remove.
+      if (!isMergeMode) {
+        const goalsOfThisPlan = await Goal.find({ planId });
+        const goalIdsOfThisPlan = goalsOfThisPlan.map((g) => g._id);
 
-      if (taskIdsInPayload.size > 0) {
-        await Task.deleteMany({
-          goalId: { $in: goalIdsOfThisPlan },
-          _id: { $nin: Array.from(taskIdsInPayload).map((id) => new Types.ObjectId(id)) },
-        });
-      }
+        if (taskIdsInPayload.size > 0) {
+          await Task.deleteMany({
+            goalId: { $in: goalIdsOfThisPlan },
+            _id: { $nin: Array.from(taskIdsInPayload).map((id) => new Types.ObjectId(id)) },
+          });
+        }
 
-      if (goalIdsInPayload.size > 0) {
-        await Goal.deleteMany({
-          planId,
-          _id: { $nin: Array.from(goalIdsInPayload).map((id) => new Types.ObjectId(id)) },
-        });
-      }
+        if (goalIdsInPayload.size > 0) {
+          await Goal.deleteMany({
+            planId,
+            _id: { $nin: Array.from(goalIdsInPayload).map((id) => new Types.ObjectId(id)) },
+          });
+        }
 
-      if (milestoneIdsInPayload.size > 0) {
-        await Milestone.deleteMany({
-          planId,
-          _id: { $nin: Array.from(milestoneIdsInPayload).map((id) => new Types.ObjectId(id)) },
-        });
+        if (milestoneIdsInPayload.size > 0) {
+          await Milestone.deleteMany({
+            planId,
+            _id: { $nin: Array.from(milestoneIdsInPayload).map((id) => new Types.ObjectId(id)) },
+          });
+        }
+      } else {
+        console.log(`[PlanningAgent] Merge mode: skipping orphan deletion to preserve existing plan items.`);
       }
 
       // 4. Trigger progress recalculation for the entire plan structure to sync numbers
@@ -1099,7 +1205,7 @@ Remember:
       };
 
       const changeSummary = result.changeSummary || (normalizedPlan.id ? "Updated plan" : "New plan");
-      await Plan.findByIdAndUpdate(planId, {
+      const updatedPlanDoc = await Plan.findByIdAndUpdate(planId, {
         $push: {
           history: {
             timestamp: new Date(),
@@ -1107,16 +1213,20 @@ Remember:
             snapshot: JSON.stringify(fullSnapshot),
           },
         },
-      });
+        $inc: { version: 1 }, // increment version on every write — used for frontend cache-busting
+      }, { returnDocument: "after" });
+
+      const newPlanVersion = updatedPlanDoc?.version ?? 1;
 
       console.log(
-        `[PlanningAgent] Plan complete in ${Date.now() - startTime}ms. Milestones: ${updatedMilestones.length}, New tasks: ${totalTasksCreated}`
+        `[PlanningAgent] Plan complete in ${Date.now() - startTime}ms. Milestones: ${updatedMilestones.length}, New tasks: ${totalTasksCreated}, Version: ${newPlanVersion}`
       );
 
       return {
         success: true,
         milestonesCreated: updatedMilestones.length,
         tasksCreated: totalTasksCreated,
+        planVersion: newPlanVersion,
       };
     } catch (error) {
       console.error("[PlanningAgent] Plan generation/evolution error:", error);
