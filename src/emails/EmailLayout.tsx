@@ -2,6 +2,7 @@ import React from "react";
 
 interface EmailLayoutProps {
   theme: "morning" | "evening";
+  appUrl?: string;
   children: React.ReactNode;
 }
 

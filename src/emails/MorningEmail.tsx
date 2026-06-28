@@ -38,7 +38,7 @@ export const MorningEmail: React.FC<MorningEmailProps> = ({ data, appUrl }) => {
   };
 
   return (
-    <EmailLayout theme="morning">
+    <EmailLayout theme="morning" appUrl={appUrl}>
       <Header theme="morning" dateStr={data.dateStr} appUrl={appUrl} />
       
       <p style={{ 

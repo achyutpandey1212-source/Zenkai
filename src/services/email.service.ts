@@ -1,5 +1,7 @@
 import { Resend } from "resend";
 import React from "react";
+import fs from "fs";
+import path from "path";
 import { BriefingLog } from "@/models/BriefingLog";
 import { MorningEmail, MorningBriefData } from "@/emails/MorningEmail";
 import { EveningEmail, EveningBriefData } from "@/emails/EveningEmail";
@@ -31,6 +33,21 @@ export class EmailService {
     const element = React.createElement(MorningEmail, { data, appUrl: APP_URL });
     const html = renderToStaticMarkup(element);
 
+    const logoPath = path.join(process.cwd(), "public", "assets", "logo", "logo_1.png");
+    const attachments: any[] = [];
+    if (fs.existsSync(logoPath)) {
+      try {
+        attachments.push({
+          filename: "logo_1.png",
+          content: fs.readFileSync(logoPath),
+          contentId: "logo_1",
+          disposition: "inline",
+        });
+      } catch (err) {
+        console.error("[EmailService] Failed to read logo file for attachment:", err);
+      }
+    }
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         // If Resend API key is mock, skip sending but log success for developer experience
@@ -45,6 +62,7 @@ export class EmailService {
           to: email,
           subject: `Your Morning Briefing — Zenkai`,
           html,
+          attachments,
         });
 
         if (res.error) {
@@ -106,6 +124,21 @@ export class EmailService {
     const element = React.createElement(EveningEmail, { data, appUrl: APP_URL });
     const html = renderToStaticMarkup(element);
 
+    const logoPath = path.join(process.cwd(), "public", "assets", "logo", "logo_1.png");
+    const attachments: any[] = [];
+    if (fs.existsSync(logoPath)) {
+      try {
+        attachments.push({
+          filename: "logo_1.png",
+          content: fs.readFileSync(logoPath),
+          contentId: "logo_1",
+          disposition: "inline",
+        });
+      } catch (err) {
+        console.error("[EmailService] Failed to read logo file for attachment:", err);
+      }
+    }
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         if (apiKey.startsWith("re_mock")) {
@@ -119,6 +152,7 @@ export class EmailService {
           to: email,
           subject: `Your Evening Reflection — Zenkai`,
           html,
+          attachments,
         });
 
         if (res.error) {

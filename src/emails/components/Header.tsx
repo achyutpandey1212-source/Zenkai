@@ -36,16 +36,18 @@ export const Header: React.FC<HeaderProps> = ({ theme, dateStr, appUrl }) => {
   return (
     <div style={headerStyle}>
       <a href={`${appUrl}/app`} style={{ textDecoration: "none" }}>
-        {/* We use a clean text logo with a nice glyph representation for compatibility, but also display an img if hosted */}
-        <span style={{ 
-          display: "inline-block", 
-          fontSize: "20px", 
-          verticalAlign: "middle",
-          marginRight: "8px",
-          color: "#c9a86a"
-        }}>
-          ⛩️
-        </span>
+        <img 
+          src="cid:logo_1" 
+          alt="Zenkai Logo" 
+          width="24"
+          height="24"
+          style={{
+            display: "inline-block",
+            verticalAlign: "middle",
+            marginRight: "8px",
+            border: "0",
+          }}
+        />
         <span style={titleStyle}>ZENKAI</span>
       </a>
       <p style={dateStyle}>{dateStr}</p>
