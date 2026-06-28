@@ -653,7 +653,12 @@ export class ConsistencyEngine {
       }
     }
 
-
+    try {
+      const { PredictionEngine } = await import("./prediction-engine.service");
+      await PredictionEngine.computePredictionProfile(uid);
+    } catch (err) {
+      console.error("[ConsistencyEngine] Failed to trigger PredictionEngine:", err);
+    }
 
     return profile;
   }

@@ -10,7 +10,8 @@ import {
   ChevronDown, ChevronUp, FileText, Activity, Info, 
   Clock, ShieldAlert, Sparkles, Cpu, Mail, Send, AlertCircle, Calendar, Loader2,
   Flame, Trophy, TrendingUp, BarChart3, PieChart, Award, BookOpen,
-  Shield, UserCheck, Target, Repeat, CheckSquare, AlertOctagon, History
+  Shield, UserCheck, Target, Repeat, CheckSquare, AlertOctagon, History,
+  LineChart, TrendingDown, ZapOff
 } from "lucide-react";
 import { 
   getWorkflows, 
@@ -27,7 +28,10 @@ import {
   simulateBriefingOpen,
   getConsistencyProfile,
   recalculateConsistencyProfile,
-  getConsistencyEvents
+  getConsistencyEvents,
+  getPredictionProfile,
+  recalculatePredictionProfile,
+  getPredictionEvents
 } from "./actions";
 
 // Interfaces
@@ -117,7 +121,7 @@ export default function DeveloperDashboard() {
   const [isPending, startTransition] = useTransition();
 
   // Briefing and Calendar states
-  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar" | "behavior" | "consistency">("workflows");
+  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar" | "behavior" | "consistency" | "prediction">("workflows");
   const [briefingLogs, setBriefingLogs] = useState<any[]>([]);
   const [dashboardUsers, setDashboardUsers] = useState<any[]>([]);
   const [selectedUserForBrief, setSelectedUserForBrief] = useState<string>("");
@@ -158,6 +162,15 @@ export default function DeveloperDashboard() {
   const [consistencyError, setConsistencyError] = useState<string>("");
   const [expandedEvidenceMetric, setExpandedEvidenceMetric] = useState<string | null>(null);
 
+  // Prediction states
+  const [selectedUserForPrediction, setSelectedUserForPrediction] = useState<string>("");
+  const [predictionProfile, setPredictionProfile] = useState<any>(null);
+  const [predictionEvents, setPredictionEvents] = useState<any[]>([]);
+  const [isLoadingPrediction, setIsLoadingPrediction] = useState(false);
+  const [isRecalculatingPrediction, setIsRecalculatingPrediction] = useState(false);
+  const [predictionError, setPredictionError] = useState<string>("");
+  const [expandedPredictionEvidence, setExpandedPredictionEvidence] = useState<string | null>(null);
+
   // Load dashboard data
   const loadData = () => {
     startTransition(async () => {
@@ -175,6 +188,7 @@ export default function DeveloperDashboard() {
         if (!selectedUserForCalendar) setSelectedUserForCalendar(users[0].firebaseUid);
         if (!selectedUserForBehavior) setSelectedUserForBehavior(users[0].firebaseUid);
         if (!selectedUserForConsistency) setSelectedUserForConsistency(users[0].firebaseUid);
+        if (!selectedUserForPrediction) setSelectedUserForPrediction(users[0].firebaseUid);
       }
 
       // Fetch calendar telemetry
@@ -266,6 +280,50 @@ export default function DeveloperDashboard() {
       loadConsistencyProfile(selectedUserForConsistency);
     }
   }, [selectedUserForConsistency]);
+
+  const loadPredictionProfile = async (uid: string) => {
+    setIsLoadingPrediction(true);
+    setPredictionError("");
+    try {
+      const [profile, events] = await Promise.all([
+        getPredictionProfile(uid),
+        getPredictionEvents(uid)
+      ]);
+      setPredictionProfile(profile);
+      setPredictionEvents(events);
+    } catch (err: any) {
+      console.error("Failed to load prediction profile:", err);
+      setPredictionError(err.message || "Failed to load prediction profile");
+    } finally {
+      setIsLoadingPrediction(false);
+    }
+  };
+
+  const handleRecalculatePrediction = async () => {
+    if (!selectedUserForPrediction) return;
+    setIsRecalculatingPrediction(true);
+    setPredictionError("");
+    try {
+      const result = await recalculatePredictionProfile(selectedUserForPrediction);
+      if (result.success) {
+        setPredictionProfile(result.profile);
+        const events = await getPredictionEvents(selectedUserForPrediction);
+        setPredictionEvents(events);
+      } else {
+        setPredictionError(result.error || "Failed to recalculate prediction profile");
+      }
+    } catch (err: any) {
+      setPredictionError(err.message || "Failed to recalculate prediction profile");
+    } finally {
+      setIsRecalculatingPrediction(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedUserForPrediction) {
+      loadPredictionProfile(selectedUserForPrediction);
+    }
+  }, [selectedUserForPrediction]);
 
   const handleTriggerBrief = async () => {
     if (!selectedUserForBrief) return;
@@ -572,7 +630,16 @@ export default function DeveloperDashboard() {
             >
               Consistency Intelligence
             </button>
-
+            <button
+              onClick={() => setDashboardView("prediction")}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition ${
+                dashboardView === "prediction"
+                  ? "bg-accent text-white"
+                  : "bg-secondary text-secondary-foreground hover:bg-muted"
+              }`}
+            >
+              Prediction Intelligence
+            </button>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -2311,6 +2378,488 @@ export default function DeveloperDashboard() {
               <div className="text-[10px] text-muted-foreground flex justify-between px-1 border-t border-border/30 pt-3">
                 <span>Engine Version: 1.0.0</span>
                 <span>Last Computed: {new Date(consistencyProfile.lastUpdated).toLocaleString()}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* 6. PREDICTION INTELLIGENCE VIEW */
+        <div className="space-y-6 flex-grow flex flex-col min-h-0">
+          {/* Header controls */}
+          <div className="bg-card border border-border p-5 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+                <LineChart className="w-4 h-4 text-accent" /> Prediction Intelligence Profile
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Analyze future project completion dates, daily task probabilities, and productivity forecast ranges derived from statistical models.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedUserForPrediction}
+                onChange={(e) => setSelectedUserForPrediction(e.target.value)}
+                className="bg-secondary border border-border px-3 py-1.5 rounded text-xs font-semibold"
+              >
+                {dashboardUsers.map((user) => (
+                  <option key={user.firebaseUid} value={user.firebaseUid}>
+                    {user.name} ({user.email})
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleRecalculatePrediction}
+                disabled={isRecalculatingPrediction || !selectedUserForPrediction}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-accent hover:bg-accent/80 text-white rounded text-xs font-semibold transition disabled:opacity-50 cursor-pointer"
+              >
+                {isRecalculatingPrediction ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Recalculating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Force Recalculate
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {predictionError && (
+            <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/10 text-destructive text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              <span>{predictionError}</span>
+            </div>
+          )}
+
+          {isLoadingPrediction ? (
+            <div className="flex-grow flex items-center justify-center py-20">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="w-8 h-8 animate-spin text-accent" />
+                <span className="text-xs text-muted-foreground">Loading Predictions...</span>
+              </div>
+            </div>
+          ) : !predictionProfile ? (
+            <div className="bg-card border border-border p-10 rounded-xl text-center">
+              <LineChart className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-foreground">No Profile Found</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Please click "Force Recalculate" above to initialize prediction intelligence for this user.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Overview grid */}
+              <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* 1. ROADMAP COMPLETION */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-accent/10">
+                    <Calendar className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-accent" />
+                    <span>Projected Completion</span>
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-foreground truncate">
+                      {new Date(predictionProfile.completionForecast.estimatedCompletionDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      In ~{predictionProfile.completionForecast.estimatedRemainingDays} days (Confidence: {predictionProfile.completionForecast.confidence}%)
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. CONSISTENCY FORECAST */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-green-500/10">
+                    <Shield className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-green-500" />
+                    <span>Consistency Projection</span>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-green-500">{predictionProfile.consistencyForecast.predictedConsistencyNextWeek}%</p>
+                    <div className="text-[10px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                      {predictionProfile.consistencyForecast.trendDirection === "up" ? (
+                        <span className="text-green-500 flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5" /> Trending Up</span>
+                      ) : predictionProfile.consistencyForecast.trendDirection === "down" ? (
+                        <span className="text-red-500 flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5" /> Trending Down</span>
+                      ) : (
+                        <span className="text-muted-foreground">Stable Trend</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. PRODUCTIVITY FORECAST */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-blue-500/10">
+                    <Clock className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Focus Hours (7d)</span>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-blue-500">
+                      {predictionProfile.productivityForecast.expectedFocusHours7d.min}–{predictionProfile.productivityForecast.expectedFocusHours7d.max} hrs
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Expected tasks: {predictionProfile.productivityForecast.expectedCompletedTasks7d.min}–{predictionProfile.productivityForecast.expectedCompletedTasks7d.max}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 4. AVERAGE CONFIDENCE */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-indigo-500/10">
+                    <Trophy className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Trophy className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Average Confidence</span>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-indigo-500">{predictionProfile.averageConfidence}%</p>
+                    <div className="w-full bg-secondary h-1.5 rounded-full mt-2 overflow-hidden">
+                      <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${predictionProfile.averageConfidence}%` }} />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Second row: SVG Line graph & task probability */}
+              <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Rolling prediction curve */}
+                <div className="lg:col-span-8 bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <LineChart className="w-4 h-4 text-accent" /> Rolling Roadmap Completion Forecast
+                  </h4>
+
+                  {/* SVG line chart */}
+                  {(() => {
+                    const pts = predictionProfile.rollingPredictions || [];
+                    const maxDays = Math.max(...pts.map((p: any) => p.roadmapEstimatedRemainingDays), 30);
+                    const minDays = Math.min(...pts.map((p: any) => p.roadmapEstimatedRemainingDays), 0);
+                    const range = maxDays - minDays || 1;
+
+                    const width = 500;
+                    const height = 120;
+
+                    const linePoints = pts.map((p: any, idx: number) => {
+                      const x = pts.length > 1 ? (idx / (pts.length - 1)) * (width - 40) + 20 : width / 2;
+                      const y = height - 20 - ((p.roadmapEstimatedRemainingDays - minDays) / range) * (height - 40);
+                      return `${x},${y}`;
+                    }).join(" ");
+
+                    return (
+                      <div className="w-full bg-secondary/10 p-4 rounded-xl border border-border/50">
+                        {pts.length < 2 ? (
+                          <div className="h-[100px] flex items-center justify-center text-xs text-muted-foreground">
+                            Insufficient rolling prediction points. Perform actions to plot graph over time.
+                          </div>
+                        ) : (
+                          <svg className="w-full overflow-visible" height={height} viewBox={`0 0 ${width} ${height}`}>
+                            {/* Gridlines */}
+                            {[0, 0.5, 1].map((val: number, i: number) => {
+                              const y = height - 20 - val * (height - 40);
+                              const label = Math.round(minDays + val * range);
+                              return (
+                                <g key={i} className="opacity-40">
+                                  <line x1="20" y1={y} x2={width - 20} y2={y} className="stroke-border stroke-1 stroke-dashed" />
+                                  <text x="5" y={y + 3} className="text-[8px] font-mono fill-muted-foreground">{label}d</text>
+                                </g>
+                              );
+                            })}
+                            
+                            {/* Sparkline curve */}
+                            <polyline
+                              points={linePoints}
+                              className="fill-none stroke-accent stroke-2"
+                            />
+                            
+                            {/* Sparkline points */}
+                            {pts.map((p: any, idx: number) => {
+                              const x = (idx / (pts.length - 1)) * (width - 40) + 20;
+                              const y = height - 20 - ((p.roadmapEstimatedRemainingDays - minDays) / range) * (height - 40);
+                              return (
+                                <circle
+                                  key={idx}
+                                  cx={x}
+                                  cy={y}
+                                  r="3"
+                                  className="fill-accent stroke-background stroke-2 hover:r-4 transition duration-200 cursor-pointer"
+                                />
+                              );
+                            })}
+                          </svg>
+                        )}
+                        <div className="text-[9px] text-muted-foreground flex justify-between px-1 mt-2">
+                          <span>Oldest Calculation</span>
+                          <span>Latest calculation (Remaining days over time)</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Today's task completion probabilities */}
+                <div className="lg:col-span-4 bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <CheckSquare className="w-4 h-4 text-accent" /> Today's Completion Probability
+                  </h4>
+                  <div className="flex-grow overflow-y-auto max-h-[160px] pr-1 space-y-3 scrollbar-custom">
+                    {predictionProfile.dailyTaskForecast.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-8">
+                        No tasks scheduled in today's agenda to analyze.
+                      </p>
+                    ) : (
+                      predictionProfile.dailyTaskForecast.map((t: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center border-b border-border/40 pb-2 last:border-0 last:pb-0">
+                          <span className="text-xs text-foreground/90 truncate max-w-[170px]" title={t.title}>
+                            {t.title}
+                          </span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className={`text-[10px] font-mono font-semibold ${
+                              t.completionProbability >= 80 ? "text-green-500" :
+                              t.completionProbability >= 50 ? "text-amber-500" : "text-red-500"
+                            }`}>{t.completionProbability}%</span>
+                            <div className="w-12 bg-secondary h-1.5 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${
+                                t.completionProbability >= 80 ? "bg-green-500" :
+                                t.completionProbability >= 50 ? "bg-amber-500" : "bg-red-500"
+                              }`} style={{ width: `${t.completionProbability}%` }} />
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* Third row: Goal Forecast Table & Deadline Probabilities */}
+              <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Goal Forecast Table */}
+                <div className="lg:col-span-8 bg-card border border-border rounded-xl shadow-sm p-5 flex flex-col">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-1.5">
+                    <Target className="w-4 h-4 text-accent" /> Goal Completion Timelines & Deadline Forecasts
+                  </h4>
+                  <div className="overflow-x-auto flex-grow max-h-[220px] scrollbar-custom text-xs">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-border bg-secondary/30 text-muted-foreground font-semibold">
+                          <th className="py-2 px-3">Goal</th>
+                          <th className="py-2 px-3">Projected Date</th>
+                          <th className="py-2 px-3">Likelihood</th>
+                          <th className="py-2 px-3">Deadline Status (Early / On Time / Late)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {predictionProfile.goalForecast.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="text-center py-6 text-muted-foreground">
+                              No active goals to project.
+                            </td>
+                          </tr>
+                        ) : (
+                          predictionProfile.goalForecast.map((gf: any, idx: number) => {
+                            const df = predictionProfile.deadlineForecast.find((d: any) => d.goalId === gf.goalId);
+                            return (
+                              <tr key={idx} className="border-b border-border hover:bg-secondary/10">
+                                <td className="py-2.5 px-3 font-semibold">{gf.goalTitle}</td>
+                                <td className="py-2.5 px-3 font-mono text-[10px] text-muted-foreground">
+                                  {new Date(gf.estimatedCompletionDate).toLocaleDateString()}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                    gf.likelihood === "High" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
+                                    gf.likelihood === "Medium" ? "bg-amber-500/10 text-amber-500" :
+                                    "bg-red-500/10 text-red-500"
+                                  }`}>{gf.likelihood}</span>
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  {df ? (
+                                    <div className="flex items-center gap-2 w-full max-w-[200px]">
+                                      <div className="flex h-2.5 rounded-full overflow-hidden flex-grow bg-secondary/30 border border-border/30">
+                                        <div title={`Early: ${df.probabilityEarly}%`} className="bg-green-500 h-full" style={{ width: `${df.probabilityEarly}%` }} />
+                                        <div title={`On Time: ${df.probabilityOnTime}%`} className="bg-blue-400 h-full" style={{ width: `${df.probabilityOnTime}%` }} />
+                                        <div title={`Late: ${df.probabilityLate}%`} className="bg-red-500 h-full" style={{ width: `${df.probabilityLate}%` }} />
+                                      </div>
+                                      <span className="text-[9px] font-mono text-red-400 flex-shrink-0">
+                                        L: {df.probabilityLate}%
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground text-[10px]">-</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Habit Streak Prediction */}
+                <div className="lg:col-span-4 bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Flame className="w-4 h-4 text-accent" /> Streak Survival Forecast
+                  </h4>
+                  <div className="space-y-4 text-xs flex-grow justify-center flex flex-col">
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Current Active Streak</span>
+                      <span className="font-bold text-orange-500 px-2 py-0.5 bg-orange-500/10 rounded border border-orange-500/20 flex items-center gap-1">
+                        <Flame className="w-3.5 h-3.5" /> {predictionProfile.habitForecast.currentStreak} days
+                      </span>
+                    </div>
+
+                    <div className="border-t border-border/40 pt-3 space-y-2.5">
+                      <div>
+                        <div className="flex justify-between text-[10px] mb-1">
+                          <span>Probability Continue Tomorrow</span>
+                          <span className="font-semibold text-green-500">{predictionProfile.habitForecast.probabilityContinueTomorrow}%</span>
+                        </div>
+                        <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+                          <div className="bg-green-500 h-full" style={{ width: `${predictionProfile.habitForecast.probabilityContinueTomorrow}%` }}></div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[10px] mb-1">
+                          <span>Probability Continue Next Week</span>
+                          <span className="font-semibold text-blue-500">{predictionProfile.habitForecast.probabilityContinueNextWeek}%</span>
+                        </div>
+                        <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+                          <div className="bg-blue-500 h-full" style={{ width: `${predictionProfile.habitForecast.probabilityContinueNextWeek}%` }}></div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[10px] mb-1">
+                          <span>Risk of Streak Failure</span>
+                          <span className="font-semibold text-red-500">{predictionProfile.habitForecast.probabilityLoseStreak}%</span>
+                        </div>
+                        <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+                          <div className="bg-red-500 h-full" style={{ width: `${predictionProfile.habitForecast.probabilityLoseStreak}%` }}></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Fourth row: Collapsible Evidence Explorer & Prediction Events */}
+              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Prediction Events timeline */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-accent" /> Recent Prediction Shift Events
+                  </h4>
+                  <div className="flex-grow max-h-[300px] overflow-y-auto space-y-4 pr-1 scrollbar-custom">
+                    {predictionEvents.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-10">
+                        No prediction change events have been logged yet.
+                      </p>
+                    ) : (
+                      predictionEvents.map((evt: any, idx: number) => (
+                        <div key={idx} className="flex gap-3 items-start border-b border-border/40 pb-3 last:border-0 last:pb-0">
+                          <div className={`p-1 rounded-full mt-0.5 ${
+                            evt.predictionType === "burnout_risk" ? "bg-red-500/10 text-red-500" :
+                            evt.predictionType === "roadmap_completion" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
+                            "bg-accent/15 text-accent"
+                          }`}>
+                            <History className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-[11px] font-bold text-foreground flex items-center gap-1.5 flex-wrap">
+                              <span className="capitalize">{evt.predictionType.replace(/_/g, " ")}</span>
+                              <span className="text-[9px] text-muted-foreground font-normal">
+                                {new Date(evt.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">{evt.reason}</p>
+                            <div className="text-[9px] text-muted-foreground font-mono flex gap-4 pt-0.5">
+                              <span>Before: {evt.oldPrediction}</span>
+                              <span>After: {evt.newPrediction}</span>
+                              <span>Confidence: {evt.confidence}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Evidence Explorer */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-1.5">
+                    <Search className="w-4 h-4 text-accent" /> Explainable Evidence Explorer
+                  </h4>
+                  <div className="space-y-2.5 flex-grow overflow-y-auto max-h-[300px] pr-1 scrollbar-custom">
+                    {(() => {
+                      const goalEvidence = (predictionProfile.goalForecast || []).map((gf: any) => 
+                        `* Goal "${gf.goalTitle}": Likelihood = ${gf.likelihood}, projected date = ${new Date(gf.estimatedCompletionDate).toLocaleDateString()}, confidence = ${gf.confidence}%`
+                      );
+                      const explorerData = [
+                        { key: "completion", label: "Roadmap Completion Forecast", score: predictionProfile.completionForecast.confidence, evidence: predictionProfile.completionForecast.evidence || [] },
+                        { key: "productivity", label: "Productivity Range Forecast", score: 85, evidence: predictionProfile.productivityForecast.evidence || [] },
+                        { key: "consistency", label: "Consistency Projection", score: predictionProfile.consistencyForecast.predictedConsistencyNextWeek, evidence: predictionProfile.consistencyForecast.evidence || [] },
+                        { key: "habit", label: "Streak Survival Forecast", score: predictionProfile.habitForecast.probabilityContinueTomorrow, evidence: predictionProfile.habitForecast.evidence || [] },
+                        { key: "goals", label: "Goal Completed timelines", score: 80, evidence: goalEvidence }
+                      ];
+
+                      return explorerData.map((exp) => {
+                        const isExpanded = expandedPredictionEvidence === exp.key;
+                        return (
+                          <div key={exp.key} className="border border-border/60 rounded-lg overflow-hidden">
+                            <button
+                              onClick={() => setExpandedPredictionEvidence(isExpanded ? null : exp.key)}
+                              className="w-full bg-secondary/20 hover:bg-secondary/40 px-3.5 py-2.5 flex justify-between items-center text-xs font-semibold transition cursor-pointer text-left"
+                            >
+                              <span className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${
+                                  exp.score >= 80 ? "bg-green-500" :
+                                  exp.score >= 50 ? "bg-amber-500" : "bg-red-500"
+                                }`} />
+                                {exp.label}
+                              </span>
+                              <span className="text-muted-foreground flex items-center gap-1.5 font-mono text-[10px]">
+                                {exp.score}%
+                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              </span>
+                            </button>
+                            {isExpanded && (
+                              <div className="p-3 bg-secondary/10 border-t border-border/50 text-[10px] text-muted-foreground space-y-1.5 leading-relaxed font-mono">
+                                {exp.evidence.length === 0 ? (
+                                  <div className="italic">No evidence registered for this prediction.</div>
+                                ) : (
+                                  exp.evidence.map((line: string, i: number) => (
+                                    <div key={i} className="pl-1 text-foreground/95">{line}</div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              </section>
+
+              {/* Footer metadata */}
+              <div className="text-[10px] text-muted-foreground flex justify-between px-1 border-t border-border/30 pt-3">
+                <span>Engine Version: 1.0.0</span>
+                <span>Last Computed: {new Date(predictionProfile.lastUpdated).toLocaleString()}</span>
               </div>
             </div>
           )}

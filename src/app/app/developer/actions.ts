@@ -305,3 +305,46 @@ export async function getConsistencyEvents(uid: string) {
     return [];
   }
 }
+
+// Prediction Intelligence Actions
+import { PredictionEngine } from "@/services/prediction-engine.service";
+import { PredictionProfile } from "@/models/PredictionProfile";
+import { PredictionEvent } from "@/models/PredictionEvent";
+
+export async function getPredictionProfile(uid: string) {
+  await dbConnect();
+  try {
+    const profile = await PredictionEngine.getOrCreateProfile(uid);
+    return JSON.parse(JSON.stringify(profile));
+  } catch (err) {
+    console.error("Error in getPredictionProfile server action:", err);
+    return null;
+  }
+}
+
+export async function recalculatePredictionProfile(uid: string) {
+  await dbConnect();
+  try {
+    const profile = await PredictionEngine.computePredictionProfile(uid);
+    return { success: true, profile: JSON.parse(JSON.stringify(profile)) };
+  } catch (err: any) {
+    console.error("Error in recalculatePredictionProfile server action:", err);
+    return { success: false, error: err.message || "Unknown error" };
+  }
+}
+
+export async function getPredictionEvents(uid: string) {
+  await dbConnect();
+  try {
+    const events = await PredictionEvent.find({ uid }).sort({ timestamp: -1 }).limit(30).lean();
+    return JSON.parse(JSON.stringify(events));
+  } catch (err) {
+    console.error("Error in getPredictionEvents server action:", err);
+    return [];
+  }
+}
+
+
+
+
+
