@@ -19,9 +19,10 @@ export interface MorningBriefData {
 interface MorningEmailProps {
   data: MorningBriefData;
   appUrl: string;
+  logId?: string;
 }
 
-export const MorningEmail: React.FC<MorningEmailProps> = ({ data, appUrl }) => {
+export const MorningEmail: React.FC<MorningEmailProps> = ({ data, appUrl, logId }) => {
   const textStyle: React.CSSProperties = {
     fontSize: "14px",
     lineHeight: "1.6",
@@ -149,6 +150,15 @@ export const MorningEmail: React.FC<MorningEmailProps> = ({ data, appUrl }) => {
       </div>
 
       <Footer theme="morning" timezone={data.timezone} appUrl={appUrl} />
+      {logId && (
+        <img
+          src={`${appUrl}/api/briefings/track-open?id=${logId}`}
+          width="1"
+          height="1"
+          style={{ display: "none" }}
+          alt=""
+        />
+      )}
     </EmailLayout>
   );
 };

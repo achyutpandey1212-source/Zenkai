@@ -5,6 +5,7 @@ import { Task } from "@/models/Task";
 import { PlanningAgent } from "@/agents/planning-agent";
 import { dbConnect } from "@/lib/mongodb";
 import { Types } from "mongoose";
+import { BehaviorEngine } from "@/services/behavior-engine.service";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,17 @@ export async function PATCH(
 
     // Trigger recursive progress recalculation
     await PlanningAgent.recalculateProgress(user.firebaseUid, id);
+
+    // Notify BehaviorEngine
+    if (status === "completed") {
+      await BehaviorEngine.updateFromTaskCompletion(user.firebaseUid, id).catch(err =>
+        console.error("[TaskPatchRoute] Failed to update behavior profile from completion:", err)
+      );
+    } else if (status === "skipped") {
+      await BehaviorEngine.updateFromTaskSkip(user.firebaseUid, id).catch(err =>
+        console.error("[TaskPatchRoute] Failed to update behavior profile from skip:", err)
+      );
+    }
 
     return NextResponse.json({
       success: true,

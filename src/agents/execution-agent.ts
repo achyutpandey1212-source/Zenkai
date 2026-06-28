@@ -343,6 +343,12 @@ Remember:
 
     const savedAgenda = await DailyAgendaRepository.saveAgenda(uid, dateStr, agendaData);
 
+    // Notify BehaviorEngine
+    const { BehaviorEngine } = await import("@/services/behavior-engine.service");
+    await BehaviorEngine.updateFromAgenda(uid, dateStr).catch((err) => {
+      console.error("[ExecutionAgent] Failed to update behavior profile from agenda:", err);
+    });
+
     // Queue debounced calendar sync asynchronously (runs after agenda generation completes)
     CalendarSyncService.queueSync(uid).catch((err) => {
       console.error("[ExecutionAgent] Background calendar queue error:", err);

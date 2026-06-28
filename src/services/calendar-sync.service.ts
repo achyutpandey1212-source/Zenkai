@@ -373,6 +373,14 @@ export class CalendarSyncService {
           error,
           retryCount: 0
         });
+
+        // Notify BehaviorEngine
+        if (status === "success") {
+          const { BehaviorEngine } = await import("@/services/behavior-engine.service");
+          await BehaviorEngine.updateFromCalendar(uid).catch(err =>
+            console.error("[CalendarSyncService] Failed to update behavior profile from calendar sync:", err)
+          );
+        }
       } catch (logErr) {
         console.error("[CalendarSyncService] Failed to write CalendarSyncLog:", logErr);
       }

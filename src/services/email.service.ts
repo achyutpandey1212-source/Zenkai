@@ -5,6 +5,8 @@ import path from "path";
 import { BriefingLog } from "@/models/BriefingLog";
 import { MorningEmail, MorningBriefData } from "@/emails/MorningEmail";
 import { EveningEmail, EveningBriefData } from "@/emails/EveningEmail";
+import { Types } from "mongoose";
+import { BehaviorEngine } from "@/services/behavior-engine.service";
 
 const apiKey = process.env.RESEND_API_KEY || "re_mock_key_for_testing";
 const resend = new Resend(apiKey);
@@ -29,8 +31,9 @@ export class EmailService {
     let retryAttempts = 0;
     const maxRetries = 3;
 
+    const logId = new Types.ObjectId();
     const { renderToStaticMarkup } = await import("react-dom/server");
-    const element = React.createElement(MorningEmail, { data, appUrl: APP_URL });
+    const element = React.createElement(MorningEmail, { data, appUrl: APP_URL, logId: logId.toString() });
     const html = renderToStaticMarkup(element);
 
     const logoPath = path.join(process.cwd(), "public", "assets", "logo", "logo_1.png");
@@ -88,6 +91,7 @@ export class EmailService {
     const cost = telemetry?.cost || 0;
 
     await BriefingLog.create({
+      _id: logId,
       uid,
       email,
       type: "morning",
@@ -102,6 +106,12 @@ export class EmailService {
       retryAttempts,
       skipped,
     });
+
+    if (status === "success") {
+      await BehaviorEngine.updateFromBriefing(uid, "morning", "sent").catch(err =>
+        console.error("[EmailService] Failed to update behavior profile from morning brief:", err)
+      );
+    }
   }
 
   /**
@@ -120,8 +130,9 @@ export class EmailService {
     let retryAttempts = 0;
     const maxRetries = 3;
 
+    const logId = new Types.ObjectId();
     const { renderToStaticMarkup } = await import("react-dom/server");
-    const element = React.createElement(EveningEmail, { data, appUrl: APP_URL });
+    const element = React.createElement(EveningEmail, { data, appUrl: APP_URL, logId: logId.toString() });
     const html = renderToStaticMarkup(element);
 
     const logoPath = path.join(process.cwd(), "public", "assets", "logo", "logo_1.png");
@@ -177,6 +188,7 @@ export class EmailService {
     const cost = telemetry?.cost || 0;
 
     await BriefingLog.create({
+      _id: logId,
       uid,
       email,
       type: "evening",
@@ -191,5 +203,11 @@ export class EmailService {
       retryAttempts,
       skipped,
     });
+
+    if (status === "success") {
+      await BehaviorEngine.updateFromBriefing(uid, "evening", "sent").catch(err =>
+        console.error("[EmailService] Failed to update behavior profile from evening brief:", err)
+      );
+    }
   }
 }

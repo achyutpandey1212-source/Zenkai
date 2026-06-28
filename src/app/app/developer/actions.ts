@@ -222,4 +222,51 @@ export async function triggerManualCalendarSync(uid: string) {
   }
 }
 
+// Behavior Intelligence Actions
+import { BehaviorEngine } from "@/services/behavior-engine.service";
+import { BehaviorProfile } from "@/models/BehaviorProfile";
+
+export async function getBehaviorProfile(uid: string) {
+  await dbConnect();
+  try {
+    const profile = await BehaviorEngine.getOrCreateProfile(uid);
+    return JSON.parse(JSON.stringify(profile));
+  } catch (err) {
+    console.error("Error in getBehaviorProfile server action:", err);
+    return null;
+  }
+}
+
+export async function recalculateBehaviorProfile(uid: string) {
+  await dbConnect();
+  try {
+    const profile = await BehaviorEngine.computeBehaviorProfile(uid);
+    return { success: true, profile: JSON.parse(JSON.stringify(profile)) };
+  } catch (err: any) {
+    console.error("Error in recalculateBehaviorProfile server action:", err);
+    return { success: false, error: err.message || "Unknown error" };
+  }
+}
+
+export async function simulateBriefingOpen(logId: string) {
+  await dbConnect();
+  try {
+    const log = await BriefingLog.findById(logId);
+    if (!log) {
+      return { success: false, error: "Briefing log not found" };
+    }
+    if (!log.opened) {
+      log.opened = true;
+      log.openedAt = new Date();
+      await log.save();
+      await BehaviorEngine.updateFromBriefing(log.uid, log.type, "opened");
+    }
+    return { success: true, message: `Successfully simulated open for briefing ${logId}` };
+  } catch (err: any) {
+    console.error("Error in simulateBriefingOpen server action:", err);
+    return { success: false, error: err.message || "Unknown error" };
+  }
+}
+
+
 

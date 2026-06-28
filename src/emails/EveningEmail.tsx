@@ -23,9 +23,10 @@ export interface EveningBriefData {
 interface EveningEmailProps {
   data: EveningBriefData;
   appUrl: string;
+  logId?: string;
 }
 
-export const EveningEmail: React.FC<EveningEmailProps> = ({ data, appUrl }) => {
+export const EveningEmail: React.FC<EveningEmailProps> = ({ data, appUrl, logId }) => {
   const textStyle: React.CSSProperties = {
     fontSize: "14px",
     lineHeight: "1.6",
@@ -145,6 +146,15 @@ export const EveningEmail: React.FC<EveningEmailProps> = ({ data, appUrl }) => {
       </div>
 
       <Footer theme="evening" timezone={data.timezone} appUrl={appUrl} />
+      {logId && (
+        <img
+          src={`${appUrl}/api/briefings/track-open?id=${logId}`}
+          width="1"
+          height="1"
+          style={{ display: "none" }}
+          alt=""
+        />
+      )}
     </EmailLayout>
   );
 };

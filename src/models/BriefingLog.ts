@@ -14,6 +14,8 @@ export interface IBriefingLog extends Document {
   lastError?: string;
   retryAttempts: number;
   skipped: boolean; // true if nothing changed and we sent a cached/deterministic brief without AI call
+  opened: boolean;
+  openedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +35,8 @@ const BriefingLogSchema = new Schema<IBriefingLog>(
     lastError: { type: String },
     retryAttempts: { type: Number, default: 0 },
     skipped: { type: Boolean, default: false },
+    opened: { type: Boolean, default: false },
+    openedAt: { type: Date },
   },
   {
     timestamps: true,

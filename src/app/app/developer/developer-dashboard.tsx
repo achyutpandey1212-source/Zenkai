@@ -8,7 +8,8 @@ import {
   CheckCircle2, XCircle, AlertTriangle, Terminal, 
   Coins, Zap, RefreshCw, Search, Copy, 
   ChevronDown, ChevronUp, FileText, Activity, Info, 
-  Clock, ShieldAlert, Sparkles, Cpu, Mail, Send, AlertCircle, Calendar, Loader2
+  Clock, ShieldAlert, Sparkles, Cpu, Mail, Send, AlertCircle, Calendar, Loader2,
+  Flame, Trophy, TrendingUp, BarChart3, PieChart, Award, BookOpen
 } from "lucide-react";
 import { 
   getWorkflows, 
@@ -19,7 +20,10 @@ import {
   triggerBriefing,
   getCalendarSyncLogs,
   getCalendarStats,
-  triggerManualCalendarSync
+  triggerManualCalendarSync,
+  getBehaviorProfile,
+  recalculateBehaviorProfile,
+  simulateBriefingOpen
 } from "./actions";
 
 // Interfaces
@@ -109,7 +113,7 @@ export default function DeveloperDashboard() {
   const [isPending, startTransition] = useTransition();
 
   // Briefing and Calendar states
-  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar">("workflows");
+  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar" | "behavior">("workflows");
   const [briefingLogs, setBriefingLogs] = useState<any[]>([]);
   const [dashboardUsers, setDashboardUsers] = useState<any[]>([]);
   const [selectedUserForBrief, setSelectedUserForBrief] = useState<string>("");
@@ -134,6 +138,13 @@ export default function DeveloperDashboard() {
   const [isTriggeringCalendar, setIsTriggeringCalendar] = useState(false);
   const [calendarTriggerResult, setCalendarTriggerResult] = useState<any | null>(null);
 
+  // Behavior states
+  const [selectedUserForBehavior, setSelectedUserForBehavior] = useState<string>("");
+  const [behaviorProfile, setBehaviorProfile] = useState<any>(null);
+  const [isLoadingBehavior, setIsLoadingBehavior] = useState(false);
+  const [isRecalculatingBehavior, setIsRecalculatingBehavior] = useState(false);
+  const [behaviorError, setBehaviorError] = useState<string>("");
+
   // Load dashboard data
   const loadData = () => {
     startTransition(async () => {
@@ -149,6 +160,7 @@ export default function DeveloperDashboard() {
       if (users.length > 0) {
         if (!selectedUserForBrief) setSelectedUserForBrief(users[0].firebaseUid);
         if (!selectedUserForCalendar) setSelectedUserForCalendar(users[0].firebaseUid);
+        if (!selectedUserForBehavior) setSelectedUserForBehavior(users[0].firebaseUid);
       }
 
       // Fetch calendar telemetry
@@ -158,6 +170,44 @@ export default function DeveloperDashboard() {
       setCalendarStats(calStats);
     });
   };
+
+  const loadBehaviorProfile = async (uid: string) => {
+    setIsLoadingBehavior(true);
+    setBehaviorError("");
+    try {
+      const profile = await getBehaviorProfile(uid);
+      setBehaviorProfile(profile);
+    } catch (err: any) {
+      console.error("Failed to load behavior profile:", err);
+      setBehaviorError(err.message || "Failed to load behavior profile");
+    } finally {
+      setIsLoadingBehavior(false);
+    }
+  };
+
+  const handleRecalculateBehavior = async () => {
+    if (!selectedUserForBehavior) return;
+    setIsRecalculatingBehavior(true);
+    setBehaviorError("");
+    try {
+      const result = await recalculateBehaviorProfile(selectedUserForBehavior);
+      if (result.success) {
+        setBehaviorProfile(result.profile);
+      } else {
+        setBehaviorError(result.error || "Failed to recalculate profile");
+      }
+    } catch (err: any) {
+      setBehaviorError(err.message || "Failed to recalculate profile");
+    } finally {
+      setIsRecalculatingBehavior(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedUserForBehavior) {
+      loadBehaviorProfile(selectedUserForBehavior);
+    }
+  }, [selectedUserForBehavior]);
 
   const handleTriggerBrief = async () => {
     if (!selectedUserForBrief) return;
@@ -443,6 +493,16 @@ export default function DeveloperDashboard() {
               }`}
             >
               Calendar Mirroring
+            </button>
+            <button
+              onClick={() => setDashboardView("behavior")}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition ${
+                dashboardView === "behavior"
+                  ? "bg-accent text-white"
+                  : "bg-secondary text-secondary-foreground hover:bg-muted"
+              }`}
+            >
+              Behavior Intelligence
             </button>
           </div>
         </div>
@@ -1157,6 +1217,7 @@ export default function DeveloperDashboard() {
                     <th className="py-2 px-3">Target Email</th>
                     <th className="py-2 px-3">Type</th>
                     <th className="py-2 px-3">Status</th>
+                    <th className="py-2 px-3 text-center">Open Tracking</th>
                     <th className="py-2 px-3">Generation Type</th>
                     <th className="py-2 px-3 text-right">Duration</th>
                     <th className="py-2 px-3 text-right">Tokens</th>
@@ -1167,7 +1228,7 @@ export default function DeveloperDashboard() {
                 <tbody>
                   {briefingLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="text-center py-6 text-muted-foreground">
+                      <td colSpan={10} className="text-center py-6 text-muted-foreground">
                         No briefings have been sent or logged yet.
                       </td>
                     </tr>
@@ -1191,6 +1252,33 @@ export default function DeveloperDashboard() {
                           >
                             {log.status}
                           </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          {log.status === "success" ? (
+                            log.opened ? (
+                              <span className="text-[10px] bg-green-500/10 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded font-semibold">
+                                Opened ({new Date(log.openedAt).toLocaleTimeString()})
+                              </span>
+                            ) : (
+                              <button
+                                onClick={async () => {
+                                  const res = await simulateBriefingOpen(log._id);
+                                  if (res.success) {
+                                    const freshLogs = await getBriefingLogs();
+                                    setBriefingLogs(freshLogs);
+                                    if (selectedUserForBehavior === log.uid) {
+                                      loadBehaviorProfile(log.uid);
+                                    }
+                                  }
+                                }}
+                                className="text-[10px] bg-accent/20 hover:bg-accent/40 text-accent px-2 py-0.5 rounded cursor-pointer font-semibold transition"
+                              >
+                                Sim Open
+                              </button>
+                            )
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </td>
                         <td className="py-2.5 px-3 text-muted-foreground">
                           {log.skipped ? (
@@ -1219,7 +1307,7 @@ export default function DeveloperDashboard() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : dashboardView === "calendar" ? (
         /* 3. CALENDAR TELEMETRY VIEW */
         <div className="space-y-6 flex-grow flex flex-col min-h-0">
           
@@ -1395,6 +1483,320 @@ export default function DeveloperDashboard() {
               </table>
             </div>
           </div>
+        </div>
+      ) : (
+        /* 4. BEHAVIOR INTELLIGENCE VIEW */
+        <div className="space-y-6 flex-grow flex flex-col min-h-0">
+          {/* Header controls */}
+          <div className="bg-card border border-border p-5 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+                <BarChart3 className="w-4 h-4 text-accent" /> Behavior Intelligence Profile
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Inspect 100% deterministic, explainable behavioral metrics, streaks, completions, and time preferences.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedUserForBehavior}
+                onChange={(e) => setSelectedUserForBehavior(e.target.value)}
+                className="bg-secondary border border-border px-3 py-1.5 rounded text-xs font-semibold"
+              >
+                {dashboardUsers.map((user) => (
+                  <option key={user.firebaseUid} value={user.firebaseUid}>
+                    {user.name} ({user.email})
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleRecalculateBehavior}
+                disabled={isRecalculatingBehavior || !selectedUserForBehavior}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-accent hover:bg-accent/80 text-white rounded text-xs font-semibold transition disabled:opacity-50 cursor-pointer"
+              >
+                {isRecalculatingBehavior ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Recalculating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Force Recalculate
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {behaviorError && (
+            <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/10 text-destructive text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              <span>{behaviorError}</span>
+            </div>
+          )}
+
+          {isLoadingBehavior ? (
+            <div className="flex-grow flex items-center justify-center py-20">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="w-8 h-8 animate-spin text-accent" />
+                <span className="text-xs text-muted-foreground">Loading Behavior Profile...</span>
+              </div>
+            </div>
+          ) : !behaviorProfile ? (
+            <div className="bg-card border border-border p-10 rounded-xl text-center">
+              <BarChart3 className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-foreground">No Profile Found</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Please click "Force Recalculate" above to initialize behavior intelligence for this user.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Overview grid */}
+              <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* 1. STREAKS */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-orange-500/10">
+                    <Flame className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Flame className="w-3.5 h-3.5 text-orange-500" />
+                    <span>Streaks</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block">Current</span>
+                      <p className="text-2xl font-bold text-orange-500">{behaviorProfile.Activity.currentStreak} days</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block">Longest</span>
+                      <p className="text-2xl font-bold text-amber-500">{behaviorProfile.Activity.longestStreak} days</p>
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-muted-foreground border-t border-border/50 pt-2 flex justify-between">
+                    <span>Active Days: {behaviorProfile.Activity.daysActive}</span>
+                    <span>Last: {behaviorProfile.Activity.lastActivity ? new Date(behaviorProfile.Activity.lastActivity).toLocaleDateString() : "Never"}</span>
+                  </div>
+                </div>
+
+                {/* 2. COMPLETION RATE */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-green-500/10">
+                    <CheckCircle2 className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                    <span>Completion Rate</span>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-green-500">{behaviorProfile.Completion.completionRate.toFixed(1)}%</p>
+                    <div className="w-full bg-secondary h-1.5 rounded-full mt-2 overflow-hidden">
+                      <div className="bg-green-500 h-full rounded-full" style={{ width: `${behaviorProfile.Completion.completionRate}%` }} />
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-muted-foreground flex justify-between border-t border-border/50 pt-2">
+                    <span>Comp: {behaviorProfile.Completion.completedTasks}</span>
+                    <span>Skip: {behaviorProfile.Completion.skippedTasks}</span>
+                    <span>Overdue: {behaviorProfile.Completion.overdueTasks}</span>
+                  </div>
+                </div>
+
+                {/* 3. PRODUCTIVITY */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-blue-500/10">
+                    <Clock className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Focus Hours</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block">Avg Planned</span>
+                      <p className="text-xl font-bold text-blue-400">{behaviorProfile.Productivity.averagePlannedHours.toFixed(1)}h/d</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block">Avg Completed</span>
+                      <p className="text-xl font-bold text-indigo-400">{behaviorProfile.Productivity.averageCompletedHours.toFixed(1)}h/d</p>
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-muted-foreground border-t border-border/50 pt-2 flex justify-between">
+                    <span>Ratio: {(behaviorProfile.Productivity.workCompletionRatio * 100).toFixed(0)}% completion</span>
+                  </div>
+                </div>
+
+                {/* 4. DEEP WORK */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-red-500/10">
+                    <Award className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Award className="w-3.5 h-3.5 text-red-500" />
+                    <span>Deep Work Sessions</span>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-red-500">{behaviorProfile.DeepWork.deepWorkSessions} sessions</p>
+                    <div className="text-[9px] text-muted-foreground mt-2 flex justify-between">
+                      <span>Average: {Math.round(behaviorProfile.DeepWork.averageDeepWorkMinutes)}m</span>
+                      <span>Longest: {behaviorProfile.DeepWork.longestDeepWorkMinutes}m</span>
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-muted-foreground border-t border-border/50 pt-2">
+                    <span>Def: Tasks completed ≥ 45 mins</span>
+                  </div>
+                </div>
+              </section>
+
+              {/* Second row grids: heatmap and preferences */}
+              <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Heatmap column */}
+                <div className="lg:col-span-8 bg-card border border-border p-5 rounded-xl shadow-sm space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <BarChart3 className="w-4 h-4 text-accent" /> GitHub-Style 28-Day Activity
+                  </h4>
+                  {/* Contribution Heatmap */}
+                  <div className="flex flex-wrap gap-1.5 p-3 bg-secondary/20 rounded-lg justify-start items-center">
+                    {Array.from({ length: 28 }).map((_, idx) => {
+                      const date = new Date();
+                      date.setDate(date.getDate() - (27 - idx));
+                      date.setHours(12, 0, 0, 0);
+                      const dateStr = date.toISOString().split("T")[0];
+                      const isActive = behaviorProfile.Activity.activeDates?.includes(dateStr);
+                      return (
+                        <div
+                          key={idx}
+                          title={`${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}: ${isActive ? "Active Day" : "No Actions"}`}
+                          className={`w-8 h-8 rounded transition duration-200 border flex items-center justify-center text-[10px] font-mono ${
+                            isActive
+                              ? "bg-green-500/20 text-green-600 border-green-500/40 dark:bg-green-500/30 dark:text-green-400 font-bold shadow-sm"
+                              : "bg-secondary text-muted-foreground border-border/30"
+                          }`}
+                        >
+                          {date.getDate()}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground flex justify-between items-center px-1">
+                    <span>Showing trailing 28 days</span>
+                    <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-secondary border border-border/30 rounded inline-block"></span> Empty</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-green-500/20 border border-green-500/40 rounded inline-block"></span> Productive Day</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Working hour preferences */}
+                <div className="lg:col-span-4 bg-card border border-border p-5 rounded-xl shadow-sm space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <PieChart className="w-4 h-4 text-accent" /> Time Preferences
+                  </h4>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-muted-foreground">Preferred Window</span>
+                      <span className="text-xs font-bold text-foreground px-2 py-0.5 bg-secondary rounded border border-border">
+                        {behaviorProfile.TimePreference.preferredWorkingWindow}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-muted-foreground">Peak Window (3h)</span>
+                      <span className="text-xs font-bold text-accent px-2 py-0.5 bg-accent/10 rounded border border-accent/20">
+                        {behaviorProfile.TimePreference.peakHours}
+                      </span>
+                    </div>
+
+                    <div className="border-t border-border/50 pt-3 space-y-2">
+                      <div className="text-[11px] font-semibold text-muted-foreground">Weekly Rhythms</div>
+                      <div className="space-y-2 text-xs">
+                        <div>
+                          <div className="flex justify-between mb-1 text-[10px]">
+                            <span>Weekdays (Mon-Fri)</span>
+                            <span className="font-semibold text-green-500">{behaviorProfile.Weekly.weekdayCompletionRate.toFixed(1)}%</span>
+                          </div>
+                          <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-green-500 h-full" style={{ width: `${behaviorProfile.Weekly.weekdayCompletionRate}%` }}></div>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex justify-between mb-1 text-[10px]">
+                            <span>Weekends (Sat-Sun)</span>
+                            <span className="font-semibold text-blue-500">{behaviorProfile.Weekly.weekendCompletionRate.toFixed(1)}%</span>
+                          </div>
+                          <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-blue-500 h-full" style={{ width: `${behaviorProfile.Weekly.weekendCompletionRate}%` }}></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Third row grids: planning vs execution reliability */}
+              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Execution reliability details */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-accent" /> Execution Reliability
+                  </h4>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="p-3 bg-secondary/30 rounded-lg">
+                      <span className="text-[10px] text-muted-foreground block">Agendas Generated</span>
+                      <span className="text-lg font-bold text-foreground">{behaviorProfile.Execution.dailyAgendaGenerated}</span>
+                    </div>
+                    <div className="p-3 bg-secondary/30 rounded-lg">
+                      <span className="text-[10px] text-muted-foreground block">Agendas Finished</span>
+                      <span className="text-lg font-bold text-green-500">{behaviorProfile.Execution.dailyAgendaCompleted}</span>
+                    </div>
+                    <div className="p-3 bg-secondary/30 rounded-lg">
+                      <span className="text-[10px] text-muted-foreground block">Avg Task Completion</span>
+                      <span className="text-lg font-bold text-accent">{behaviorProfile.Execution.averageAgendaCompletion.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground leading-relaxed">
+                    Tracks how many days of agenda tasks were completed in full. An agenda counts as finished when all scheduled focus tasks in work blocks are completed.
+                  </div>
+                </div>
+
+                {/* Planning & Reliability details */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <BookOpen className="w-4 h-4 text-accent" /> Planning Reliability
+                  </h4>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="p-3 bg-secondary/30 rounded-lg">
+                      <span className="text-[9px] text-muted-foreground block">Created</span>
+                      <span className="text-lg font-bold text-foreground">{behaviorProfile.Planning.plansCreated}</span>
+                    </div>
+                    <div className="p-3 bg-secondary/30 rounded-lg">
+                      <span className="text-[9px] text-muted-foreground block">Completed</span>
+                      <span className="text-lg font-bold text-green-500">{behaviorProfile.Planning.plansCompleted}</span>
+                    </div>
+                    <div className="p-3 bg-secondary/30 rounded-lg">
+                      <span className="text-[9px] text-muted-foreground block">Abandoned</span>
+                      <span className="text-lg font-bold text-red-500">{behaviorProfile.Planning.plansAbandoned}</span>
+                    </div>
+                    <div className="p-3 bg-secondary/30 rounded-lg">
+                      <span className="text-[9px] text-muted-foreground block">Avg Lifetime</span>
+                      <span className="text-xs font-bold text-amber-500 block mt-1">{behaviorProfile.Planning.averagePlanLifetime} days</span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground leading-relaxed">
+                    Tracks structured planning behavior. Shows the ratio of active vs completed/abandoned plans and how long plans live before archiving/completing.
+                  </div>
+                </div>
+              </section>
+
+              {/* Metadata details */}
+              <div className="text-[10px] text-muted-foreground flex justify-between px-1">
+                <span>Engine Version: {behaviorProfile.Metadata.engineVersion}</span>
+                <span>Last Computed: {new Date(behaviorProfile.Metadata.lastComputed).toLocaleString()}</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

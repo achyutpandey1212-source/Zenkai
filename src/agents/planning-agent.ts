@@ -10,6 +10,7 @@ import { ReflectionRepository } from "@/repositories/reflection.repository";
 import { PlanRepository } from "@/repositories/plan.repository";
 import { Types } from "mongoose";
 import type { GraphState } from "@/orchestration/graph/state";
+import { BehaviorEngine } from "@/services/behavior-engine.service";
 
 // Re-exported so chat route can import them
 export type LifeEvent = {
@@ -1222,6 +1223,11 @@ Remember:
         `[PlanningAgent] Plan complete in ${Date.now() - startTime}ms. Milestones: ${updatedMilestones.length}, New tasks: ${totalTasksCreated}, Version: ${newPlanVersion}`
       );
 
+      // Notify BehaviorEngine
+      await BehaviorEngine.updateFromPlan(uid, planId, "update").catch(err =>
+        console.error("[PlanningAgent] Failed to update behavior profile from plan update:", err)
+      );
+
       return {
         success: true,
         milestonesCreated: updatedMilestones.length,
@@ -1326,6 +1332,12 @@ Remember:
       const plan = await Plan.findById(planId);
       const planStatus = planProgress === 100 ? "completed" : (plan?.status || "active");
       await Plan.findByIdAndUpdate(planId, { $set: { progress: planProgress, status: planStatus } });
+
+      if (plan) {
+        await BehaviorEngine.updateFromPlan(plan.firebaseUid, planId, planStatus === "completed" ? "complete" : "update").catch(err =>
+          console.error("[PlanningAgent] Failed to update behavior profile from plan progress update:", err)
+        );
+      }
     } catch (error) {
       console.error(`[PlanningAgent] Failed to recalculate plan progress for plan ${planId}:`, error);
     }

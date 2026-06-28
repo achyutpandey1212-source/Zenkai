@@ -6,6 +6,7 @@ import { ExecutionAgent } from "@/agents/execution-agent";
 import { PlanningAgent } from "@/agents/planning-agent";
 import { dbConnect } from "@/lib/mongodb";
 import { Types } from "mongoose";
+import { BehaviorEngine } from "@/services/behavior-engine.service";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,11 @@ export async function POST(request: Request) {
       await task.save();
       // Recalculate progress for the planning structure recursively
       await PlanningAgent.recalculateProgress(user.firebaseUid, taskId);
+
+      // Notify BehaviorEngine
+      await BehaviorEngine.updateFromTaskCompletion(user.firebaseUid, taskId).catch(err =>
+        console.error("[TaskActionRoute] Failed to update behavior profile from completion:", err)
+      );
     } else if (action === "defer") {
       // Defer: increment deferredCount, move to tomorrow
       const tomorrow = new Date(targetDate);
@@ -61,6 +67,11 @@ export async function POST(request: Request) {
       task.status = "skipped";
       task.lastExecutedAt = new Date();
       await task.save();
+
+      // Notify BehaviorEngine
+      await BehaviorEngine.updateFromTaskSkip(user.firebaseUid, taskId).catch(err =>
+        console.error("[TaskActionRoute] Failed to update behavior profile from skip:", err)
+      );
     } else if (action === "reschedule") {
       if (!newDate) {
         return NextResponse.json({ success: false, error: "newDate is required for rescheduling" }, { status: 400 });

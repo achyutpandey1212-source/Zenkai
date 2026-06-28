@@ -23,6 +23,7 @@ import { Milestone } from "@/models/Milestone";
 import { Plan } from "@/models/Plan";
 import { ExecutionAgent } from "@/agents/execution-agent";
 import { PlanningAgent } from "@/agents/planning-agent";
+import { BehaviorEngine } from "@/services/behavior-engine.service";
 import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
 
@@ -200,6 +201,17 @@ export async function companionNode(
           });
 
           await PlanningAgent.recalculateProgress(uid, targetTask._id.toString());
+
+          // Notify BehaviorEngine
+          if (newStatus === "completed") {
+            await BehaviorEngine.updateFromTaskCompletion(uid, targetTask._id.toString()).catch(err =>
+              console.error("[CompanionNode] Failed to update behavior profile from completion:", err)
+            );
+          } else if ((newStatus as string) === "skipped") {
+            await BehaviorEngine.updateFromTaskSkip(uid, targetTask._id.toString()).catch(err =>
+              console.error("[CompanionNode] Failed to update behavior profile from skip:", err)
+            );
+          }
 
           // Fetch the updated goals/milestones/plans to emit events
           const updatedTask = await Task.findById(targetTask._id).lean();
