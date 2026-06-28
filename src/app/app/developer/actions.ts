@@ -268,5 +268,40 @@ export async function simulateBriefingOpen(logId: string) {
   }
 }
 
+// Consistency Intelligence Actions
+import { ConsistencyEngine } from "@/services/consistency-engine.service";
+import { ConsistencyProfile } from "@/models/ConsistencyProfile";
+import { ConsistencyEvent } from "@/models/ConsistencyEvent";
 
+export async function getConsistencyProfile(uid: string) {
+  await dbConnect();
+  try {
+    const profile = await ConsistencyEngine.getOrCreateProfile(uid);
+    return JSON.parse(JSON.stringify(profile));
+  } catch (err) {
+    console.error("Error in getConsistencyProfile server action:", err);
+    return null;
+  }
+}
 
+export async function recalculateConsistencyProfile(uid: string) {
+  await dbConnect();
+  try {
+    const profile = await ConsistencyEngine.computeConsistencyProfile(uid);
+    return { success: true, profile: JSON.parse(JSON.stringify(profile)) };
+  } catch (err: any) {
+    console.error("Error in recalculateConsistencyProfile server action:", err);
+    return { success: false, error: err.message || "Unknown error" };
+  }
+}
+
+export async function getConsistencyEvents(uid: string) {
+  await dbConnect();
+  try {
+    const events = await ConsistencyEvent.find({ uid }).sort({ timestamp: -1 }).limit(30).lean();
+    return JSON.parse(JSON.stringify(events));
+  } catch (err) {
+    console.error("Error in getConsistencyEvents server action:", err);
+    return [];
+  }
+}

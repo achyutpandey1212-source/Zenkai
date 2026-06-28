@@ -9,7 +9,8 @@ import {
   Coins, Zap, RefreshCw, Search, Copy, 
   ChevronDown, ChevronUp, FileText, Activity, Info, 
   Clock, ShieldAlert, Sparkles, Cpu, Mail, Send, AlertCircle, Calendar, Loader2,
-  Flame, Trophy, TrendingUp, BarChart3, PieChart, Award, BookOpen
+  Flame, Trophy, TrendingUp, BarChart3, PieChart, Award, BookOpen,
+  Shield, UserCheck, Target, Repeat, CheckSquare, AlertOctagon, History
 } from "lucide-react";
 import { 
   getWorkflows, 
@@ -23,7 +24,10 @@ import {
   triggerManualCalendarSync,
   getBehaviorProfile,
   recalculateBehaviorProfile,
-  simulateBriefingOpen
+  simulateBriefingOpen,
+  getConsistencyProfile,
+  recalculateConsistencyProfile,
+  getConsistencyEvents
 } from "./actions";
 
 // Interfaces
@@ -113,7 +117,7 @@ export default function DeveloperDashboard() {
   const [isPending, startTransition] = useTransition();
 
   // Briefing and Calendar states
-  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar" | "behavior">("workflows");
+  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar" | "behavior" | "consistency">("workflows");
   const [briefingLogs, setBriefingLogs] = useState<any[]>([]);
   const [dashboardUsers, setDashboardUsers] = useState<any[]>([]);
   const [selectedUserForBrief, setSelectedUserForBrief] = useState<string>("");
@@ -145,6 +149,15 @@ export default function DeveloperDashboard() {
   const [isRecalculatingBehavior, setIsRecalculatingBehavior] = useState(false);
   const [behaviorError, setBehaviorError] = useState<string>("");
 
+  // Consistency states
+  const [selectedUserForConsistency, setSelectedUserForConsistency] = useState<string>("");
+  const [consistencyProfile, setConsistencyProfile] = useState<any>(null);
+  const [consistencyEvents, setConsistencyEvents] = useState<any[]>([]);
+  const [isLoadingConsistency, setIsLoadingConsistency] = useState(false);
+  const [isRecalculatingConsistency, setIsRecalculatingConsistency] = useState(false);
+  const [consistencyError, setConsistencyError] = useState<string>("");
+  const [expandedEvidenceMetric, setExpandedEvidenceMetric] = useState<string | null>(null);
+
   // Load dashboard data
   const loadData = () => {
     startTransition(async () => {
@@ -161,6 +174,7 @@ export default function DeveloperDashboard() {
         if (!selectedUserForBrief) setSelectedUserForBrief(users[0].firebaseUid);
         if (!selectedUserForCalendar) setSelectedUserForCalendar(users[0].firebaseUid);
         if (!selectedUserForBehavior) setSelectedUserForBehavior(users[0].firebaseUid);
+        if (!selectedUserForConsistency) setSelectedUserForConsistency(users[0].firebaseUid);
       }
 
       // Fetch calendar telemetry
@@ -208,6 +222,50 @@ export default function DeveloperDashboard() {
       loadBehaviorProfile(selectedUserForBehavior);
     }
   }, [selectedUserForBehavior]);
+
+  const loadConsistencyProfile = async (uid: string) => {
+    setIsLoadingConsistency(true);
+    setConsistencyError("");
+    try {
+      const [profile, events] = await Promise.all([
+        getConsistencyProfile(uid),
+        getConsistencyEvents(uid)
+      ]);
+      setConsistencyProfile(profile);
+      setConsistencyEvents(events);
+    } catch (err: any) {
+      console.error("Failed to load consistency profile:", err);
+      setConsistencyError(err.message || "Failed to load consistency profile");
+    } finally {
+      setIsLoadingConsistency(false);
+    }
+  };
+
+  const handleRecalculateConsistency = async () => {
+    if (!selectedUserForConsistency) return;
+    setIsRecalculatingConsistency(true);
+    setConsistencyError("");
+    try {
+      const result = await recalculateConsistencyProfile(selectedUserForConsistency);
+      if (result.success) {
+        setConsistencyProfile(result.profile);
+        const events = await getConsistencyEvents(selectedUserForConsistency);
+        setConsistencyEvents(events);
+      } else {
+        setConsistencyError(result.error || "Failed to recalculate consistency profile");
+      }
+    } catch (err: any) {
+      setConsistencyError(err.message || "Failed to recalculate consistency profile");
+    } finally {
+      setIsRecalculatingConsistency(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedUserForConsistency) {
+      loadConsistencyProfile(selectedUserForConsistency);
+    }
+  }, [selectedUserForConsistency]);
 
   const handleTriggerBrief = async () => {
     if (!selectedUserForBrief) return;
@@ -504,6 +562,17 @@ export default function DeveloperDashboard() {
             >
               Behavior Intelligence
             </button>
+            <button
+              onClick={() => setDashboardView("consistency")}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition ${
+                dashboardView === "consistency"
+                  ? "bg-accent text-white"
+                  : "bg-secondary text-secondary-foreground hover:bg-muted"
+              }`}
+            >
+              Consistency Intelligence
+            </button>
+
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -1484,7 +1553,7 @@ export default function DeveloperDashboard() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : dashboardView === "behavior" ? (
         /* 4. BEHAVIOR INTELLIGENCE VIEW */
         <div className="space-y-6 flex-grow flex flex-col min-h-0">
           {/* Header controls */}
@@ -1794,6 +1863,454 @@ export default function DeveloperDashboard() {
               <div className="text-[10px] text-muted-foreground flex justify-between px-1">
                 <span>Engine Version: {behaviorProfile.Metadata.engineVersion}</span>
                 <span>Last Computed: {new Date(behaviorProfile.Metadata.lastComputed).toLocaleString()}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : dashboardView === "consistency" ? (
+        /* 5. CONSISTENCY INTELLIGENCE VIEW */
+        <div className="space-y-6 flex-grow flex flex-col min-h-0">
+          {/* Header controls */}
+          <div className="bg-card border border-border p-5 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+                <Shield className="w-4 h-4 text-accent" /> Consistency Intelligence Profile
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Compare actual behavior against identity aspirations, goal priorities, and routines to calculate absolute alignment.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedUserForConsistency}
+                onChange={(e) => setSelectedUserForConsistency(e.target.value)}
+                className="bg-secondary border border-border px-3 py-1.5 rounded text-xs font-semibold"
+              >
+                {dashboardUsers.map((user) => (
+                  <option key={user.firebaseUid} value={user.firebaseUid}>
+                    {user.name} ({user.email})
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleRecalculateConsistency}
+                disabled={isRecalculatingConsistency || !selectedUserForConsistency}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-accent hover:bg-accent/80 text-white rounded text-xs font-semibold transition disabled:opacity-50 cursor-pointer"
+              >
+                {isRecalculatingConsistency ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Recalculating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Force Recalculate
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {consistencyError && (
+            <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/10 text-destructive text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              <span>{consistencyError}</span>
+            </div>
+          )}
+
+          {isLoadingConsistency ? (
+            <div className="flex-grow flex items-center justify-center py-20">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="w-8 h-8 animate-spin text-accent" />
+                <span className="text-xs text-muted-foreground">Loading Consistency Profile...</span>
+              </div>
+            </div>
+          ) : !consistencyProfile ? (
+            <div className="bg-card border border-border p-10 rounded-xl text-center">
+              <Shield className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-foreground">No Profile Found</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Please click "Force Recalculate" above to initialize consistency intelligence for this user.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Overview grid */}
+              <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* 1. OVERALL CONSISTENCY */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-accent/10">
+                    <Shield className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-accent" />
+                    <span>Overall Consistency</span>
+                  </div>
+                  <div>
+                    <p className="text-3xl font-bold text-accent">{consistencyProfile.overallConsistency}%</p>
+                    <div className="w-full bg-secondary h-1.5 rounded-full mt-2 overflow-hidden">
+                      <div className="bg-accent h-full rounded-full" style={{ width: `${consistencyProfile.overallConsistency}%` }} />
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-muted-foreground pt-1 flex justify-between border-t border-border/50">
+                    <span>Trends: 7d: {consistencyProfile.Trends?.sevenDayAvg || 0}%</span>
+                    <span>30d: {consistencyProfile.Trends?.thirtyDayAvg || 0}%</span>
+                  </div>
+                </div>
+
+                {/* 2. IDENTITY ALIGNMENT */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-green-500/10">
+                    <UserCheck className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-green-500" />
+                    <span>Identity Alignment</span>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-green-500">{consistencyProfile.Identity?.identityAlignmentScore || 0}%</p>
+                    <div className="w-full bg-secondary h-1.5 rounded-full mt-2 overflow-hidden">
+                      <div className="bg-green-500 h-full rounded-full" style={{ width: `${consistencyProfile.Identity?.identityAlignmentScore || 0}%` }} />
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-muted-foreground pt-1 flex justify-between border-t border-border/50">
+                    <span>Relevant: {consistencyProfile.Identity?.completedRelevantHours?.toFixed(1)}h</span>
+                    <span>Unrelated: {consistencyProfile.Identity?.completedIrrelevantHours?.toFixed(1)}h</span>
+                  </div>
+                </div>
+
+                {/* 3. GOAL CONSISTENCY */}
+                <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden">
+                  <div className="absolute right-3 top-3 text-blue-500/10">
+                    <Target className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Target className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Goal Consistency</span>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-blue-500">{consistencyProfile.Goals?.goalConsistencyScore || 0}%</p>
+                    <div className="w-full bg-secondary h-1.5 rounded-full mt-2 overflow-hidden">
+                      <div className="bg-blue-500 h-full rounded-full" style={{ width: `${consistencyProfile.Goals?.goalConsistencyScore || 0}%` }} />
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-muted-foreground pt-1 flex justify-between border-t border-border/50">
+                    <span className="truncate max-w-[120px]">Top: {consistencyProfile.Goals?.topGoal || "None"}</span>
+                  </div>
+                </div>
+
+                {/* 4. GOAL DRIFT */}
+                <div className={`p-4 rounded-xl shadow-sm space-y-3 relative overflow-hidden border ${
+                  consistencyProfile.Drift?.goalDriftDetected
+                    ? "bg-red-500/10 border-red-500/30"
+                    : "bg-card border-border"
+                }`}>
+                  <div className={`absolute right-3 top-3 ${consistencyProfile.Drift?.goalDriftDetected ? "text-red-500/20" : "text-muted-foreground/10"}`}>
+                    <AlertOctagon className="w-12 h-12" />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <AlertOctagon className={`w-3.5 h-3.5 ${consistencyProfile.Drift?.goalDriftDetected ? "text-red-500 animate-pulse" : "text-muted-foreground"}`} />
+                    <span>Priority Goal Drift</span>
+                  </div>
+                  <div>
+                    {consistencyProfile.Drift?.goalDriftDetected ? (
+                      <div>
+                        <p className="text-xl font-bold text-red-500">Drift Detected</p>
+                        <p className="text-[10px] text-red-400 mt-1 leading-snug truncate">
+                          {consistencyProfile.Drift?.goalDriftPercentage}% time on unrelated tasks!
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-xl font-bold text-green-500">Aligned</p>
+                        <p className="text-[10px] text-muted-foreground mt-1 leading-snug">
+                          Work matches active priorities.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-[9px] text-muted-foreground pt-1 border-t border-border/50">
+                    <span className="truncate block">Goal: {consistencyProfile.Drift?.driftingGoal || "All Aligned"}</span>
+                  </div>
+                </div>
+              </section>
+
+              {/* Second row: Radar chart & Trend distribution */}
+              <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Radar chart column */}
+                <div className="lg:col-span-6 bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col items-center justify-center space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground self-start flex items-center gap-1.5">
+                    <Activity className="w-4 h-4 text-accent" /> Alignment Radar Graph
+                  </h4>
+                  
+                  {/* SVG Radar Chart */}
+                  {(() => {
+                    const dimensions = [
+                      { name: "Identity", val: consistencyProfile.Identity?.identityAlignmentScore || 0 },
+                      { name: "Goals", val: consistencyProfile.Goals?.goalConsistencyScore || 0 },
+                      { name: "Routine", val: consistencyProfile.Routine?.routineScore || 0 },
+                      { name: "Planning", val: consistencyProfile.Planning?.planningConsistencyScore || 0 },
+                      { name: "Execution", val: consistencyProfile.Schedule?.scheduleReliabilityScore || 0 },
+                      { name: "Commitment", val: consistencyProfile.Commitment?.commitmentScore || 0 }
+                    ];
+
+                    const cx = 150;
+                    const cy = 150;
+                    const rMax = 90;
+
+                    const points = dimensions.map((d, i) => {
+                      const angle = i * (Math.PI / 3) - Math.PI / 2;
+                      const r = (d.val / 100) * rMax;
+                      const x = cx + r * Math.cos(angle);
+                      const y = cy + r * Math.sin(angle);
+                      return `${x},${y}`;
+                    }).join(" ");
+
+                    const rings = [25, 50, 75, 100].map(val => {
+                      return dimensions.map((_, i) => {
+                        const angle = i * (Math.PI / 3) - Math.PI / 2;
+                        const r = (val / 100) * rMax;
+                        const x = cx + r * Math.cos(angle);
+                        const y = cy + r * Math.sin(angle);
+                        return `${x},${y}`;
+                      }).join(" ");
+                    });
+
+                    const axes = dimensions.map((d, i) => {
+                      const angle = i * (Math.PI / 3) - Math.PI / 2;
+                      const xOuter = cx + rMax * Math.cos(angle);
+                      const yOuter = cy + rMax * Math.sin(angle);
+                      // Label position offsets
+                      const rLabel = rMax + 20;
+                      const xLabel = cx + rLabel * Math.cos(angle);
+                      // Push labels up/down slightly to prevent overlaps
+                      let yLabel = cy + rLabel * Math.sin(angle);
+                      if (i === 0) yLabel -= 5;
+                      if (i === 3) yLabel += 10;
+                      return { x2: xOuter, y2: yOuter, xl: xLabel, yl: yLabel, name: d.name, val: d.val };
+                    });
+
+                    return (
+                      <svg width="320" height="320" className="overflow-visible select-none">
+                        {/* Ring Grids */}
+                        {rings.map((ringPts, idx) => (
+                          <polygon
+                            key={idx}
+                            points={ringPts}
+                            className="fill-none stroke-border/40 stroke-1 stroke-dashed"
+                          />
+                        ))}
+                        {/* Axes lines */}
+                        {axes.map((axis, idx) => (
+                          <line
+                            key={idx}
+                            x1={cx}
+                            y1={cy}
+                            x2={axis.x2}
+                            y2={axis.y2}
+                            className="stroke-border/40 stroke-1"
+                          />
+                        ))}
+                        {/* Data Polygon */}
+                        <polygon
+                          points={points}
+                          className="fill-accent/15 stroke-accent stroke-2"
+                        />
+                        {/* Data Points Dots */}
+                        {dimensions.map((d, i) => {
+                          const angle = i * (Math.PI / 3) - Math.PI / 2;
+                          const r = (d.val / 100) * rMax;
+                          const x = cx + r * Math.cos(angle);
+                          const y = cy + r * Math.sin(angle);
+                          return (
+                            <circle
+                              key={i}
+                              cx={x}
+                              cy={y}
+                              r="3.5"
+                              className="fill-accent stroke-background stroke-2"
+                            />
+                          );
+                        })}
+                        {/* Labels */}
+                        {axes.map((axis, idx) => (
+                          <text
+                            key={idx}
+                            x={axis.xl}
+                            y={axis.yl}
+                            textAnchor="middle"
+                            className="text-[9px] font-bold fill-muted-foreground"
+                          >
+                            {axis.name} ({axis.val}%)
+                          </text>
+                        ))}
+                      </svg>
+                    );
+                  })()}
+                </div>
+
+                {/* Trend logs & Routine Rhythm */}
+                <div className="lg:col-span-6 flex flex-col gap-6">
+                  {/* Trend Windows */}
+                  <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-4">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <TrendingUp className="w-4 h-4 text-accent" /> Rolling Consistency Averages
+                    </h4>
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="p-3 bg-secondary/20 rounded-lg border border-border/50">
+                        <span className="text-[10px] text-muted-foreground block uppercase font-semibold">7 Days</span>
+                        <p className="text-2xl font-bold text-foreground mt-1">{consistencyProfile.Trends?.sevenDayAvg || 0}%</p>
+                      </div>
+                      <div className="p-3 bg-secondary/20 rounded-lg border border-border/50">
+                        <span className="text-[10px] text-muted-foreground block uppercase font-semibold">30 Days</span>
+                        <p className="text-2xl font-bold text-foreground mt-1">{consistencyProfile.Trends?.thirtyDayAvg || 0}%</p>
+                      </div>
+                      <div className="p-3 bg-secondary/20 rounded-lg border border-border/50">
+                        <span className="text-[10px] text-muted-foreground block uppercase font-semibold">Lifetime</span>
+                        <p className="text-2xl font-bold text-accent mt-1">{consistencyProfile.Trends?.lifetimeAvg || 0}%</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Routine window details */}
+                  <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-3">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <Repeat className="w-4 h-4 text-accent" /> Routine Consistency
+                    </h4>
+                    <div className="space-y-3 text-xs">
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Routine Score</span>
+                        <span className="font-semibold text-foreground bg-secondary/50 px-2 py-0.5 rounded border border-border">
+                          {consistencyProfile.Routine?.routineScore || 0}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Average Schedule Start</span>
+                        <span className="font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded border border-accent/20">
+                          {consistencyProfile.Routine?.preferredRoutine || "Not established"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Days Following Routine</span>
+                        <span className="font-semibold text-foreground">
+                          {consistencyProfile.Routine?.daysFollowingRoutine || 0} of last 14 days
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Collapsible Evidence Explorer & Consistency Events */}
+              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Consistency Events feed */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-accent" /> Recent Consistency Event Logs
+                  </h4>
+                  <div className="flex-grow max-h-[300px] overflow-y-auto space-y-4 pr-1 scrollbar-custom">
+                    {consistencyEvents.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-10">
+                        No consistency events have been logged yet.
+                      </p>
+                    ) : (
+                      consistencyEvents.map((evt, idx) => (
+                        <div key={idx} className="flex gap-3 items-start border-b border-border/40 pb-3 last:border-0 last:pb-0">
+                          <div className={`p-1 rounded-full mt-0.5 ${
+                            evt.type === "goal_drift_detected" ? "bg-red-500/10 text-red-500" :
+                            evt.type === "planning_reliability_dropped" ? "bg-amber-500/10 text-amber-500" :
+                            evt.type === "identity_alignment_improved" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
+                            "bg-accent/15 text-accent"
+                          }`}>
+                            {evt.type === "goal_drift_detected" ? <AlertOctagon className="w-3.5 h-3.5" /> :
+                             evt.type === "planning_reliability_dropped" ? <AlertTriangle className="w-3.5 h-3.5" /> :
+                             evt.type === "identity_alignment_improved" ? <UserCheck className="w-3.5 h-3.5" /> :
+                             <History className="w-3.5 h-3.5" />}
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-[11px] font-bold text-foreground flex items-center gap-1.5 flex-wrap">
+                              <span className="capitalize">{evt.type.replace(/_/g, " ")}</span>
+                              <span className="text-[9px] text-muted-foreground font-normal">
+                                {new Date(evt.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">{evt.reason}</p>
+                            {evt.evidence && evt.evidence.length > 0 && (
+                              <div className="text-[9px] text-muted-foreground/80 pl-2 border-l border-border mt-1.5 space-y-0.5">
+                                {evt.evidence.map((ev: string, i: number) => <div key={i}>{ev}</div>)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Evidence Explorer */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-1.5">
+                    <Search className="w-4 h-4 text-accent" /> Explainable Evidence Explorer
+                  </h4>
+                  <div className="space-y-2.5 flex-grow overflow-y-auto max-h-[300px] pr-1 scrollbar-custom">
+                    {(() => {
+                      const explorerData = [
+                        { key: "identity", label: "Identity Alignment", score: consistencyProfile.Identity?.identityAlignmentScore || 0, evidence: consistencyProfile.Identity?.evidence || [] },
+                        { key: "goals", label: "Goal Consistency", score: consistencyProfile.Goals?.goalConsistencyScore || 0, evidence: consistencyProfile.Goals?.evidence || [] },
+                        { key: "planning", label: "Planning Consistency", score: consistencyProfile.Planning?.planningConsistencyScore || 0, evidence: consistencyProfile.Planning?.evidence || [] },
+                        { key: "schedule", label: "Schedule Consistency", score: consistencyProfile.Schedule?.scheduleReliabilityScore || 0, evidence: consistencyProfile.Schedule?.evidence || [] },
+                        { key: "routine", label: "Routine Consistency", score: consistencyProfile.Routine?.routineScore || 0, evidence: consistencyProfile.Routine?.evidence || [] },
+                        { key: "calendar", label: "Calendar Consistency", score: consistencyProfile.Calendar?.calendarConsistencyScore || 0, evidence: consistencyProfile.Calendar?.evidence || [] },
+                        { key: "commitment", label: "Commitment Reliability", score: consistencyProfile.Commitment?.commitmentScore || 0, evidence: consistencyProfile.Commitment?.evidence || [] },
+                        { key: "drift", label: "Goal Drift Status", score: consistencyProfile.Drift?.goalDriftDetected ? 0 : 100, evidence: consistencyProfile.Drift?.evidence || [] }
+                      ];
+
+                      return explorerData.map((exp) => {
+                        const isExpanded = expandedEvidenceMetric === exp.key;
+                        return (
+                          <div key={exp.key} className="border border-border/60 rounded-lg overflow-hidden">
+                            <button
+                              onClick={() => setExpandedEvidenceMetric(isExpanded ? null : exp.key)}
+                              className="w-full bg-secondary/20 hover:bg-secondary/40 px-3.5 py-2.5 flex justify-between items-center text-xs font-semibold transition cursor-pointer text-left"
+                            >
+                              <span className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${
+                                  exp.score >= 80 ? "bg-green-500" :
+                                  exp.score >= 50 ? "bg-amber-500" : "bg-red-500"
+                                }`} />
+                                {exp.label}
+                              </span>
+                              <span className="text-muted-foreground flex items-center gap-1.5 font-mono text-[10px]">
+                                {exp.key === "drift" ? (exp.score === 100 ? "Aligned" : "Drifting") : `${exp.score}%`}
+                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              </span>
+                            </button>
+                            {isExpanded && (
+                              <div className="p-3 bg-secondary/10 border-t border-border/50 text-[10px] text-muted-foreground space-y-1.5 leading-relaxed font-mono">
+                                {exp.evidence.length === 0 ? (
+                                  <div className="italic">No evidence registered for this dimension.</div>
+                                ) : (
+                                  exp.evidence.map((line: string, i: number) => (
+                                    <div key={i} className="pl-1 text-foreground/95">{line}</div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              </section>
+
+              {/* Footer metadata */}
+              <div className="text-[10px] text-muted-foreground flex justify-between px-1 border-t border-border/30 pt-3">
+                <span>Engine Version: 1.0.0</span>
+                <span>Last Computed: {new Date(consistencyProfile.lastUpdated).toLocaleString()}</span>
               </div>
             </div>
           )}

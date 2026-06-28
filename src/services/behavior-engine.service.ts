@@ -259,6 +259,14 @@ export class BehaviorEngine {
     profile.Metadata = { engineVersion: "1.0.0", lastComputed: new Date() };
 
     await profile.save();
+
+    try {
+      const { ConsistencyEngine } = await import("./consistency-engine.service");
+      await ConsistencyEngine.computeConsistencyProfile(uid);
+    } catch (err) {
+      console.error("[BehaviorEngine] Failed to trigger ConsistencyEngine:", err);
+    }
+
     return profile;
   }
 
