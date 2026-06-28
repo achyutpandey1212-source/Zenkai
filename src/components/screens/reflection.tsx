@@ -197,9 +197,17 @@ export default function Reflection({ userName }: ReflectionProps) {
           </span>
 
           {totalActive === 0 ? (
-            <div className="text-center py-12 bg-secondary/20 rounded-xl border border-dashed border-border/80">
-              <Compass size={24} className="mx-auto text-accent/40 mb-3" />
-              <p className="font-sans text-xs text-muted-foreground">No active behavior reflections recorded yet. Zenkai requires repeated evidence over multiple days to confirm behavioral patterns.</p>
+            <div className="text-center py-12 bg-secondary/20 rounded-xl border border-dashed border-border/80 flex flex-col items-center gap-3">
+              <Compass size={24} className="text-accent/40" />
+              <p className="font-sans text-xs text-muted-foreground max-w-sm">No active behavior reflections recorded yet. Zenkai requires repeated evidence over multiple days to confirm behavioral patterns, or trigger a manual sync to process existing memories.</p>
+              <button
+                onClick={handleForceReevaluate}
+                disabled={reEvaluating}
+                className="mt-2 font-sans text-xs tracking-wider uppercase font-semibold bg-accent text-background px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={reEvaluating ? "animate-spin" : ""} />
+                {reEvaluating ? "Synthesizing..." : "Reflect & Sync Wisdom"}
+              </button>
             </div>
           ) : (
             <div className="space-y-4">

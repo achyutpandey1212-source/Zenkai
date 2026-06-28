@@ -96,9 +96,9 @@ export async function backgroundNode(
     const newEvents: InternalEvent[] = [];
     let backgroundCallsCount = 0;
 
-    // Check remaining AI budget
-    const remainingBudget = state.maxAiCallsAllowed - state.aiCallsCount;
-    console.log(`[BackgroundNode] Remaining AI budget: ${remainingBudget} (max: ${state.maxAiCallsAllowed}, count: ${state.aiCallsCount})`);
+    // Background nodes are terminal and do not loop, so we allocate a dedicated background budget of 4 calls.
+    const remainingBudget = 4;
+    console.log(`[BackgroundNode] Dedicated background AI budget: ${remainingBudget} (foreground count: ${state.aiCallsCount})`);
 
     // ── 2. Sequential Memory Evaluation (Gatekeeper) ─────────────────────────
     if (background.includes("memory")) {
@@ -177,8 +177,16 @@ export async function backgroundNode(
       const isMemoryAdmitted = newMemory !== null;
       const isHighConfidence = newMemory && (newMemory.confidence >= 0.70);
 
-      if (!isMemoryAdmitted || !isHighConfidence) {
-        console.log(`[BackgroundNode] Skipping evolution. Admitted: ${isMemoryAdmitted}, High confidence: ${isHighConfidence}`);
+      // Catch-up rule: If the user has approved memories but has no active identity traits or reflections,
+      // force evolution to populate the profile.
+      const hasNoTraits = !state.activeTraits || state.activeTraits.length === 0;
+      const hasNoReflections = !state.activeReflections || state.activeReflections.length === 0;
+      const approvedMemories = state.memoryContext?.memories ?? [];
+      const hasMemoriesToProcess = approvedMemories.length > 0;
+      const shouldForceCatchUp = hasMemoriesToProcess && (hasNoTraits || hasNoReflections);
+
+      if ((!isMemoryAdmitted || !isHighConfidence) && !shouldForceCatchUp) {
+        console.log(`[BackgroundNode] Skipping evolution. Admitted: ${isMemoryAdmitted}, High confidence: ${isHighConfidence}, Catch-up: ${shouldForceCatchUp}`);
         if (shouldEvolveIdentity) {
           enqueueEvent(
             streamController,
@@ -195,7 +203,7 @@ export async function backgroundNode(
         }
       } else {
         // Gated memory check passed! Now check budget.
-        const currentRemainingBudget = state.maxAiCallsAllowed - (state.aiCallsCount + backgroundCallsCount);
+        const currentRemainingBudget = 4 - backgroundCallsCount;
         
         if (currentRemainingBudget > 0) {
           const evolutionTasks: { agent: "identity" | "reflection"; promise: Promise<boolean> }[] = [];

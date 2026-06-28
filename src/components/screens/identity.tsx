@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Compass, ShieldCheck, HelpCircle, ChevronDown, ChevronUp, History, Eye, Check, X, Clock } from "lucide-react";
+import { Compass, ShieldCheck, HelpCircle, ChevronDown, ChevronUp, History, Eye, Check, X, Clock, RefreshCw } from "lucide-react";
 
 interface Trait {
   _id: string;
@@ -43,6 +43,41 @@ export default function Identity() {
   const [expandedEvidence, setExpandedEvidence] = useState<Record<string, boolean>>({});
   const [devMode, setDevMode] = useState(false);
   const [processingProposalId, setProcessingProposalId] = useState<string | null>(null);
+  const [reEvaluating, setReEvaluating] = useState(false);
+
+  const handleForceReevaluate = async () => {
+    setReEvaluating(true);
+    try {
+      const res = await fetch("/api/identity", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setProfile(data.profile);
+          
+          // Re-fetch proposals and timeline
+          const proposalsRes = await fetch("/api/identity/proposals");
+          if (proposalsRes.ok) {
+            const pData = await proposalsRes.json();
+            if (pData.success) {
+              setProposals(pData.proposals);
+            }
+          }
+
+          const timelineRes = await fetch("/api/identity/timeline");
+          if (timelineRes.ok) {
+            const tData = await timelineRes.json();
+            if (tData.success) {
+              setTimeline(tData.timeline);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error during force re-evaluation:", error);
+    } finally {
+      setReEvaluating(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -296,9 +331,17 @@ export default function Identity() {
           </span>
           
           {allActive.length === 0 ? (
-            <div className="text-center py-10 bg-secondary/20 rounded-xl border border-dashed border-border/80">
-              <Compass size={24} className="mx-auto text-accent/40 mb-3" />
-              <p className="font-sans text-xs text-muted-foreground">No confirmed identity traits yet. Keep conversing to allow Zenkai to map your identity.</p>
+            <div className="text-center py-10 bg-secondary/20 rounded-xl border border-dashed border-border/80 flex flex-col items-center gap-3">
+              <Compass size={24} className="text-accent/40" />
+              <p className="font-sans text-xs text-muted-foreground max-w-sm">No confirmed identity traits yet. Keep conversing to allow Zenkai to map your identity, or trigger a manual sync to process existing memories.</p>
+              <button
+                onClick={handleForceReevaluate}
+                disabled={reEvaluating}
+                className="mt-2 font-sans text-xs tracking-wider uppercase font-semibold bg-accent text-background px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={reEvaluating ? "animate-spin" : ""} />
+                {reEvaluating ? "Reflecting..." : "Reflect & Sync Traits"}
+              </button>
             </div>
           ) : (
             <div className="space-y-4">
