@@ -19,17 +19,18 @@ export const Header: React.FC<HeaderProps> = ({ theme, dateStr, appUrl }) => {
     margin: "8px 0 4px 0",
     fontSize: "20px",
     fontWeight: 800,
-    letterSpacing: "0.1em",
+    letterSpacing: "0.15em",
     textTransform: "uppercase",
-    color: isMorning ? "#1e1b4b" : "#ffffff",
+    color: isMorning ? "#1f1f1f" : "#f8f4ec",
   };
 
   const dateStyle: React.CSSProperties = {
     margin: 0,
-    fontSize: "13px",
-    color: isMorning ? "#475569" : "#cbd5e1",
+    fontSize: "12px",
+    color: isMorning ? "#555555" : "#a0a0a0",
     fontWeight: 500,
-    letterSpacing: "0.02em",
+    letterSpacing: "0.05em",
+    textTransform: "uppercase",
   };
 
   return (
@@ -38,14 +39,14 @@ export const Header: React.FC<HeaderProps> = ({ theme, dateStr, appUrl }) => {
         {/* We use a clean text logo with a nice glyph representation for compatibility, but also display an img if hosted */}
         <span style={{ 
           display: "inline-block", 
-          fontSize: "24px", 
+          fontSize: "20px", 
           verticalAlign: "middle",
-          marginRight: "6px",
-          color: isMorning ? "#1e1b4b" : "#f59e0b"
+          marginRight: "8px",
+          color: "#c9a86a"
         }}>
           ⛩️
         </span>
-        <span style={titleStyle}>Zenkai</span>
+        <span style={titleStyle}>ZENKAI</span>
       </a>
       <p style={dateStyle}>{dateStr}</p>
     </div>

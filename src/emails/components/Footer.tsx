@@ -14,12 +14,12 @@ export const Footer: React.FC<FooterProps> = ({ theme, timezone, appUrl }) => {
     textAlign: "center",
     fontFamily: "system-ui, -apple-system, sans-serif",
     fontSize: "11px",
-    color: isMorning ? "#64748b" : "#94a3b8",
+    color: isMorning ? "#555555" : "#a0a0a0",
     lineHeight: "1.6",
   };
 
   const linkStyle: React.CSSProperties = {
-    color: isMorning ? "#312e81" : "#f59e0b",
+    color: "#c9a86a",
     textDecoration: "underline",
   };
 

@@ -11,24 +11,24 @@ export const SolidCard: React.FC<SolidCardProps> = ({ children, theme, title, st
   const isMorning = theme === "morning";
 
   const cardStyle: React.CSSProperties = {
-    padding: "20px",
-    borderRadius: "8px",
-    marginBottom: "16px",
-    backgroundColor: isMorning ? "#ffffff" : "#1e1b4b",
-    border: isMorning ? "1px solid #e2e8f0" : "1px solid #2e2a75",
-    color: isMorning ? "#1e293b" : "#f1f5f9",
+    padding: "24px",
+    borderRadius: "16px",
+    marginBottom: "20px",
+    backgroundColor: isMorning ? "#ffffff" : "#1f1f1f",
+    border: isMorning ? "1px solid #eee8dd" : "1px solid #2a2a2a",
+    color: isMorning ? "#1f1f1f" : "#f8f4ec",
     fontFamily: "system-ui, -apple-system, sans-serif",
-    boxShadow: isMorning ? "0 1px 3px rgba(0, 0, 0, 0.05)" : "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+    boxShadow: isMorning ? "0 1px 3px rgba(0, 0, 0, 0.02)" : "0 4px 12px rgba(0, 0, 0, 0.15)",
     ...style,
   };
 
   const titleStyle: React.CSSProperties = {
-    margin: "0 0 12px 0",
-    fontSize: "12px",
+    margin: "0 0 16px 0",
+    fontSize: "9px",
     fontWeight: 700,
     textTransform: "uppercase",
-    letterSpacing: "0.05em",
-    color: isMorning ? "#64748b" : "#94a3b8",
+    letterSpacing: "0.15em",
+    color: "#c9a86a", // Zenkai signature gold accent
   };
 
   return (

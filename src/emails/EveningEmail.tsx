@@ -30,19 +30,20 @@ export const EveningEmail: React.FC<EveningEmailProps> = ({ data, appUrl }) => {
     fontSize: "14px",
     lineHeight: "1.6",
     margin: "0 0 12px 0",
-    color: "#cbd5e1",
+    color: "#f8f4ec",
     fontFamily: "system-ui, -apple-system, sans-serif",
   };
 
   const completedTextStyle: React.CSSProperties = {
     ...textStyle,
-    color: "#94a3b8",
+    color: "#a0a0a0",
     textDecoration: "line-through",
   };
 
   const listStyle: React.CSSProperties = {
     margin: "0",
-    paddingLeft: "20px",
+    paddingLeft: "0",
+    listStyleType: "none", // Using custom gold markers instead of standard bullets
     fontFamily: "system-ui, -apple-system, sans-serif",
   };
 
@@ -50,13 +51,28 @@ export const EveningEmail: React.FC<EveningEmailProps> = ({ data, appUrl }) => {
     <EmailLayout theme="evening">
       <Header theme="evening" dateStr={data.dateStr} appUrl={appUrl} />
 
-      <p style={{ ...textStyle, fontSize: "16px", fontWeight: 600, color: "#ffffff" }}>
-        Good evening, {data.userName}.
+      <p style={{ 
+        fontFamily: "Georgia, serif", 
+        fontSize: "18px", 
+        fontStyle: "italic", 
+        fontWeight: "normal", 
+        color: "#a0a0a0",
+        margin: "0 0 24px 0",
+        textAlign: "center"
+      }}>
+        Good evening, <span style={{ color: "#c9a86a", fontFamily: "system-ui, sans-serif", fontStyle: "normal", fontWeight: 600 }}>{data.userName}</span>.
       </p>
 
       {data.reflection && (
-        <SolidCard theme="evening" title="Evening Reflection" style={{ borderLeft: "4px solid #f59e0b" }}>
-          <p style={{ ...textStyle, fontStyle: "italic", margin: 0, color: "#e2e8f0" }}>
+        <SolidCard theme="evening" title="Evening Reflection" style={{ borderLeft: "4px solid #c9a86a" }}>
+          <p style={{ 
+            fontFamily: "Georgia, serif", 
+            fontSize: "15px", 
+            fontStyle: "italic", 
+            lineHeight: "1.6",
+            margin: 0, 
+            color: "#f8f4ec" 
+          }}>
             "{data.reflection}"
           </p>
         </SolidCard>
@@ -64,10 +80,10 @@ export const EveningEmail: React.FC<EveningEmailProps> = ({ data, appUrl }) => {
 
       {data.completedTasks && data.completedTasks.length > 0 && (
         <SolidCard theme="evening" title="Accomplished Today">
-          <ul style={{ ...listStyle, color: "#a7f3d0" }}>
+          <ul style={listStyle}>
             {data.completedTasks.map((item, idx) => (
-              <li key={idx} style={{ ...completedTextStyle, color: "#34d399", marginBottom: "8px" }}>
-                ✓ {item}
+              <li key={idx} style={{ ...completedTextStyle, marginBottom: "8px" }}>
+                <span style={{ color: "#c9a86a", marginRight: "8px", fontWeight: "bold" }}>✓</span> {item}
               </li>
             ))}
           </ul>
@@ -76,10 +92,10 @@ export const EveningEmail: React.FC<EveningEmailProps> = ({ data, appUrl }) => {
 
       {data.pendingTasks && data.pendingTasks.length > 0 && (
         <SolidCard theme="evening" title="Pending Horizon">
-          <ul style={{ ...listStyle, color: "#94a3b8" }}>
+          <ul style={listStyle}>
             {data.pendingTasks.map((item, idx) => (
               <li key={idx} style={{ ...textStyle, marginBottom: "8px" }}>
-                • {item}
+                <span style={{ color: "#c9a86a", marginRight: "8px", fontWeight: "bold" }}>•</span> {item}
               </li>
             ))}
           </ul>
@@ -94,18 +110,18 @@ export const EveningEmail: React.FC<EveningEmailProps> = ({ data, appUrl }) => {
           <div style={{ 
             width: "100%", 
             height: "8px", 
-            backgroundColor: "#0f0d22", 
-            border: "1px solid #2e2a75", 
+            backgroundColor: "#141414", 
+            border: "1px solid #2a2a2a", 
             borderRadius: "4px", 
             overflow: "hidden" 
           }}>
-            <div style={{ width: `${data.timelineProgress.progressPercentage}%`, height: "100%", backgroundColor: "#f59e0b" }} />
+            <div style={{ width: `${data.timelineProgress.progressPercentage}%`, height: "100%", backgroundColor: "#c9a86a" }} />
           </div>
           <p style={{ 
             ...textStyle, 
             fontSize: "12px", 
             fontWeight: 700, 
-            color: "#f59e0b", 
+            color: "#c9a86a", 
             margin: "6px 0 0 0", 
             textAlign: "right" 
           }}>
@@ -116,7 +132,7 @@ export const EveningEmail: React.FC<EveningEmailProps> = ({ data, appUrl }) => {
 
       {data.tomorrowSuggestedFocus && (
         <SolidCard theme="evening" title="Tomorrow's suggested focus">
-          <p style={{ ...textStyle, margin: 0, color: "#cbd5e1" }}>
+          <p style={{ ...textStyle, margin: 0, color: "#f8f4ec" }}>
             {data.tomorrowSuggestedFocus}
           </p>
         </SolidCard>

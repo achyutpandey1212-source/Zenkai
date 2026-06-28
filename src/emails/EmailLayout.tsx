@@ -11,11 +11,11 @@ export const EmailLayout: React.FC<EmailLayoutProps> = ({ theme, children }) => 
   const outerStyle: React.CSSProperties = {
     width: "100%",
     minHeight: "100%",
-    backgroundColor: isMorning ? "#fef9f3" : "#090714",
-    // Premium email-safe gradients
+    backgroundColor: isMorning ? "#F8F4EC" : "#141414",
+    // Premium email-safe gradients matching the app
     background: isMorning 
-      ? "linear-gradient(135deg, #fef9f3 0%, #fff1f2 50%, #f0fdf4 100%)" 
-      : "linear-gradient(135deg, #090714 0%, #110e29 55%, #25123e 100%)",
+      ? "linear-gradient(135deg, #FAF8F5 0%, #F8F4EC 100%)" 
+      : "linear-gradient(135deg, #1C1C1C 0%, #141414 100%)",
     padding: "32px 0",
     margin: 0,
     fontFamily: "system-ui, -apple-system, sans-serif",

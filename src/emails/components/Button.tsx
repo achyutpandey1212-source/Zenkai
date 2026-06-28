@@ -11,15 +11,16 @@ export const Button: React.FC<ButtonProps> = ({ href, children, theme }) => {
   
   const style: React.CSSProperties = {
     display: "inline-block",
-    padding: "12px 24px",
-    borderRadius: "6px",
+    padding: "12px 28px",
+    borderRadius: "8px",
     fontWeight: 600,
-    fontSize: "14px",
+    fontSize: "13px",
     textDecoration: "none",
     textAlign: "center",
-    backgroundColor: isMorning ? "#1e1b4b" : "#f59e0b",
-    color: isMorning ? "#ffffff" : "#1e1b4b",
-    border: isMorning ? "1px solid #312e81" : "1px solid #d97706",
+    backgroundColor: isMorning ? "#1f1f1f" : "#f8f4ec",
+    color: isMorning ? "#f8f4ec" : "#1f1f1f",
+    border: isMorning ? "1px solid #1f1f1f" : "1px solid #f8f4ec",
+    letterSpacing: "0.05em",
   };
 
   return (
