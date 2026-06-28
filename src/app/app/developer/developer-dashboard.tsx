@@ -31,7 +31,10 @@ import {
   getConsistencyEvents,
   getPredictionProfile,
   recalculatePredictionProfile,
-  getPredictionEvents
+  getPredictionEvents,
+  getRiskProfile,
+  recalculateRiskProfile,
+  getRiskEvents
 } from "./actions";
 
 // Interfaces
@@ -121,7 +124,7 @@ export default function DeveloperDashboard() {
   const [isPending, startTransition] = useTransition();
 
   // Briefing and Calendar states
-  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar" | "behavior" | "consistency" | "prediction">("workflows");
+  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar" | "behavior" | "consistency" | "prediction" | "risk">("workflows");
   const [briefingLogs, setBriefingLogs] = useState<any[]>([]);
   const [dashboardUsers, setDashboardUsers] = useState<any[]>([]);
   const [selectedUserForBrief, setSelectedUserForBrief] = useState<string>("");
@@ -171,6 +174,15 @@ export default function DeveloperDashboard() {
   const [predictionError, setPredictionError] = useState<string>("");
   const [expandedPredictionEvidence, setExpandedPredictionEvidence] = useState<string | null>(null);
 
+  // Risk states
+  const [selectedUserForRisk, setSelectedUserForRisk] = useState<string>("");
+  const [riskProfile, setRiskProfile] = useState<any>(null);
+  const [riskEvents, setRiskEvents] = useState<any[]>([]);
+  const [isLoadingRisk, setIsLoadingRisk] = useState(false);
+  const [isRecalculatingRisk, setIsRecalculatingRisk] = useState(false);
+  const [riskError, setRiskError] = useState<string>("");
+  const [expandedRiskEvidence, setExpandedRiskEvidence] = useState<string | null>(null);
+
   // Load dashboard data
   const loadData = () => {
     startTransition(async () => {
@@ -189,6 +201,7 @@ export default function DeveloperDashboard() {
         if (!selectedUserForBehavior) setSelectedUserForBehavior(users[0].firebaseUid);
         if (!selectedUserForConsistency) setSelectedUserForConsistency(users[0].firebaseUid);
         if (!selectedUserForPrediction) setSelectedUserForPrediction(users[0].firebaseUid);
+        if (!selectedUserForRisk) setSelectedUserForRisk(users[0].firebaseUid);
       }
 
       // Fetch calendar telemetry
@@ -324,6 +337,56 @@ export default function DeveloperDashboard() {
       loadPredictionProfile(selectedUserForPrediction);
     }
   }, [selectedUserForPrediction]);
+
+  const loadRiskProfile = async (uid: string) => {
+    setIsLoadingRisk(true);
+    setRiskError("");
+    try {
+      const [profile, events, pred] = await Promise.all([
+        getRiskProfile(uid),
+        getRiskEvents(uid),
+        getPredictionProfile(uid)
+      ]);
+      setRiskProfile(profile);
+      setRiskEvents(events);
+      setPredictionProfile(pred);
+    } catch (err: any) {
+      console.error("Failed to load risk profile:", err);
+      setRiskError(err.message || "Failed to load risk profile");
+    } finally {
+      setIsLoadingRisk(false);
+    }
+  };
+
+  const handleRecalculateRisk = async () => {
+    if (!selectedUserForRisk) return;
+    setIsRecalculatingRisk(true);
+    setRiskError("");
+    try {
+      const result = await recalculateRiskProfile(selectedUserForRisk);
+      if (result.success) {
+        setRiskProfile(result.profile);
+        const [events, pred] = await Promise.all([
+          getRiskEvents(selectedUserForRisk),
+          getPredictionProfile(selectedUserForRisk)
+        ]);
+        setRiskEvents(events);
+        setPredictionProfile(pred);
+      } else {
+        setRiskError(result.error || "Failed to recalculate risk profile");
+      }
+    } catch (err: any) {
+      setRiskError(err.message || "Failed to recalculate risk profile");
+    } finally {
+      setIsRecalculatingRisk(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedUserForRisk) {
+      loadRiskProfile(selectedUserForRisk);
+    }
+  }, [selectedUserForRisk]);
 
   const handleTriggerBrief = async () => {
     if (!selectedUserForBrief) return;
@@ -639,6 +702,16 @@ export default function DeveloperDashboard() {
               }`}
             >
               Prediction Intelligence
+            </button>
+            <button
+              onClick={() => setDashboardView("risk")}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition ${
+                dashboardView === "risk"
+                  ? "bg-accent text-white"
+                  : "bg-secondary text-secondary-foreground hover:bg-muted"
+              }`}
+            >
+              Risk Intelligence
             </button>
           </div>
         </div>
@@ -2382,7 +2455,7 @@ export default function DeveloperDashboard() {
             </div>
           )}
         </div>
-      ) : (
+      ) : dashboardView === "prediction" ? (
         /* 6. PREDICTION INTELLIGENCE VIEW */
         <div className="space-y-6 flex-grow flex flex-col min-h-0">
           {/* Header controls */}
@@ -2856,10 +2929,388 @@ export default function DeveloperDashboard() {
                 </div>
               </section>
 
+            </div>
+          )}
+        </div>
+      ) : (
+        /* 7. RISK INTELLIGENCE VIEW */
+        <div className="space-y-6 flex-grow flex flex-col min-h-0">
+          {/* Header controls */}
+          <div className="bg-card border border-border p-5 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+                <AlertTriangle className="w-4 h-4 text-red-500 animate-pulse" /> Risk Intelligence Profile
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Observe potential threats, burnout indicators, goal drift analysis, and deadline vulnerabilities calculated from trailing behavioral history.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedUserForRisk}
+                onChange={(e) => setSelectedUserForRisk(e.target.value)}
+                className="bg-secondary border border-border px-3 py-1.5 rounded text-xs font-semibold"
+              >
+                {dashboardUsers.map((user) => (
+                  <option key={user.firebaseUid} value={user.firebaseUid}>
+                    {user.name} ({user.email})
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleRecalculateRisk}
+                disabled={isRecalculatingRisk || !selectedUserForRisk}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-accent hover:bg-accent/80 text-white rounded text-xs font-semibold transition disabled:opacity-50 cursor-pointer"
+              >
+                {isRecalculatingRisk ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Force Recalculate
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {riskError && (
+            <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/10 text-destructive text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              <span>{riskError}</span>
+            </div>
+          )}
+
+          {isLoadingRisk ? (
+            <div className="flex-grow flex items-center justify-center py-20">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="w-8 h-8 animate-spin text-accent" />
+                <span className="text-xs text-muted-foreground">Evaluating Trajectory Risks...</span>
+              </div>
+            </div>
+          ) : !riskProfile ? (
+            <div className="bg-card border border-border p-10 rounded-xl text-center">
+              <AlertTriangle className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-foreground">No Risk Profile Found</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Please click "Force Recalculate" above to initialize risk analysis for this user.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Top Overview Level */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* Overall Risk Score */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-3 relative overflow-hidden flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <ShieldAlert className="w-3.5 h-3.5 text-accent" />
+                      <span>Overall Trajectory Threat</span>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-extrabold text-foreground">
+                        {riskProfile.overallRisk}%
+                      </p>
+                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-1.5 ${
+                        riskProfile.overallRisk >= 81 ? "bg-red-500/10 text-red-500 border border-red-500/20" :
+                        riskProfile.overallRisk >= 61 ? "bg-orange-500/10 text-orange-500 border border-orange-500/20" :
+                        riskProfile.overallRisk >= 31 ? "bg-yellow-500/10 text-yellow-600 border border-yellow-500/20" :
+                        "bg-green-500/10 text-green-500 border border-green-500/20"
+                      }`}>
+                        {riskProfile.overallRisk >= 81 ? "CRITICAL" :
+                         riskProfile.overallRisk >= 61 ? "HIGH" :
+                         riskProfile.overallRisk >= 31 ? "MODERATE" : "LOW"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden mt-3">
+                    <div className={`h-full rounded-full ${
+                      riskProfile.overallRisk >= 61 ? "bg-red-500" :
+                      riskProfile.overallRisk >= 31 ? "bg-yellow-500" : "bg-green-500"
+                    }`} style={{ width: `${riskProfile.overallRisk}%` }} />
+                  </div>
+                </div>
+
+                {/* Primary Risk Drivers */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm md:col-span-3 space-y-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-accent" /> Active Trajectory Warning Center
+                  </h4>
+                  <div className="min-h-[70px] flex flex-wrap gap-2.5 items-center">
+                    {riskProfile.activeWarnings.length === 0 ? (
+                      <div className="p-3 bg-green-500/5 text-green-600 border border-green-500/10 rounded-xl text-xs flex items-center gap-2 w-full">
+                        <Shield className="w-4 h-4" />
+                        <span>All trajectory threat parameters are within safe thresholds. No warning interventions required.</span>
+                      </div>
+                    ) : (
+                      riskProfile.activeWarnings.map((warn: string, idx: number) => (
+                        <div key={idx} className="flex items-center gap-1.5 px-3.5 py-1.5 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg text-xs font-bold font-mono">
+                          <AlertOctagon className="w-3.5 h-3.5 text-red-500" />
+                          {warn}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Threat Matrix Heatmap / Distribution */}
+              <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Horizontal Threat Matrix chart */}
+                <div className="lg:col-span-8 bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Deterministic Threat Dimensions (Heatmap)
+                  </h4>
+                  
+                  {/* Heatmap Layout */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {[
+                      { key: "Burnout", val: riskProfile.burnoutRisk?.score || 0, label: "Burnout Risk" },
+                      { key: "Goal Drift", val: riskProfile.goalDriftRisk?.score || 0, label: "Goal Drift" },
+                      { key: "Deadline", val: riskProfile.deadlineRisk?.score || 0, label: "Deadline Risk" },
+                      { key: "Consistency", val: riskProfile.consistencyRisk?.score || 0, label: "Consistency" },
+                      { key: "Execution", val: riskProfile.executionRisk?.score || 0, label: "Execution" },
+                      { key: "Schedule", val: riskProfile.scheduleRisk?.score || 0, label: "Schedule Match" },
+                      { key: "Calendar", val: riskProfile.calendarRisk?.score || 0, label: "Calendar Sync" },
+                      { key: "Abandonment", val: riskProfile.abandonmentRisk?.score || 0, label: "Abandonment" }
+                    ].map((metric) => {
+                      const score = metric.val;
+                      return (
+                        <div key={metric.key} className="border border-border/80 p-3.5 rounded-xl bg-secondary/15 flex flex-col justify-between gap-3 text-xs">
+                          <span className="text-muted-foreground font-semibold">{metric.label}</span>
+                          <div className="flex justify-between items-center mt-1">
+                            <span className="font-mono text-xl font-black">{score}%</span>
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-mono font-bold ${
+                              score >= 81 ? "bg-red-950 text-red-200" :
+                              score >= 61 ? "bg-orange-950 text-orange-200" :
+                              score >= 31 ? "bg-yellow-950 text-yellow-200" :
+                              "bg-green-950 text-green-200"
+                            }`}>
+                              {score >= 81 ? "Critical" :
+                               score >= 61 ? "High" :
+                               score >= 31 ? "Moderate" : "Low"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Vertical Distribution view */}
+                <div className="lg:col-span-4 bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <BarChart3 className="w-4 h-4 text-accent" /> Prediction-Risk Alignment Links
+                  </h4>
+                  <div className="space-y-3.5 text-xs flex-grow justify-center flex flex-col">
+                    <div className="bg-secondary/20 p-3.5 rounded-lg border border-border/40">
+                      <span className="text-[10px] text-muted-foreground block uppercase font-bold">Prediction Anchor</span>
+                      <p className="font-semibold text-foreground mt-1">
+                        Finish roadmap in approx. ~{predictionProfile?.completionForecast?.estimatedRemainingDays || "N/A"} days
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center justify-center py-1">
+                      <div className="h-6 w-0.5 bg-accent/40 border-dashed border-l" />
+                    </div>
+
+                    <div className="bg-secondary/20 p-3.5 rounded-lg border border-border/40">
+                      <span className="text-[10px] text-muted-foreground block uppercase font-bold">Aligned Deadline Threat</span>
+                      <div className="flex justify-between items-center mt-1">
+                        <span className="font-semibold text-foreground">Capacity / Deadline Risk</span>
+                        <span className="font-black text-red-500 font-mono text-sm">{riskProfile.deadlineRisk?.score || 0}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Timeline Trend & Event log */}
+              <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* SVG Risk Timeline Plot */}
+                <div className="lg:col-span-8 bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <LineChart className="w-4 h-4 text-accent" /> Historical Risk Evolution (7d/30d)
+                  </h4>
+                  {(() => {
+                    const pts = riskProfile.rollingRisk || [];
+                    const maxVal = 100;
+                    const minVal = 0;
+                    const range = 100;
+
+                    const width = 500;
+                    const height = 120;
+
+                    const overallPoints = pts.map((p: any, idx: number) => {
+                      const x = pts.length > 1 ? (idx / (pts.length - 1)) * (width - 40) + 20 : width / 2;
+                      const y = height - 20 - ((p.overallRisk - minVal) / range) * (height - 40);
+                      return `${x},${y}`;
+                    }).join(" ");
+
+                    const burnoutPoints = pts.map((p: any, idx: number) => {
+                      const x = pts.length > 1 ? (idx / (pts.length - 1)) * (width - 40) + 20 : width / 2;
+                      const y = height - 20 - ((p.burnoutRisk - minVal) / range) * (height - 40);
+                      return `${x},${y}`;
+                    }).join(" ");
+
+                    return (
+                      <div className="w-full bg-secondary/10 p-4 rounded-xl border border-border/50">
+                        {pts.length < 2 ? (
+                          <div className="h-[100px] flex items-center justify-center text-xs text-muted-foreground">
+                            Insufficient rolling risk timeline points. Perform actions to plot trend.
+                          </div>
+                        ) : (
+                          <svg className="w-full overflow-visible" height={height} viewBox={`0 0 ${width} ${height}`}>
+                            {/* Gridlines */}
+                            {[0, 0.5, 1].map((val: number, i: number) => {
+                              const y = height - 20 - val * (height - 40);
+                              return (
+                                <g key={i} className="opacity-40">
+                                  <line x1="20" y1={y} x2={width - 20} y2={y} className="stroke-border stroke-1 stroke-dashed" />
+                                  <text x="5" y={y + 3} className="text-[8px] font-mono fill-muted-foreground">{Math.round(val * 100)}%</text>
+                                </g>
+                              );
+                            })}
+                            
+                            {/* Burnout Sparkline */}
+                            <polyline
+                              points={burnoutPoints}
+                              className="fill-none stroke-red-500/40 stroke-1.5"
+                            />
+
+                            {/* Overall Risk Sparkline */}
+                            <polyline
+                              points={overallPoints}
+                              className="fill-none stroke-accent stroke-2"
+                            />
+                            
+                            {/* Overall Points */}
+                            {pts.map((p: any, idx: number) => {
+                              const x = (idx / (pts.length - 1)) * (width - 40) + 20;
+                              const y = height - 20 - ((p.overallRisk - minVal) / range) * (height - 40);
+                              return (
+                                <circle
+                                  key={idx}
+                                  cx={x}
+                                  cy={y}
+                                  r="3.5"
+                                  className="fill-accent stroke-background stroke-2 hover:r-4 cursor-pointer"
+                                />
+                              );
+                            })}
+                          </svg>
+                        )}
+                        <div className="text-[9px] text-muted-foreground flex justify-between px-1 mt-2">
+                          <div className="flex gap-4">
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 bg-accent rounded-full" /> Overall Threat</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 bg-red-500/40 rounded-full" /> Burnout Factor</span>
+                          </div>
+                          <span>Rolling Timeline</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Risk Events timeline */}
+                <div className="lg:col-span-4 bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-accent" /> Recent Threat Shift Events
+                  </h4>
+                  <div className="flex-grow max-h-[160px] overflow-y-auto space-y-3.5 pr-1 scrollbar-custom">
+                    {riskEvents.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-6">
+                        No risk transition events logged.
+                      </p>
+                    ) : (
+                      riskEvents.map((evt: any, idx: number) => (
+                        <div key={idx} className="flex gap-2 items-start border-b border-border/40 pb-2.5 last:border-0 last:pb-0 text-xs">
+                          <div className={`p-1 rounded-full mt-0.5 ${
+                            evt.severity === "Critical" ? "bg-red-500/20 text-red-500" :
+                            evt.severity === "High" ? "bg-orange-500/10 text-orange-500" :
+                            "bg-yellow-500/10 text-yellow-600"
+                          }`}>
+                            <AlertCircle className="w-3 h-3" />
+                          </div>
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-foreground flex items-center gap-1.5 flex-wrap">
+                              <span className="capitalize">{evt.riskType} Risk Shift</span>
+                              <span className="text-[8px] text-muted-foreground font-normal">
+                                {new Date(evt.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground leading-snug">{evt.reason}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* Explainable Evidence Explorer */}
+              <section className="bg-card border border-border p-5 rounded-xl shadow-sm">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-1.5">
+                  <Search className="w-4 h-4 text-accent" /> Explainable Risk Heuristic Evidence
+                </h4>
+                <div className="space-y-2.5">
+                  {[
+                    { key: "burnout", label: "Burnout Risk Heuristic Details", data: riskProfile.burnoutRisk },
+                    { key: "drift", label: "Goal Drift Heuristic Details", data: riskProfile.goalDriftRisk },
+                    { key: "deadline", label: "Deadline Risk Heuristic Details", data: riskProfile.deadlineRisk },
+                    { key: "consistency", label: "Consistency Collapse Heuristic Details", data: riskProfile.consistencyRisk },
+                    { key: "execution", label: "Execution Capacity Heuristic Details", data: riskProfile.executionRisk },
+                    { key: "schedule", label: "Schedule Mismatch Heuristic Details", data: riskProfile.scheduleRisk },
+                    { key: "calendar", label: "Calendar Alignment Heuristic Details", data: riskProfile.calendarRisk },
+                    { key: "abandonment", label: "Abandonment Heuristic Details", data: riskProfile.abandonmentRisk }
+                  ].map((exp) => {
+                    const isExpanded = expandedRiskEvidence === exp.key;
+                    const score = exp.data?.score || 0;
+                    return (
+                      <div key={exp.key} className="border border-border/60 rounded-lg overflow-hidden">
+                        <button
+                          onClick={() => setExpandedRiskEvidence(isExpanded ? null : exp.key)}
+                          className="w-full bg-secondary/20 hover:bg-secondary/40 px-3.5 py-2.5 flex justify-between items-center text-xs font-semibold transition cursor-pointer text-left"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${
+                              score >= 81 ? "bg-red-500" :
+                              score >= 61 ? "bg-orange-500" :
+                              score >= 31 ? "bg-yellow-500" : "bg-green-500"
+                            }`} />
+                            {exp.label}
+                          </span>
+                          <span className="text-muted-foreground flex items-center gap-1.5 font-mono text-[10px]">
+                            {score}% (Conf: {exp.data?.confidence || 100}%)
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          </span>
+                        </button>
+                        {isExpanded && (
+                          <div className="p-3 bg-secondary/10 border-t border-border/50 text-[10px] text-muted-foreground space-y-1.5 leading-relaxed font-mono">
+                            {(!exp.data?.evidence || exp.data.evidence.length === 0) ? (
+                              <div className="italic">No evidence recorded for this heuristic.</div>
+                            ) : (
+                              exp.data.evidence.map((line: string, i: number) => (
+                                <div key={i} className="pl-1 text-foreground/95">{line}</div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
               {/* Footer metadata */}
               <div className="text-[10px] text-muted-foreground flex justify-between px-1 border-t border-border/30 pt-3">
                 <span>Engine Version: 1.0.0</span>
-                <span>Last Computed: {new Date(predictionProfile.lastUpdated).toLocaleString()}</span>
+                <span>Last Computed: {new Date(riskProfile.lastUpdated).toLocaleString()}</span>
               </div>
             </div>
           )}

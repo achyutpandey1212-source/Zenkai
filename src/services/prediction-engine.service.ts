@@ -1,5 +1,6 @@
 import { PredictionProfile } from "@/models/PredictionProfile";
 import { PredictionEvent } from "@/models/PredictionEvent";
+import { RiskProfile } from "@/models/RiskProfile";
 import { BehaviorProfile } from "@/models/BehaviorProfile";
 import { ConsistencyProfile } from "@/models/ConsistencyProfile";
 import { IdentityTrait } from "@/models/IdentityTrait";
@@ -33,7 +34,9 @@ export class UserIntelligenceSnapshotBuilder {
       syncLogs,
       memories,
       reflections,
-      briefingLogs
+      briefingLogs,
+      pp,
+      rp
     ] = await Promise.all([
       User.findOne({ firebaseUid: uid }).lean(),
       BehaviorProfile.findOne({ uid }).lean(),
@@ -47,7 +50,9 @@ export class UserIntelligenceSnapshotBuilder {
       CalendarSyncLog.find({ uid }).sort({ createdAt: -1 }).limit(10).lean(),
       Memory.find({ firebaseUid: uid }).lean(),
       Reflection.find({ firebaseUid: uid }).lean(),
-      BriefingLog.find({ uid, status: "success" }).sort({ createdAt: -1 }).limit(14).lean()
+      BriefingLog.find({ uid, status: "success" }).sort({ createdAt: -1 }).limit(14).lean(),
+      PredictionProfile.findOne({ uid }).lean(),
+      RiskProfile.findOne({ uid }).lean()
     ]);
 
     const primaryTrait = activeTraits.find(t => t.category === "core_identity") || 
@@ -83,7 +88,20 @@ export class UserIntelligenceSnapshotBuilder {
       briefings: {
         logs: briefingLogs
       },
-      profile: user
+      profile: user,
+      prediction: pp,
+      risk: rp ? {
+        overall: rp.overallRisk,
+        burnout: rp.burnoutRisk?.score || 0,
+        goalDrift: rp.goalDriftRisk?.score || 0,
+        deadline: rp.deadlineRisk?.score || 0,
+        consistency: rp.consistencyRisk?.score || 0,
+        execution: rp.executionRisk?.score || 0,
+        schedule: rp.scheduleRisk?.score || 0,
+        calendar: rp.calendarRisk?.score || 0,
+        abandonment: rp.abandonmentRisk?.score || 0,
+        warnings: rp.activeWarnings || []
+      } : null
     };
   }
 }
@@ -500,6 +518,13 @@ export class PredictionEngine {
           });
         }
       }
+    }
+
+    try {
+      const { RiskEngine } = await import("./risk-engine.service");
+      await RiskEngine.computeRiskProfile(uid);
+    } catch (err) {
+      console.error("[PredictionEngine] Failed to trigger RiskEngine:", err);
     }
 
     return profile;

@@ -344,6 +344,45 @@ export async function getPredictionEvents(uid: string) {
   }
 }
 
+// Risk Intelligence Actions
+import { RiskEngine } from "@/services/risk-engine.service";
+import { RiskProfile } from "@/models/RiskProfile";
+import { RiskEvent } from "@/models/RiskEvent";
+
+export async function getRiskProfile(uid: string) {
+  await dbConnect();
+  try {
+    const profile = await RiskEngine.getOrCreateProfile(uid);
+    return JSON.parse(JSON.stringify(profile));
+  } catch (err) {
+    console.error("Error in getRiskProfile server action:", err);
+    return null;
+  }
+}
+
+export async function recalculateRiskProfile(uid: string) {
+  await dbConnect();
+  try {
+    const profile = await RiskEngine.computeRiskProfile(uid);
+    return { success: true, profile: JSON.parse(JSON.stringify(profile)) };
+  } catch (err: any) {
+    console.error("Error in recalculateRiskProfile server action:", err);
+    return { success: false, error: err.message || "Unknown error" };
+  }
+}
+
+export async function getRiskEvents(uid: string) {
+  await dbConnect();
+  try {
+    const events = await RiskEvent.find({ uid }).sort({ timestamp: -1 }).limit(30).lean();
+    return JSON.parse(JSON.stringify(events));
+  } catch (err) {
+    console.error("Error in getRiskEvents server action:", err);
+    return [];
+  }
+}
+
+
 
 
 
