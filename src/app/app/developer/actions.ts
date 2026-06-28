@@ -382,6 +382,181 @@ export async function getRiskEvents(uid: string) {
   }
 }
 
+// Adaptive Cognition Actions
+import { AdaptiveCognitionEngine } from "@/services/adaptive-cognition.service";
+import { AdaptivePolicy } from "@/models/AdaptivePolicy";
+
+export async function getAdaptivePolicy(uid: string) {
+  await dbConnect();
+  try {
+    const policy = await AdaptiveCognitionEngine.getOrCreatePolicy(uid);
+    return JSON.parse(JSON.stringify(policy));
+  } catch (err) {
+    console.error("Error in getAdaptivePolicy server action:", err);
+    return null;
+  }
+}
+
+export async function recalculateAdaptivePolicy(uid: string) {
+  await dbConnect();
+  try {
+    const policy = await AdaptiveCognitionEngine.computeAdaptivePolicy(uid);
+    return { success: true, policy: JSON.parse(JSON.stringify(policy)) };
+  } catch (err: any) {
+    console.error("Error in recalculateAdaptivePolicy server action:", err);
+    return { success: false, error: err.message || "Unknown error" };
+  }
+}
+
+export async function simulateAdaptiveScenario(uid: string, scenarioType: string) {
+  await dbConnect();
+  try {
+    // 1. Fetch or create base profiles to modify
+    let bp = await BehaviorProfile.findOne({ uid });
+    if (!bp) bp = await BehaviorProfile.create({ uid });
+
+    let cp = await ConsistencyProfile.findOne({ uid });
+    if (!cp) cp = await ConsistencyProfile.create({ uid });
+
+    let rp = await RiskProfile.findOne({ uid });
+    if (!rp) {
+      const defaultMetric = { score: 0, confidence: 100, evidence: [] };
+      rp = await RiskProfile.create({
+        uid,
+        overallRisk: 0,
+        burnoutRisk: defaultMetric,
+        goalDriftRisk: defaultMetric,
+        deadlineRisk: defaultMetric,
+        consistencyRisk: defaultMetric,
+        scheduleRisk: defaultMetric,
+        executionRisk: defaultMetric,
+        calendarRisk: defaultMetric,
+        abandonmentRisk: defaultMetric,
+        confidence: 100,
+        activeWarnings: [],
+        rollingRisk: []
+      });
+    }
+
+    // 2. Apply scenario overrides
+    const now = new Date();
+    if (scenarioType === "burnout") {
+      bp.Productivity = {
+        ...bp.Productivity,
+        averageCompletedHours: 9.5
+      };
+      bp.Completion = {
+        ...bp.Completion,
+        completionRate: 35
+      };
+      bp.Activity = {
+        ...bp.Activity,
+        currentStreak: 21
+      };
+      rp.overallRisk = 82;
+      rp.burnoutRisk = { score: 92, confidence: 95, evidence: ["High Focus hours (9.5h/day)", "21 consecutive workdays"] };
+      rp.activeWarnings = ["High Burnout Risk Detected"];
+    } else if (scenarioType === "night_owl") {
+      bp.TimePreference = {
+        ...bp.TimePreference,
+        peakHours: "23:00",
+        preferredWorkingWindow: "evening"
+      };
+      bp.Productivity = {
+        ...bp.Productivity,
+        averageCompletedHours: 4.5
+      };
+      bp.Completion = {
+        ...bp.Completion,
+        completionRate: 75
+      };
+    } else if (scenarioType === "low_consistency") {
+      bp.Completion = {
+        ...bp.Completion,
+        completionRate: 20
+      };
+      cp.overallConsistency = 18;
+      cp.Planning = {
+        ...cp.Planning,
+        planningConsistencyScore: 25
+      };
+      rp.overallRisk = 75;
+      rp.consistencyRisk = { score: 85, confidence: 90, evidence: ["Consistency dropped to 18%"] };
+    } else if (scenarioType === "morning_user") {
+      bp.TimePreference = {
+        ...bp.TimePreference,
+        peakHours: "08:00",
+        preferredWorkingWindow: "morning"
+      };
+    } else if (scenarioType === "high_productivity") {
+      bp.Productivity = {
+        ...bp.Productivity,
+        averageCompletedHours: 6.0
+      };
+      bp.Completion = {
+        ...bp.Completion,
+        completionRate: 92
+      };
+      bp.Activity = {
+        ...bp.Activity,
+        currentStreak: 12
+      };
+      cp.overallConsistency = 90;
+      rp.overallRisk = 12;
+      rp.burnoutRisk = { score: 10, confidence: 90, evidence: [] };
+      rp.activeWarnings = [];
+    } else if (scenarioType === "student") {
+      bp.TimePreference = {
+        ...bp.TimePreference,
+        peakHours: "15:00",
+        preferredWorkingWindow: "afternoon"
+      };
+      bp.Productivity = {
+        ...bp.Productivity,
+        averageCompletedHours: 2.0
+      };
+      bp.Completion = {
+        ...bp.Completion,
+        completionRate: 50
+      };
+      cp.Routine = {
+        ...cp.Routine,
+        routineScore: 45
+      };
+    } else if (scenarioType === "professional") {
+      bp.TimePreference = {
+        ...bp.TimePreference,
+        peakHours: "20:00",
+        preferredWorkingWindow: "evening"
+      };
+      bp.Productivity = {
+        ...bp.Productivity,
+        averageCompletedHours: 4.0
+      };
+      bp.Completion = {
+        ...bp.Completion,
+        completionRate: 75
+      };
+      cp.Routine = {
+        ...cp.Routine,
+        routineScore: 82
+      };
+    }
+
+    // Save modified profiles
+    await Promise.all([bp.save(), cp.save(), rp.save()]);
+
+    // 3. Compute Adaptive Policy with new override values
+    const policy = await AdaptiveCognitionEngine.computeAdaptivePolicy(uid);
+
+    return { success: true, policy: JSON.parse(JSON.stringify(policy)) };
+  } catch (err: any) {
+    console.error("Error in simulateAdaptiveScenario server action:", err);
+    return { success: false, error: err.message || "Unknown error" };
+  }
+}
+
+
 
 
 

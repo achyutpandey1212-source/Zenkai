@@ -34,7 +34,10 @@ import {
   getPredictionEvents,
   getRiskProfile,
   recalculateRiskProfile,
-  getRiskEvents
+  getRiskEvents,
+  getAdaptivePolicy,
+  recalculateAdaptivePolicy,
+  simulateAdaptiveScenario
 } from "./actions";
 
 // Interfaces
@@ -124,7 +127,7 @@ export default function DeveloperDashboard() {
   const [isPending, startTransition] = useTransition();
 
   // Briefing and Calendar states
-  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar" | "behavior" | "consistency" | "prediction" | "risk">("workflows");
+  const [dashboardView, setDashboardView] = useState<"workflows" | "briefings" | "calendar" | "behavior" | "consistency" | "prediction" | "risk" | "adaptive">("workflows");
   const [briefingLogs, setBriefingLogs] = useState<any[]>([]);
   const [dashboardUsers, setDashboardUsers] = useState<any[]>([]);
   const [selectedUserForBrief, setSelectedUserForBrief] = useState<string>("");
@@ -183,6 +186,15 @@ export default function DeveloperDashboard() {
   const [riskError, setRiskError] = useState<string>("");
   const [expandedRiskEvidence, setExpandedRiskEvidence] = useState<string | null>(null);
 
+  // Adaptive states
+  const [selectedUserForAdaptive, setSelectedUserForAdaptive] = useState<string>("");
+  const [adaptivePolicy, setAdaptivePolicy] = useState<any>(null);
+  const [isLoadingAdaptive, setIsLoadingAdaptive] = useState(false);
+  const [isRecalculatingAdaptive, setIsRecalculatingAdaptive] = useState(false);
+  const [isSimulatingScenario, setIsSimulatingScenario] = useState(false);
+  const [adaptiveError, setAdaptiveError] = useState<string>("");
+  const [expandedAdaptationKey, setExpandedAdaptationKey] = useState<string | null>(null);
+
   // Load dashboard data
   const loadData = () => {
     startTransition(async () => {
@@ -202,6 +214,7 @@ export default function DeveloperDashboard() {
         if (!selectedUserForConsistency) setSelectedUserForConsistency(users[0].firebaseUid);
         if (!selectedUserForPrediction) setSelectedUserForPrediction(users[0].firebaseUid);
         if (!selectedUserForRisk) setSelectedUserForRisk(users[0].firebaseUid);
+        if (!selectedUserForAdaptive) setSelectedUserForAdaptive(users[0].firebaseUid);
       }
 
       // Fetch calendar telemetry
@@ -387,6 +400,62 @@ export default function DeveloperDashboard() {
       loadRiskProfile(selectedUserForRisk);
     }
   }, [selectedUserForRisk]);
+
+  const loadAdaptivePolicy = async (uid: string) => {
+    setIsLoadingAdaptive(true);
+    setAdaptiveError("");
+    try {
+      const policy = await getAdaptivePolicy(uid);
+      setAdaptivePolicy(policy);
+    } catch (err: any) {
+      console.error("Failed to load adaptive policy:", err);
+      setAdaptiveError(err.message || "Failed to load adaptive policy");
+    } finally {
+      setIsLoadingAdaptive(false);
+    }
+  };
+
+  const handleRecalculateAdaptive = async () => {
+    if (!selectedUserForAdaptive) return;
+    setIsRecalculatingAdaptive(true);
+    setAdaptiveError("");
+    try {
+      const result = await recalculateAdaptivePolicy(selectedUserForAdaptive);
+      if (result.success) {
+        setAdaptivePolicy(result.policy);
+      } else {
+        setAdaptiveError(result.error || "Failed to recalculate adaptive policy");
+      }
+    } catch (err: any) {
+      setAdaptiveError(err.message || "Failed to recalculate adaptive policy");
+    } finally {
+      setIsRecalculatingAdaptive(false);
+    }
+  };
+
+  const handleSimulateScenario = async (scenarioType: string) => {
+    if (!selectedUserForAdaptive) return;
+    setIsSimulatingScenario(true);
+    setAdaptiveError("");
+    try {
+      const result = await simulateAdaptiveScenario(selectedUserForAdaptive, scenarioType);
+      if (result.success) {
+        setAdaptivePolicy(result.policy);
+      } else {
+        setAdaptiveError(result.error || `Failed to simulate scenario: ${scenarioType}`);
+      }
+    } catch (err: any) {
+      setAdaptiveError(err.message || "Failed to run simulation scenario");
+    } finally {
+      setIsSimulatingScenario(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedUserForAdaptive) {
+      loadAdaptivePolicy(selectedUserForAdaptive);
+    }
+  }, [selectedUserForAdaptive]);
 
   const handleTriggerBrief = async () => {
     if (!selectedUserForBrief) return;
@@ -712,6 +781,16 @@ export default function DeveloperDashboard() {
               }`}
             >
               Risk Intelligence
+            </button>
+            <button
+              onClick={() => setDashboardView("adaptive")}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition ${
+                dashboardView === "adaptive"
+                  ? "bg-accent text-white"
+                  : "bg-secondary text-secondary-foreground hover:bg-muted"
+              }`}
+            >
+              Adaptive Intelligence
             </button>
           </div>
         </div>
@@ -2932,7 +3011,7 @@ export default function DeveloperDashboard() {
             </div>
           )}
         </div>
-      ) : (
+      ) : dashboardView === "risk" ? (
         /* 7. RISK INTELLIGENCE VIEW */
         <div className="space-y-6 flex-grow flex flex-col min-h-0">
           {/* Header controls */}
@@ -3311,6 +3390,349 @@ export default function DeveloperDashboard() {
               <div className="text-[10px] text-muted-foreground flex justify-between px-1 border-t border-border/30 pt-3">
                 <span>Engine Version: 1.0.0</span>
                 <span>Last Computed: {new Date(riskProfile.lastUpdated).toLocaleString()}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* 8. ADAPTIVE INTELLIGENCE VIEW */
+        <div className="space-y-6 flex-grow flex flex-col min-h-0">
+          {/* Header controls */}
+          <div className="bg-card border border-border p-5 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+                <Cpu className="w-4 h-4 text-accent animate-pulse" /> Adaptive Cognition Engine
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Observe long-term behavioral adaptation policies, Motivation style drivers, and gradual safety tier adjustments.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedUserForAdaptive}
+                onChange={(e) => setSelectedUserForAdaptive(e.target.value)}
+                className="bg-secondary border border-border px-3 py-1.5 rounded text-xs font-semibold"
+              >
+                {dashboardUsers.map((user) => (
+                  <option key={user.firebaseUid} value={user.firebaseUid}>
+                    {user.name} ({user.email})
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleRecalculateAdaptive}
+                disabled={isRecalculatingAdaptive || !selectedUserForAdaptive}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-accent hover:bg-accent/80 text-white rounded text-xs font-semibold transition disabled:opacity-50 cursor-pointer"
+              >
+                {isRecalculatingAdaptive ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Calibrating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Force Recalculate
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {adaptiveError && (
+            <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/10 text-destructive text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              <span>{adaptiveError}</span>
+            </div>
+          )}
+
+          {isLoadingAdaptive ? (
+            <div className="flex-grow flex items-center justify-center py-20">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="w-8 h-8 animate-spin text-accent" />
+                <span className="text-xs text-muted-foreground">Evaluating Adaptive Policy...</span>
+              </div>
+            </div>
+          ) : !adaptivePolicy ? (
+            <div className="bg-card border border-border p-10 rounded-xl text-center">
+              <Cpu className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-foreground">No Adaptive Policy Found</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Please click "Force Recalculate" above to initialize adaptive policies for this user.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Upper Overview Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* Overall Adaptation Confidence */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-3 relative overflow-hidden flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-accent" />
+                      <span>Policy Adaptability Confidence</span>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-extrabold text-foreground">
+                        {Math.round(adaptivePolicy.confidence * 100)}%
+                      </p>
+                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-1.5 ${
+                        adaptivePolicy.confidence >= 0.80 ? "bg-green-500/10 text-green-500 border border-green-500/20" :
+                        adaptivePolicy.confidence >= 0.60 ? "bg-yellow-500/10 text-yellow-600 border border-yellow-500/20" :
+                        "bg-red-500/10 text-red-500 border border-red-500/20"
+                      }`}>
+                        {adaptivePolicy.confidence >= 0.80 ? "TIER 3 (FULL ADAPTATION)" :
+                         adaptivePolicy.confidence >= 0.60 ? "TIER 2 (SOFT ADAPTATIONS ONLY)" :
+                         "TIER 1 (OBSERVE ONLY - DEFAULTS APPLIED)"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden mt-3">
+                    <div className={`h-full rounded-full ${
+                      adaptivePolicy.confidence >= 0.80 ? "bg-green-500" :
+                      adaptivePolicy.confidence >= 0.60 ? "bg-yellow-500" : "bg-red-500"
+                    }`} style={{ width: `${adaptivePolicy.confidence * 100}%` }} />
+                  </div>
+                </div>
+
+                {/* Simulation Control Panel */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm md:col-span-3 space-y-4">
+                  <div className="flex justify-between items-center border-b border-border/40 pb-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <Terminal className="w-4 h-4 text-accent" /> Developer Scenario Simulation Panel
+                    </h4>
+                    {isSimulatingScenario && (
+                      <span className="text-[10px] text-accent animate-pulse font-mono flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Simulating 30 days...
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2.5">
+                    {[
+                      { type: "burnout", label: "🔥 30d High Burnout" },
+                      { type: "night_owl", label: "🦉 30d Night Owl" },
+                      { type: "low_consistency", label: "📉 30d Low Consistency" },
+                      { type: "morning_user", label: "🌅 30d Morning User" },
+                      { type: "high_productivity", label: "⚡ 30d High Productivity" },
+                      { type: "student", label: "🎓 Student Profile" },
+                      { type: "professional", label: "💼 Working Professional" }
+                    ].map((scen) => (
+                      <button
+                        key={scen.type}
+                        onClick={() => handleSimulateScenario(scen.type)}
+                        disabled={isSimulatingScenario}
+                        className="px-3 py-1.5 bg-secondary hover:bg-muted text-secondary-foreground rounded border border-border text-[11px] font-semibold transition cursor-pointer disabled:opacity-50"
+                      >
+                        {scen.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Categorized Policy Adaptations Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* Category 1: Planning & Roadmap */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-4">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b border-border/30 pb-2">
+                    1. Planning & Roadmap Settings
+                  </h4>
+                  <div className="space-y-3 text-xs">
+                    {[
+                      { key: "planningAggressiveness", label: "Planning Aggressiveness" },
+                      { key: "roadmapGranularity", label: "Roadmap Granularity" },
+                      { key: "preferredPlanningDepth", label: "Planning Depth" },
+                      { key: "preferredDeadlineBuffer", label: "Deadline Safety Buffer", suffix: " days" }
+                    ].map((pref) => {
+                      const data = adaptivePolicy.adaptations?.[pref.key];
+                      return (
+                        <div key={pref.key} className="flex justify-between items-center border-b border-border/30 pb-2.5 last:border-0 last:pb-0">
+                          <div>
+                            <span className="font-semibold block text-foreground">{pref.label}</span>
+                            <span className="text-[10px] text-muted-foreground">Confidence: {Math.round(data?.confidence * 100)}%</span>
+                          </div>
+                          <span className="px-2.5 py-0.5 rounded font-mono font-bold bg-accent/10 text-accent capitalize">
+                            {String(data?.value)}{(pref as any).suffix || ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Category 2: Work & Focus Blocks */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-4">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b border-border/30 pb-2">
+                    2. Work & Focus Window Calibrations
+                  </h4>
+                  <div className="space-y-3 text-xs">
+                    {[
+                      { key: "preferredWorkWindow", label: "Preferred Work Window" },
+                      { key: "preferredFocusSessionLength", label: "Focus Session Length", suffix: " mins" },
+                      { key: "preferredBreakDuration", label: "Break Duration", suffix: " mins" },
+                      { key: "preferredTaskDuration", label: "Standard Task Scope", suffix: " mins" }
+                    ].map((pref) => {
+                      const data = adaptivePolicy.adaptations?.[pref.key];
+                      return (
+                        <div key={pref.key} className="flex justify-between items-center border-b border-border/30 pb-2.5 last:border-0 last:pb-0">
+                          <div>
+                            <span className="font-semibold block text-foreground">{pref.label}</span>
+                            <span className="text-[10px] text-muted-foreground">Confidence: {Math.round(data?.confidence * 100)}%</span>
+                          </div>
+                          <span className="px-2.5 py-0.5 rounded font-mono font-bold bg-accent/10 text-accent capitalize">
+                            {String(data?.value)}{(pref as any).suffix || ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Category 3: Execution & Calendar */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-4">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b border-border/30 pb-2">
+                    3. Agenda Density & Calendar Offsets
+                  </h4>
+                  <div className="space-y-3 text-xs">
+                    {[
+                      { key: "preferredAgendaDensity", label: "Agenda Task Density" },
+                      { key: "executionStyle", label: "Execution Block Mode" },
+                      { key: "calendarBufferMinutes", label: "Inter-task Sync Buffer", suffix: " mins" },
+                      { key: "scheduleFlexibility", label: "Schedule Rigidity / Flexibility" }
+                    ].map((pref) => {
+                      const data = adaptivePolicy.adaptations?.[pref.key];
+                      return (
+                        <div key={pref.key} className="flex justify-between items-center border-b border-border/30 pb-2.5 last:border-0 last:pb-0">
+                          <div>
+                            <span className="font-semibold block text-foreground">{pref.label}</span>
+                            <span className="text-[10px] text-muted-foreground">Confidence: {Math.round(data?.confidence * 100)}%</span>
+                          </div>
+                          <span className="px-2.5 py-0.5 rounded font-mono font-bold bg-accent/10 text-accent capitalize">
+                            {String(data?.value)}{(pref as any).suffix || ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Category 4: Briefing & Companion Tone */}
+                <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-4">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b border-border/30 pb-2">
+                    4. Briefs & Companion Adaptations
+                  </h4>
+                  <div className="space-y-3 text-xs">
+                    {[
+                      { key: "preferredBriefStyle", label: "Morning/Evening Brief Length" },
+                      { key: "preferredReflectionLength", label: "Daily Reflection length" },
+                      { key: "preferredCompanionTone", label: "Companion Response Style" },
+                      { key: "motivationStyle", label: "Primary Motivational Driver" }
+                    ].map((pref) => {
+                      const data = adaptivePolicy.adaptations?.[pref.key];
+                      return (
+                        <div key={pref.key} className="flex justify-between items-center border-b border-border/30 pb-2.5 last:border-0 last:pb-0">
+                          <div>
+                            <span className="font-semibold block text-foreground">{pref.label}</span>
+                            <span className="text-[10px] text-muted-foreground">Confidence: {Math.round(data?.confidence * 100)}%</span>
+                          </div>
+                          <span className="px-2.5 py-0.5 rounded font-mono font-bold bg-accent/10 text-accent capitalize">
+                            {String(data?.value)}{(pref as any).suffix || ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Policy Evolution and Explainable Evidence Accordions */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* Evolution timeline */}
+                <div className="lg:col-span-6 bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-accent" /> Policy Modification History
+                  </h4>
+                  <div className="flex-grow max-h-[300px] overflow-y-auto space-y-4 pr-1 scrollbar-custom">
+                    {!adaptivePolicy.history || adaptivePolicy.history.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-10">
+                        No adaptive policy adjustments have been logged yet.
+                      </p>
+                    ) : (
+                      adaptivePolicy.history.map((evt: any, idx: number) => (
+                        <div key={idx} className="flex gap-3 items-start border-b border-border/40 pb-3 last:border-0 last:pb-0">
+                          <div className="p-1 rounded-full bg-accent/15 text-accent mt-0.5">
+                            <History className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-[11px] font-bold text-foreground flex items-center gap-1.5 flex-wrap">
+                              <span className="capitalize">{evt.adaptationKey.replace(/([A-Z])/g, " $1")}</span>
+                              <span className="text-[9px] text-muted-foreground font-normal">
+                                {new Date(evt.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">{evt.reason}</p>
+                            <div className="text-[9px] text-muted-foreground font-mono flex gap-4 pt-0.5">
+                              <span>Before: {String(evt.oldValue)}</span>
+                              <span>After: {String(evt.newValue)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Evidence Explorer */}
+                <div className="lg:col-span-6 bg-card border border-border p-5 rounded-xl shadow-sm flex flex-col">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-1.5">
+                    <Search className="w-4 h-4 text-accent" /> Explainable Adaptive Reasoning
+                  </h4>
+                  <div className="space-y-2.5 flex-grow overflow-y-auto max-h-[300px] pr-1 scrollbar-custom">
+                    {Object.keys(adaptivePolicy.adaptations || {}).map((key) => {
+                      const isExpanded = expandedAdaptationKey === key;
+                      const pref = (adaptivePolicy.adaptations as any)[key];
+                      const reason = adaptivePolicy.reasoning?.[key] || "Adaptation derived from longitudinal behavior snapshots.";
+                      return (
+                        <div key={key} className="border border-border/60 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => setExpandedAdaptationKey(isExpanded ? null : key)}
+                            className="w-full bg-secondary/20 hover:bg-secondary/40 px-3.5 py-2.5 flex justify-between items-center text-xs font-semibold transition cursor-pointer text-left"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${
+                                pref.confidence >= 0.80 ? "bg-green-500" :
+                                pref.confidence >= 0.60 ? "bg-yellow-500" : "bg-red-500"
+                              }`} />
+                              <span className="capitalize">{key.replace(/([A-Z])/g, " $1")}</span>
+                            </span>
+                            <span className="text-muted-foreground flex items-center gap-1.5 font-mono text-[10px]">
+                              {Math.round(pref.confidence * 100)}%
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            </span>
+                          </button>
+                          {isExpanded && (
+                            <div className="p-3 bg-secondary/10 border-t border-border/50 text-[10px] text-muted-foreground space-y-1.5 leading-relaxed font-mono">
+                              <div className="text-foreground/95">{reason}</div>
+                              <div className="text-[9px] text-muted-foreground/60 pt-1">
+                                Drivers: {pref.derivedFrom?.join(", ")}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer metadata */}
+              <div className="text-[10px] text-muted-foreground flex justify-between px-1 border-t border-border/30 pt-3">
+                <span>Engine Version: 1.0.0</span>
+                <span>Last Computed: {new Date(adaptivePolicy.updatedAt).toLocaleString()}</span>
               </div>
             </div>
           )}

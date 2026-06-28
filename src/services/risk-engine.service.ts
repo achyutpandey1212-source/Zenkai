@@ -293,6 +293,13 @@ export class RiskEngine {
       }
     }
 
+    try {
+      const { AdaptiveCognitionEngine } = await import("./adaptive-cognition.service");
+      await AdaptiveCognitionEngine.computeAdaptivePolicy(uid);
+    } catch (err) {
+      console.error("[RiskEngine] Failed to trigger AdaptiveCognitionEngine:", err);
+    }
+
     return profile;
   }
 
