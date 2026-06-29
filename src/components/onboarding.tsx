@@ -92,6 +92,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const [currentGenerationStage, setCurrentGenerationStage] = useState<string>("");
   const [generationProgress, setGenerationProgress] = useState(0);
   const [generationError, setGenerationError] = useState("");
+  const [generationStats, setGenerationStats] = useState<any | null>(null);
+  const [lastUsedMode, setLastUsedMode] = useState<"create" | "merge" | "replace">("create");
 
   // Rerun detection
   const [hasExistingProfile, setHasExistingProfile] = useState(false);
@@ -321,6 +323,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
   // Trigger streaming workspace generation
   const triggerGeneration = async (mode: "create" | "merge" | "replace") => {
+    setLastUsedMode(mode);
+    setGenerationStats(null);
     setShowRerunModal(false);
     setStep(6); // Go to generation screen
     setGenerationProgress(5);
@@ -371,13 +375,14 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
       // List of generation stages in order
       const stageProgressMap: Record<string, number> = {
-        life_model: 20,
-        import_data: 35,
-        identity_seed: 50,
-        reflection_seed: 65,
-        roadmap: 80,
-        weekly_schedule: 90,
-        calendar_sync: 95,
+        learning: 15,
+        identity: 30,
+        routines: 45,
+        roadmap: 60,
+        weekly_schedule: 75,
+        agenda: 85,
+        workspace: 95,
+        calendar: 98,
         complete: 100,
       };
 
@@ -407,12 +412,11 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               if (event.status === "error") {
                 setGenerationError(event.message || "Generation failed.");
               }
-              if (event.status === "success") {
+              if (event.status === "success" && event.stage === "complete") {
                 // Clear draft from localStorage
                 localStorage.removeItem("zenkai_onboarding_draft");
-                setTimeout(() => {
-                  onComplete();
-                }, 2000);
+                setGenerationStats(event.stats);
+                setGenerationProgress(100);
               }
             } catch (e) {
               console.error("Failed to parse SSE line:", line);
@@ -442,12 +446,14 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
   // Generation stages labels
   const generationStages = [
-    { key: "life_model", label: "Building your life model..." },
-    { key: "import_data", label: "Integrating schedule commitments..." },
-    { key: "identity_seed", label: "Building your personal blueprint..." },
-    { key: "reflection_seed", label: "Setting up reflection space..." },
-    { key: "roadmap", label: "Creating your roadmap..." },
-    { key: "weekly_schedule", label: "Designing your weekly schedule..." },
+    { key: "learning", label: "Learning about you" },
+    { key: "identity", label: "Building your identity" },
+    { key: "routines", label: "Understanding your routines" },
+    { key: "roadmap", label: "Designing your roadmap" },
+    { key: "weekly_schedule", label: "Planning your week" },
+    { key: "agenda", label: "Creating today's agenda" },
+    { key: "workspace", label: "Preparing your workspace" },
+    { key: "calendar", label: "Synchronizing your calendar" },
   ];
 
   return (
@@ -1010,81 +1016,168 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             </div>
           )}
 
-          {/* Section 6: Streaming Generation UI */}
+          {/* Section 6: Streaming Generation UI / Welcome Summary */}
           {step === 6 && (
-            <div className="space-y-8 w-full max-w-xl flex flex-col items-center py-6">
-              <div className="relative w-36 h-36">
-                {/* Visual pulsing companion orb */}
-                <div className="absolute -inset-10 rounded-full bg-accent/20 blur-3xl opacity-80 animate-pulse" />
-                <Image
-                  src="/assets/orbs/companion_orb.png"
-                  alt="Companion Orb"
-                  fill
-                  className="object-contain drop-shadow-[0_12px_32px_rgba(201,168,106,0.25)] animate-float"
-                />
-              </div>
+            <div className="space-y-8 w-full max-w-xl flex flex-col items-center py-6 animate-in fade-in duration-300">
+              {generationStats ? (
+                /* Welcome Summary Card */
+                <div className="w-full bg-card/70 border border-accent/40 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 text-left relative overflow-hidden animate-in zoom-in-95 duration-300">
+                  <div className="absolute -right-16 -top-16 w-36 h-36 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
+                  
+                  <div className="space-y-2">
+                    <span className="font-sans text-[10px] tracking-[0.25em] text-accent font-bold uppercase block">
+                      Workspace Ready
+                    </span>
+                    <h3 className="font-heading text-2xl md:text-3xl font-light text-foreground">
+                      Your first workspace is ready.
+                    </h3>
+                  </div>
 
-              <div className="w-full space-y-5 text-center">
-                <span className="font-sans text-[10px] tracking-[0.25em] text-accent font-bold uppercase flex items-center justify-center gap-2 animate-pulse">
-                  <Sparkles size={13} className="text-accent" />
-                  Zenkai Awakening
-                </span>
-                
-                <h3 className="font-heading text-2xl font-light text-foreground">
-                  Synchronizing Workspace
-                </h3>
-
-                {/* Progress bar */}
-                <div className="w-full max-w-md mx-auto h-[3px] bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-accent transition-all duration-500 ease-out"
-                    style={{ width: `${generationProgress}%` }}
-                  />
-                </div>
-                
-                {/* Stages tracking checklist */}
-                <div className="w-full max-w-sm mx-auto text-left space-y-2.5 pt-2">
-                  {generationStages.map((stage) => {
-                    const isCompleted =
-                      generationProgress >=
-                      (stage.key === "life_model" ? 20 : stage.key === "import_data" ? 35 : stage.key === "identity_seed" ? 50 : stage.key === "reflection_seed" ? 65 : stage.key === "roadmap" ? 80 : 90);
-                    const isActive = currentGenerationStage === stage.key && !isCompleted;
-
-                    return (
-                      <div
-                        key={stage.key}
-                        className={`flex items-center gap-3 text-xs transition-opacity duration-300 ${
-                          isCompleted ? "opacity-100 text-foreground" : isActive ? "opacity-100 text-accent font-semibold" : "opacity-40 text-muted-foreground"
-                        }`}
-                      >
-                        <div className={`h-4.5 w-4.5 rounded-full flex items-center justify-center border text-[9px] ${
-                          isCompleted
-                            ? "bg-accent/20 border-accent text-accent font-bold"
-                            : isActive
-                            ? "border-accent text-accent animate-pulse"
-                            : "border-border text-muted-foreground"
-                        }`}>
-                          {isCompleted ? "✓" : isActive ? "●" : ""}
-                        </div>
-                        <span>{stage.label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Logs message terminal */}
-                <div className="w-full max-w-md mx-auto bg-secondary/35 border border-border/40 rounded-2xl p-4 h-32 overflow-y-auto text-left text-[11px] font-mono text-muted-foreground/90 space-y-1.5 scrollbar-thin">
-                  {streamMessages.map((msg, i) => (
-                    <div key={i} className="flex gap-1.5 items-start">
-                      <span className="text-accent shrink-0 select-none">&gt;</span>
-                      <span className="leading-relaxed">{msg}</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2">
+                    <div className="flex items-center gap-2.5 text-xs text-foreground/90">
+                      <span className="h-5 w-5 rounded-full bg-accent/20 border border-accent/35 text-accent flex items-center justify-center text-[10px] font-bold">✓</span>
+                      <span>1 Roadmap</span>
                     </div>
-                  ))}
-                  {generationError && (
-                    <div className="text-destructive font-semibold">&gt; Error: {generationError}</div>
-                  )}
+                    <div className="flex items-center gap-2.5 text-xs text-foreground/90">
+                      <span className="h-5 w-5 rounded-full bg-accent/20 border border-accent/35 text-accent flex items-center justify-center text-[10px] font-bold">✓</span>
+                      <span>{generationStats.milestonesCount} Milestones</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 text-xs text-foreground/90">
+                      <span className="h-5 w-5 rounded-full bg-accent/20 border border-accent/35 text-accent flex items-center justify-center text-[10px] font-bold">✓</span>
+                      <span>{generationStats.tasksCount} Tasks</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 text-xs text-foreground/90">
+                      <span className="h-5 w-5 rounded-full bg-accent/20 border border-accent/35 text-accent flex items-center justify-center text-[10px] font-bold">✓</span>
+                      <span>{generationStats.scheduleDays}-Day Schedule</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 text-xs text-foreground/90">
+                      <span className="h-5 w-5 rounded-full bg-accent/20 border border-accent/35 text-accent flex items-center justify-center text-[10px] font-bold">✓</span>
+                      <span>Today's Agenda</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 text-xs text-foreground/90">
+                      <span className="h-5 w-5 rounded-full bg-accent/20 border border-accent/35 text-accent flex items-center justify-center text-[10px] font-bold">✓</span>
+                      <span>{generationStats.calendarConnected ? "Google Calendar Synced" : "Calendar can be connected later"}</span>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border/20 pt-4 space-y-2">
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-accent/80 block">
+                      Remember
+                    </span>
+                    <p className="font-sans text-xs text-muted-foreground leading-relaxed">
+                      This is only your first draft. As you chat with Zenkai, complete tasks, and make decisions, your plans will continuously adapt to you.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={onComplete}
+                    className="w-full py-3 bg-primary text-primary-foreground hover:bg-accent hover:text-accent-foreground text-xs font-semibold uppercase tracking-wider font-sans rounded-xl transition-all duration-300 shadow-md cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <span>Enter Workspace</span>
+                    <ArrowRight size={14} />
+                  </button>
                 </div>
-              </div>
+              ) : (
+                /* Existing Loading Progress Screen */
+                <>
+                  <div className="relative w-36 h-36">
+                    <div className="absolute -inset-10 rounded-full bg-accent/20 blur-3xl opacity-80 animate-pulse" />
+                    <Image
+                      src="/assets/orbs/companion_orb.png"
+                      alt="Companion Orb"
+                      fill
+                      className="object-contain drop-shadow-[0_12px_32px_rgba(201,168,106,0.25)] animate-float"
+                    />
+                  </div>
+
+                  <div className="w-full space-y-5 text-center">
+                    <span className="font-sans text-[10px] tracking-[0.25em] text-accent font-bold uppercase flex items-center justify-center gap-2 animate-pulse">
+                      <Sparkles size={13} className="text-accent" />
+                      Zenkai Awakening
+                    </span>
+                    
+                    <h3 className="font-heading text-2xl font-light text-foreground">
+                      Synchronizing Workspace
+                    </h3>
+
+                    {/* Progress bar */}
+                    <div className="w-full max-w-md mx-auto h-[3px] bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-accent transition-all duration-500 ease-out"
+                        style={{ width: `${generationProgress}%` }}
+                      />
+                    </div>
+                    
+                    {/* Stages tracking checklist */}
+                    <div className="w-full max-w-sm mx-auto text-left space-y-2.5 pt-2">
+                      {generationStages.map((stage) => {
+                        const stageIndex = generationStages.findIndex(s => s.key === stage.key);
+                        const currentIndex = generationStages.findIndex(s => s.key === currentGenerationStage);
+                        const isCompleted = stageIndex < currentIndex || (currentGenerationStage === "complete");
+                        const isActive = currentGenerationStage === stage.key && !isCompleted;
+
+                        return (
+                          <div
+                            key={stage.key}
+                            className={`flex items-center gap-3 text-xs transition-opacity duration-300 ${
+                              isCompleted ? "opacity-100 text-foreground" : isActive ? "opacity-100 text-accent font-semibold" : "opacity-40 text-muted-foreground"
+                            }`}
+                          >
+                            <div className={`h-4.5 w-4.5 rounded-full flex items-center justify-center border text-[9px] ${
+                              isCompleted
+                                ? "bg-accent/20 border-accent text-accent font-bold"
+                                : isActive
+                                ? "border-accent text-accent animate-pulse"
+                                : "border-border text-muted-foreground"
+                            }`}>
+                              {isCompleted ? "✓" : isActive ? "●" : ""}
+                            </div>
+                            <span>{stage.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Logs message terminal */}
+                    <div className="w-full max-w-md mx-auto bg-secondary/35 border border-border/40 rounded-2xl p-4 h-32 overflow-y-auto text-left text-[11px] font-mono text-muted-foreground/90 space-y-1.5 scrollbar-thin">
+                      {streamMessages.map((msg, i) => (
+                        <div key={i} className="flex gap-1.5 items-start">
+                          <span className="text-accent shrink-0 select-none">&gt;</span>
+                          <span className="leading-relaxed">{msg}</span>
+                        </div>
+                      ))}
+                      {generationError && (
+                        <div className="text-destructive font-semibold">&gt; Error: {generationError}</div>
+                      )}
+                    </div>
+
+                    {/* Graceful Failure actions panel */}
+                    {generationError && (
+                      <div className="w-full max-w-md mx-auto flex gap-3.5 pt-2 animate-in slide-in-from-bottom-2 duration-300">
+                        <button
+                          onClick={() => triggerGeneration(lastUsedMode)}
+                          className="flex-1 py-2.5 px-4 bg-primary text-primary-foreground hover:bg-accent hover:text-accent-foreground text-xs font-semibold rounded-xl transition-all cursor-pointer font-sans"
+                        >
+                          Retry failed steps
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await fetch("/api/onboarding/complete", { method: "POST" });
+                            } catch (e) {
+                              console.error("Bypass failed:", e);
+                            }
+                            onComplete();
+                          }}
+                          className="flex-1 py-2.5 px-4 border border-border bg-card hover:bg-secondary/40 text-muted-foreground hover:text-foreground text-xs font-semibold rounded-xl transition-all cursor-pointer font-sans"
+                        >
+                          Continue anyway
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

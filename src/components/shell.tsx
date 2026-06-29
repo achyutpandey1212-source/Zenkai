@@ -45,6 +45,7 @@ export default function Shell({ initialUser }: ShellProps) {
       setCurrentScreen("home");
       if (typeof window !== "undefined") {
         localStorage.setItem("has_seen_tour", "true");
+        localStorage.setItem("show_first_draft_card", "true");
       }
     } else {
       setTourStep(nextStep);
@@ -64,6 +65,7 @@ export default function Shell({ initialUser }: ShellProps) {
     setCurrentScreen("home");
     if (typeof window !== "undefined") {
       localStorage.setItem("has_seen_tour", "true");
+      localStorage.setItem("show_first_draft_card", "true");
     }
   };
 

@@ -1025,6 +1025,21 @@ ${PlanningFormatter.format(context)}
 
 ## TASKS TO SCHEDULE
 ${JSON.stringify(activeTasks.map(t => ({ id: (t._id || t.id)?.toString(), title: t.title, durationMinutes: t.estimatedMinutes || 30, priority: t.priority })), null, 2)}
+
+## SCHEDULING GUIDELINES & DEFAULT BLOCKS
+CRITICAL: Even if the list of tasks to schedule is small or empty, DO NOT generate an empty weekly schedule.
+You must construct a realistic, believable daily structure based on the user's Life Model inputs:
+1. **Sleep boundaries**: Schedule rest and sleep blocks outside their wake/sleep times.
+2. **Fixed Obligations**: Always include their fixed recurring commitments (e.g., Office, Gym, College, Classes) at their specified start/end times.
+3. **Buffer & Routine Blocks**: Insert standard routine blocks:
+   - "Travel / Transition Buffer" before and after fixed commitments if needed.
+   - "Meals & Rest Buffers" (Lunch, Dinner).
+   - "Daily Study / Review Block" (e.g. 1.5 - 2 hours) for their long-term goal/focus (e.g. studying, placements, project building) during their preferred deep work time.
+   - "Daily Consistency / Habit Block" (e.g. 30 mins) for focus consistency.
+   - "Rest & Recharge" blocks on weekends or evenings.
+4. If tasks are provided, schedule them inside the appropriate Daily Study, Routine, or Project work blocks (populating the \`taskIds\` array). If no tasks are provided or tasks are empty, create the work blocks anyway (e.g. "Focus Session" or "Gym Workout") and leave the \`taskIds\` array empty.
+
+Each block must have a clear startTime and endTime, non-overlapping, and must feel believably structured.
 `;
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });

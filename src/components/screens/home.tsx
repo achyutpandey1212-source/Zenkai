@@ -40,6 +40,20 @@ export default function Home({
   const [loadingProactive, setLoadingProactive] = useState(true);
   const [loadingAgenda, setLoadingAgenda] = useState(true);
   const [greeting, setGreeting] = useState("Good Morning,");
+  const [showFirstDraft, setShowFirstDraft] = useState(false);
+
+  const dismissFirstDraft = () => {
+    setShowFirstDraft(false);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("show_first_draft_card", "false");
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setShowFirstDraft(localStorage.getItem("show_first_draft_card") === "true");
+    }
+  }, []);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -303,6 +317,24 @@ export default function Home({
               {userName}
             </span>
           </div>
+
+          {showFirstDraft && (
+            <div className="w-full max-w-xl mt-6 p-5 bg-card/85 border border-accent/30 rounded-2xl relative shadow-md animate-in fade-in slide-in-from-top-4 duration-300 z-10 text-left">
+              <h4 className="font-heading text-sm font-semibold text-foreground mb-1.5 flex items-center gap-1.5">
+                <Sparkles size={14} className="text-accent" /> This is your first draft
+              </h4>
+              <p className="font-sans text-xs text-muted-foreground leading-relaxed pr-6">
+                Your roadmap is based on the information you shared today. As you complete tasks, skip work, chat with Zenkai, and make decisions, your plans, schedules, identity and reflections will continuously evolve to match your real life.
+              </p>
+              <button
+                onClick={dismissFirstDraft}
+                className="absolute top-4.5 right-4 text-muted-foreground hover:text-foreground text-xs font-semibold transition-colors cursor-pointer"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 7-Day Week Selector */}
