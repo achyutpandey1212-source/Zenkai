@@ -1,5 +1,6 @@
 import { User } from "@/models/User";
 import { encrypt, decrypt } from "@/lib/encryption";
+import { telemetryStorage } from "@/lib/telemetry-context";
 
 export interface GoogleEventInput {
   summary: string;
@@ -20,6 +21,63 @@ export class GoogleCalendarService {
   public static mockEventsStore = new Map<string, GoogleEventInput>();
 
   /**
+   * Helper to fetch with timeout, rate limit retries, and transient failure recovery.
+   */
+  private static async fetchWithRetry(url: string, init?: RequestInit, retries = 3, initialDelayMs = 1000): Promise<Response> {
+    let attempt = 0;
+    while (true) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+
+        const response = await fetch(url, {
+          ...init,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if ((response.status === 429 || response.status >= 500) && attempt < retries) {
+          attempt++;
+          const delay = initialDelayMs * Math.pow(2, attempt - 1);
+          console.warn(`[Google Calendar API] Transient status ${response.status} (Attempt ${attempt}/${retries}). Retrying in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        return response;
+      } catch (error: any) {
+        attempt++;
+        const isTimeout = error.name === "AbortError" || error.message?.includes("timeout");
+        const isNetwork = error.message?.includes("fetch failed") || error.code === "ENOTFOUND" || error.code === "ECONNRESET";
+
+        if ((isTimeout || isNetwork) && attempt < retries) {
+          const delay = initialDelayMs * Math.pow(2, attempt - 1);
+          console.warn(`[Google Calendar API] Network error/timeout (Attempt ${attempt}/${retries}): ${error.message}. Retrying in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Helper to log errors to GraphState telemetry
+   */
+  private static logTelemetryError(action: string, errorMessage: string) {
+    const store = telemetryStorage.getStore();
+    const state = store?.stateRef as any;
+    if (state) {
+      if (!state.calendarFailures) {
+        state.calendarFailures = [];
+      }
+      state.calendarFailures.push({ action, error: errorMessage });
+    }
+  }
+
+  /**
    * Helper to verify if Google Calendar is connected and get a valid access token.
    * Refreshes the token if it is expired.
    */
@@ -37,7 +95,6 @@ export class GoogleCalendarService {
     // Check if we are running in Mock Mode
     const isMock = refreshToken.startsWith("mock-refresh-token") || !process.env.GOOGLE_CLIENT_ID;
     if (isMock) {
-      // If health was reconnect_required, let's keep it but check if mock token is healthy
       return { accessToken: "mock-access-token", isMock: true };
     }
 
@@ -47,12 +104,13 @@ export class GoogleCalendarService {
     try {
       decryptedAccessToken = decrypt(accessToken);
       decryptedRefreshToken = decrypt(refreshToken);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to decrypt Google Calendar tokens:", err);
       await User.updateOne(
         { firebaseUid: uid },
         { $set: { "googleCalendarSettings.syncHealth": "reconnect_required" } }
       );
+      this.logTelemetryError("decryptTokens", err.message || String(err));
       return null;
     }
 
@@ -67,7 +125,7 @@ export class GoogleCalendarService {
       const clientId = process.env.GOOGLE_CLIENT_ID || "";
       const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
 
-      const response = await fetch("https://oauth2.googleapis.com/token", {
+      const response = await this.fetchWithRetry("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -81,7 +139,8 @@ export class GoogleCalendarService {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`Google Token Refresh Error (User ${uid}):`, errorText);
-        
+        this.logTelemetryError("refreshToken", errorText);
+
         // Update health status to reconnect_required on auth failure
         if (response.status === 400 || response.status === 401) {
           await User.updateOne(
@@ -109,14 +168,15 @@ export class GoogleCalendarService {
       );
 
       return { accessToken: newAccessToken, isMock: false };
-    } catch (err) {
+    } catch (err: any) {
       console.error(`Google Token Refresh Network Error (User ${uid}):`, err);
+      this.logTelemetryError("refreshTokenNetwork", err.message || String(err));
       return null;
     }
   }
 
   /**
-   * Get an event from Google Calendar (used to inspect manual edits and detect conflicts)
+   * Get an event from Google Calendar
    */
   static async getEvent(uid: string, eventId: string): Promise<{ event: GoogleEventInput | null; googleRequests: number }> {
     const tokenInfo = await this.getValidToken(uid);
@@ -129,46 +189,50 @@ export class GoogleCalendarService {
       return { event: mockEvent || null, googleRequests: 1 };
     }
 
-    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${tokenInfo.accessToken}`,
-      },
-    });
+    try {
+      const response = await this.fetchWithRetry(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${tokenInfo.accessToken}`,
+        },
+      });
 
-    if (response.status === 404) {
-      return { event: null, googleRequests: 1 };
-    }
-
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        await User.updateOne(
-          { firebaseUid: uid },
-          { $set: { "googleCalendarSettings.syncHealth": "reconnect_required" } }
-        );
+      if (response.status === 404) {
+        return { event: null, googleRequests: 1 };
       }
-      const errorText = await response.text();
-      throw new Error(`Google Calendar API Error (GetEvent): ${errorText}`);
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          await User.updateOne(
+            { firebaseUid: uid },
+            { $set: { "googleCalendarSettings.syncHealth": "reconnect_required" } }
+          );
+        }
+        const errorText = await response.text();
+        throw new Error(errorText);
+      }
+
+      const data = await response.json();
+
+      const event: GoogleEventInput = {
+        summary: data.summary || "",
+        description: data.description || "",
+        start: {
+          dateTime: data.start?.dateTime || data.start?.date || "",
+          timeZone: data.start?.timeZone || "UTC",
+        },
+        end: {
+          dateTime: data.end?.dateTime || data.end?.date || "",
+          timeZone: data.end?.timeZone || "UTC",
+        },
+        colorId: data.colorId || undefined
+      };
+
+      return { event, googleRequests: 1 };
+    } catch (err: any) {
+      this.logTelemetryError("getEvent", err.message || String(err));
+      throw new Error(`Google Calendar API Error (GetEvent): ${err.message}`);
     }
-
-    const data = await response.json();
-    
-    // Map response structure back to our standard input structure
-    const event: GoogleEventInput = {
-      summary: data.summary || "",
-      description: data.description || "",
-      start: {
-        dateTime: data.start?.dateTime || data.start?.date || "",
-        timeZone: data.start?.timeZone || "UTC",
-      },
-      end: {
-        dateTime: data.end?.dateTime || data.end?.date || "",
-        timeZone: data.end?.timeZone || "UTC",
-      },
-      colorId: data.colorId || undefined
-    };
-
-    return { event, googleRequests: 1 };
   }
 
   /**
@@ -187,28 +251,33 @@ export class GoogleCalendarService {
       return { id: mockId, googleRequests: 1 };
     }
 
-    const response = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${tokenInfo.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(eventData),
-    });
+    try {
+      const response = await this.fetchWithRetry("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${tokenInfo.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(eventData),
+      });
 
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        await User.updateOne(
-          { firebaseUid: uid },
-          { $set: { "googleCalendarSettings.syncHealth": "reconnect_required" } }
-        );
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          await User.updateOne(
+            { firebaseUid: uid },
+            { $set: { "googleCalendarSettings.syncHealth": "reconnect_required" } }
+          );
+        }
+        const errorText = await response.text();
+        throw new Error(errorText);
       }
-      const errorText = await response.text();
-      throw new Error(`Google Calendar API Error (CreateEvent): ${errorText}`);
-    }
 
-    const data = await response.json();
-    return { id: data.id, googleRequests: 1 };
+      const data = await response.json();
+      return { id: data.id, googleRequests: 1 };
+    } catch (err: any) {
+      this.logTelemetryError("createEvent", err.message || String(err));
+      throw new Error(`Google Calendar API Error (CreateEvent): ${err.message}`);
+    }
   }
 
   /**
@@ -226,27 +295,32 @@ export class GoogleCalendarService {
       return { googleRequests: 1 };
     }
 
-    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${tokenInfo.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(eventData),
-    });
+    try {
+      const response = await this.fetchWithRetry(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${tokenInfo.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(eventData),
+      });
 
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        await User.updateOne(
-          { firebaseUid: uid },
-          { $set: { "googleCalendarSettings.syncHealth": "reconnect_required" } }
-        );
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          await User.updateOne(
+            { firebaseUid: uid },
+            { $set: { "googleCalendarSettings.syncHealth": "reconnect_required" } }
+          );
+        }
+        const errorText = await response.text();
+        throw new Error(errorText);
       }
-      const errorText = await response.text();
-      throw new Error(`Google Calendar API Error (UpdateEvent): ${errorText}`);
-    }
 
-    return { googleRequests: 1 };
+      return { googleRequests: 1 };
+    } catch (err: any) {
+      this.logTelemetryError("updateEvent", err.message || String(err));
+      throw new Error(`Google Calendar API Error (UpdateEvent): ${err.message}`);
+    }
   }
 
   /**
@@ -264,25 +338,29 @@ export class GoogleCalendarService {
       return { googleRequests: 1 };
     }
 
-    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${tokenInfo.accessToken}`,
-      },
-    });
+    try {
+      const response = await this.fetchWithRetry(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${tokenInfo.accessToken}`,
+        },
+      });
 
-    if (!response.ok && response.status !== 404) {
-      // 404 means already deleted, which is acceptable!
-      if (response.status === 401 || response.status === 403) {
-        await User.updateOne(
-          { firebaseUid: uid },
-          { $set: { "googleCalendarSettings.syncHealth": "reconnect_required" } }
-        );
+      if (!response.ok && response.status !== 404) {
+        if (response.status === 401 || response.status === 403) {
+          await User.updateOne(
+            { firebaseUid: uid },
+            { $set: { "googleCalendarSettings.syncHealth": "reconnect_required" } }
+          );
+        }
+        const errorText = await response.text();
+        throw new Error(errorText);
       }
-      const errorText = await response.text();
-      throw new Error(`Google Calendar API Error (DeleteEvent): ${errorText}`);
-    }
 
-    return { googleRequests: 1 };
+      return { googleRequests: 1 };
+    } catch (err: any) {
+      this.logTelemetryError("deleteEvent", err.message || String(err));
+      throw new Error(`Google Calendar API Error (DeleteEvent): ${err.message}`);
+    }
   }
 }

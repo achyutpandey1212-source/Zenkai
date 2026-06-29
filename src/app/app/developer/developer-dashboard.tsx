@@ -104,6 +104,10 @@ interface GraphState {
   } | null;
   checkpointIds?: string[];
   pluginData?: Record<string, any>;
+  guardrailTriggers?: string[];
+  retries?: { action: string; attempt: number; error: string }[];
+  calendarFailures?: { action: string; error: string }[];
+  planningConflicts?: { day: string; conflict: string }[];
 }
 
 interface WorkflowItem {
@@ -1240,34 +1244,141 @@ export default function DeveloperDashboard() {
 
                     {/* 3. OPTIMIZATION INSIGHTS TAB */}
                     {activeTab === "insights" && (
-                      <div className="space-y-4">
-                        <h4 className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2">Automated Heuristic Diagnostics</h4>
-                        <div className="space-y-3">
-                          {getInsights(selectedWorkflow).map((insight, idx) => {
-                            let cardColor = "bg-green-50/30 border-green-200 dark:border-green-950 text-green-700 dark:text-green-300";
-                            let Icon = CheckCircle2;
+                      <div className="space-y-6">
+                        {/* Reliability & Guardrails Section */}
+                        <div className="space-y-4">
+                          <h4 className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2 flex items-center gap-1.5">
+                            <ShieldAlert className="w-3.5 h-3.5 text-accent" />
+                            Reliability & Guardrail Diagnostics
+                          </h4>
+                          
+                          {/* Metrics summary grid */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                            <div className="bg-secondary/25 border border-border p-3 rounded-xl">
+                              <span className="text-[10px] text-muted-foreground block">Guardrail Triggers</span>
+                              <span className="text-sm font-semibold font-mono text-foreground animate-fade-in">
+                                {selectedWorkflow.snapshot.guardrailTriggers?.length ?? 0}
+                              </span>
+                            </div>
+                            <div className="bg-secondary/25 border border-border p-3 rounded-xl">
+                              <span className="text-[10px] text-muted-foreground block">AI & Tool Retries</span>
+                              <span className="text-sm font-semibold font-mono text-foreground">
+                                {selectedWorkflow.snapshot.retries?.length ?? 0}
+                              </span>
+                            </div>
+                            <div className="bg-secondary/25 border border-border p-3 rounded-xl">
+                              <span className="text-[10px] text-muted-foreground block">Calendar Failures</span>
+                              <span className={`text-sm font-semibold font-mono ${(selectedWorkflow.snapshot.calendarFailures?.length ?? 0) > 0 ? "text-destructive" : "text-foreground"}`}>
+                                {selectedWorkflow.snapshot.calendarFailures?.length ?? 0}
+                              </span>
+                            </div>
+                            <div className="bg-secondary/25 border border-border p-3 rounded-xl">
+                              <span className="text-[10px] text-muted-foreground block">Planning Conflicts</span>
+                              <span className="text-sm font-semibold font-mono text-foreground">
+                                {selectedWorkflow.snapshot.planningConflicts?.length ?? 0}
+                              </span>
+                            </div>
+                          </div>
 
-                            if (insight.type === "warning") {
-                              cardColor = "bg-amber-50/30 border-amber-200 dark:border-amber-950 text-amber-700 dark:text-amber-300";
-                              Icon = AlertTriangle;
-                            } else if (insight.type === "error") {
-                              cardColor = "bg-red-50/30 border-red-200 dark:border-red-950 text-red-700 dark:text-red-300";
-                              Icon = ShieldAlert;
-                            } else if (insight.type === "info") {
-                              cardColor = "bg-blue-50/30 border-blue-200 dark:border-blue-950 text-blue-700 dark:text-blue-300";
-                              Icon = Info;
-                            }
-
-                            return (
-                              <div key={idx} className={`p-4 border rounded-xl flex items-start gap-3 text-xs ${cardColor}`}>
-                                <Icon className="w-5 h-5 shrink-0 mt-0.5" />
-                                <div>
-                                  <span className="font-semibold block mb-1">{insight.title}</span>
-                                  <p className="opacity-95">{insight.description}</p>
+                          {/* List of Triggers / Retries / Conflicts */}
+                          <div className="space-y-3">
+                            {/* Guardrail Triggers List */}
+                            {selectedWorkflow.snapshot.guardrailTriggers && selectedWorkflow.snapshot.guardrailTriggers.length > 0 && (
+                              <div className="border border-border rounded-xl p-3 bg-secondary/15">
+                                <span className="text-[11px] font-semibold text-accent block mb-2">Active Guardrail Interventions</span>
+                                <div className="space-y-1.5">
+                                  {selectedWorkflow.snapshot.guardrailTriggers.map((t: string, idx: number) => (
+                                    <div key={idx} className="text-xs flex items-start gap-1.5 text-muted-foreground">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                                      <span>{t}</span>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
-                            );
-                          })}
+                            )}
+
+                            {/* Retries List */}
+                            {selectedWorkflow.snapshot.retries && selectedWorkflow.snapshot.retries.length > 0 && (
+                              <div className="border border-border rounded-xl p-3 bg-secondary/15">
+                                <span className="text-[11px] font-semibold text-accent block mb-2">Gemini & Schema Retries</span>
+                                <div className="space-y-1.5">
+                                  {selectedWorkflow.snapshot.retries.map((r: any, idx: number) => (
+                                    <div key={idx} className="text-xs flex flex-col gap-0.5 border-l-2 border-accent/40 pl-2">
+                                      <div className="flex justify-between items-center text-[10px]">
+                                        <span className="font-semibold text-foreground capitalize">{r.action}</span>
+                                        <span className="text-muted-foreground">Attempt #{r.attempt}</span>
+                                      </div>
+                                      <span className="text-muted-foreground font-mono text-[10px] truncate max-w-full">{r.error}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Calendar Failures List */}
+                            {selectedWorkflow.snapshot.calendarFailures && selectedWorkflow.snapshot.calendarFailures.length > 0 && (
+                              <div className="border border-destructive/20 rounded-xl p-3 bg-destructive/5 text-destructive animate-pulse">
+                                <span className="text-[11px] font-semibold block mb-2">Calendar Synchronisation Failures</span>
+                                <div className="space-y-1.5">
+                                  {selectedWorkflow.snapshot.calendarFailures.map((cf: any, idx: number) => (
+                                    <div key={idx} className="text-xs flex flex-col gap-0.5 pl-2 border-l-2 border-destructive/40">
+                                      <span className="font-semibold capitalize text-foreground">{cf.action}</span>
+                                      <span className="text-muted-foreground text-[10px]">{cf.error}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Planning Conflicts List */}
+                            {selectedWorkflow.snapshot.planningConflicts && selectedWorkflow.snapshot.planningConflicts.length > 0 && (
+                              <div className="border border-border rounded-xl p-3 bg-secondary/15">
+                                <span className="text-[11px] font-semibold text-accent block mb-2">Schedule Rebalancing & Conflict Resolution Log</span>
+                                <div className="space-y-2">
+                                  {selectedWorkflow.snapshot.planningConflicts.map((pc: any, idx: number) => (
+                                    <div key={idx} className="text-xs pl-2 border-l-2 border-accent/40">
+                                      <span className="font-semibold text-foreground text-[10px] block">{pc.day}</span>
+                                      <span className="text-muted-foreground text-[11px]">{pc.conflict}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <hr className="border-border" />
+
+                        {/* Existing Heuristic Section */}
+                        <div className="space-y-4">
+                          <h4 className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2">Automated Heuristic Diagnostics</h4>
+                          <div className="space-y-3">
+                            {getInsights(selectedWorkflow).map((insight, idx) => {
+                              let cardColor = "bg-green-50/30 border-green-200 dark:border-green-950 text-green-700 dark:text-green-300";
+                              let Icon = CheckCircle2;
+
+                              if (insight.type === "warning") {
+                                cardColor = "bg-amber-50/30 border-amber-200 dark:border-amber-950 text-amber-700 dark:text-amber-300";
+                                Icon = AlertTriangle;
+                              } else if (insight.type === "error") {
+                                cardColor = "bg-red-50/30 border-red-200 dark:border-red-950 text-red-700 dark:text-red-300";
+                                Icon = ShieldAlert;
+                              } else if (insight.type === "info") {
+                                cardColor = "bg-blue-50/30 border-blue-200 dark:border-blue-950 text-blue-700 dark:text-blue-300";
+                                Icon = Info;
+                              }
+
+                              return (
+                                <div key={idx} className={`p-4 border rounded-xl flex items-start gap-3 text-xs ${cardColor}`}>
+                                  <Icon className="w-5 h-5 shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-semibold block mb-1">{insight.title}</span>
+                                    <p className="opacity-95">{insight.description}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     )}

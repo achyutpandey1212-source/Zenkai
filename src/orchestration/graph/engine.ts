@@ -141,6 +141,11 @@ export class StateGraph<S extends object> {
 
           yield { node: nodeName, state, metadata };
 
+          if (metadata.success === false) {
+            console.error(`[Graph Engine] Node "${nodeName}" failed during streaming. Stopping workflow execution.`);
+            break;
+          }
+
           const next = self.resolveNext(nodeName, state);
           for (const n of next) {
             if (!visited.has(n) && n !== END) queue.push(n);
@@ -177,6 +182,11 @@ export class StateGraph<S extends object> {
     const { newState, metadata } = await this.runNodeSafe(nodeName, nodeFn, state);
     state = newState;
     onStateUpdate(state);
+
+    if (metadata.success === false) {
+      console.error(`[Graph Engine] Node "${nodeName}" failed. Stopping workflow execution.`);
+      return;
+    }
 
     const next = this.resolveNext(nodeName, state);
     for (const nextNode of next) {

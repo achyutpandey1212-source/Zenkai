@@ -39,7 +39,14 @@ function generateWorkflowId(): string {
 // POST handler
 // ─────────────────────────────────────────────────────────────────────────────
 
+// In-memory concurrency locks map
+const activeLocks = new Map<string, { workflowId: string; timestamp: number }>();
+
 export async function POST(request: Request) {
+  let lockAcquired = false;
+  let parsedConversationId = "";
+  const workflowId = generateWorkflowId();
+
   try {
     // ── 1. Authenticate user ────────────────────────────────────────────────────
     const cookieStore = await cookies();
@@ -63,6 +70,42 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Message is required" }, { status: 400 });
     }
 
+    parsedConversationId = conversationId || "";
+
+    // ── Concurrency Lock Check ──
+    if (conversationId) {
+      const existingLock = activeLocks.get(conversationId);
+      if (existingLock && Date.now() - existingLock.timestamp < 30000) {
+        console.warn(`[Concurrency Lock] Concurrent request blocked for conversation ${conversationId}. Workflow ${existingLock.workflowId} is active.`);
+        
+        const encoder = new TextEncoder();
+        const customStream = new ReadableStream({
+          start(controller) {
+            const status1 = `\0${JSON.stringify({ __type: "status", agent: "planning", status: "running", message: "Still working..." })}\0`;
+            const status2 = `\0${JSON.stringify({ __type: "status", agent: "execution", status: "running", message: "We're reorganizing your schedule..." })}\0`;
+            const textChunk = "Still working... We are reorganizing your schedule and finishing your request. Please wait a moment.";
+            
+            controller.enqueue(encoder.encode(status1));
+            controller.enqueue(encoder.encode(status2));
+            controller.enqueue(encoder.encode(textChunk));
+            controller.close();
+          }
+        });
+        
+        return new Response(customStream, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Transfer-Encoding": "chunked",
+            "x-conversation-id": conversationId,
+          },
+        });
+      }
+
+      // Acquire Lock
+      activeLocks.set(conversationId, { workflowId, timestamp: Date.now() });
+      lockAcquired = true;
+    }
+
     // ── 3. Ensure DB connection ─────────────────────────────────────────────────
     await dbConnect();
 
@@ -79,6 +122,11 @@ export async function POST(request: Request) {
       }
       conversation = await MessageRepository.createConversation(user.firebaseUid, initialTitle);
       conversationId = conversation._id.toString();
+      parsedConversationId = conversationId;
+      
+      // If we just created the conversation, update the lock map with the new conversation ID
+      activeLocks.set(conversationId, { workflowId, timestamp: Date.now() });
+      lockAcquired = true;
     }
 
     // ── 5. Load conversation history ────────────────────────────────────────────
@@ -105,8 +153,6 @@ export async function POST(request: Request) {
     // ── 6. Persist user message ─────────────────────────────────────────────────
     await MessageRepository.addMessage(conversationId, "user", message);
 
-    // ── 7. Generate workflow ID for this request ────────────────────────────────
-    const workflowId = generateWorkflowId();
     console.log(`[Chat] New workflow: ${workflowId} | uid=${user.firebaseUid}`);
 
     // ── 8. Build streaming response ─────────────────────────────────────────────
@@ -119,25 +165,28 @@ export async function POST(request: Request) {
           const initialState = createInitialState({
             workflowId,
             uid: user.firebaseUid,
-            conversationId,
+            conversationId: parsedConversationId,
             userMessage: message,
             history,
             streamController: controller,
             encoder,
           });
 
-          // Invoke the main graph — this runs everything:
-          // router → context → companion (streaming) → planning → execution → background → assembler
+          // Invoke the main graph
           await invokeMainGraph(initialState);
-
-          // Graph assembler node closes the controller.
-          // If it somehow didn't (error path), close here as safety net.
         } catch (err) {
           console.error(`[Chat][wf:${workflowId.slice(3, 11)}] Stream error:`, err);
           try {
-            controller.error(err);
+            // Mask raw error with a premium message
+            const fallbackText = "\n\nWe couldn't finish that right now. Retrying calendar synchronization... Please try again in a few moments.";
+            controller.enqueue(encoder.encode(fallbackText));
+            controller.close();
           } catch {
             // controller may already be closed
+          }
+        } finally {
+          if (lockAcquired && parsedConversationId) {
+            activeLocks.delete(parsedConversationId);
           }
         }
       },
@@ -148,13 +197,18 @@ export async function POST(request: Request) {
         "Content-Type": "text/plain; charset=utf-8",
         "Transfer-Encoding": "chunked",
         "x-conversation-id": conversationId,
-        // Expose workflow ID for debugging (visible in browser DevTools network tab)
         "x-workflow-id": workflowId,
       },
     });
   } catch (error) {
     console.error("POST /api/chat Error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Internal Server Error";
-    return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
+    if (lockAcquired && parsedConversationId) {
+      activeLocks.delete(parsedConversationId);
+    }
+    // Return premium message
+    return NextResponse.json({ 
+      success: false, 
+      error: "We couldn't finish that right now. Please try again in a few moments." 
+    }, { status: 500 });
   }
 }

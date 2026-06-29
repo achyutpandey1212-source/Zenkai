@@ -120,16 +120,28 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3, initial
       attempt++;
       const errorMessage = error.message || "";
       const status = error.status || error.statusCode || 0;
-      const isRateLimit = status === 429 ||
+      const isTransient = status === 429 ||
                           status === 403 ||
+                          status >= 500 ||
                           errorMessage.includes("429") ||
                           errorMessage.includes("RESOURCE_EXHAUSTED") ||
                           errorMessage.includes("quota") ||
-                          errorMessage.includes("limit");
+                          errorMessage.includes("limit") ||
+                          errorMessage.includes("timeout") ||
+                          errorMessage.includes("ETIMEDOUT") ||
+                          errorMessage.includes("fetch failed") ||
+                          errorMessage.includes("DNS");
 
-      if (isRateLimit && attempt <= maxRetries) {
+      if (isTransient && attempt <= maxRetries) {
+        const store = telemetryStorage.getStore();
+        const state = store?.stateRef as any;
+        if (state) {
+          if (!state.retries) state.retries = [];
+          state.retries.push({ action: "geminiCall", attempt, error: errorMessage });
+        }
+
         const delay = initialDelayMs * Math.pow(2, attempt - 1);
-        console.warn(`[Gemini Telemetry] Rate limit / quota hit (Attempt ${attempt}/${maxRetries}). Retrying in ${delay}ms... Reason: ${errorMessage}`);
+        console.warn(`[Gemini Telemetry] Transient error hit (Attempt ${attempt}/${maxRetries}). Retrying in ${delay}ms... Reason: ${errorMessage}`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }

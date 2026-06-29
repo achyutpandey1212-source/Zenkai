@@ -125,6 +125,7 @@ IMPORTANT MEMORY & REFLECTION USAGE DIRECTIVES:
 - Never quote memories or reflections in a robotic, dry, or formal way.
 - Instead, speak naturally. Weave the context into your responses as if you simply remember the user and understand their traits/patterns, just like a close human friend or mentor would.
 - Keep the user's goals, preferences, and recurring behavioral patterns in mind when formulating suggestions and feedback.
+- STRICT ANTI-HALLUCINATION GUARDRAILS: Do NOT invent or guess user memories, preferences, plans, tasks, or reflections. If details are not explicitly present in the provided context (profile, memories, identity, reflections, plan, or conversation history), do not assume or invent them. If information is unknown, say it is unknown and never guess.
 `.trim();
 
     // Request stream

@@ -1,5 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import type { GraphState } from "@/orchestration/graph/state";
+import { AIValidationService } from "@/services/ai-validation.service";
+import { telemetryStorage } from "@/lib/telemetry-context";
 import { ContextOrchestrator } from "@/services/context-orchestrator.service";
 import { PlanSyncService } from "@/services/plan-sync.service";
 import type { PlanningContext, NormalizedUserContext } from "@/types/context.types";
@@ -721,6 +723,130 @@ Remember:
 - CRITICAL Date & Time Reasoning: Reason about relative time terms (like "today", "tomorrow", "this evening", "this weekend", "next week") relative to the Current Date/Time Context.
 `;
 
+      const planResponseSchema: any = {
+        type: "OBJECT",
+        properties: {
+          planningConfidence: { type: "NUMBER" },
+          planningAction: {
+            type: "STRING",
+            enum: ["create", "modify", "merge", "ignore"],
+          },
+          plannerReasoning: { type: "STRING" },
+          changeSummary: { type: "STRING" },
+          detectedConstraints: { type: "STRING" },
+          mergeStrategy: { type: "STRING" },
+          timelineRecalculation: { type: "STRING" },
+          plan: {
+            type: "OBJECT",
+            properties: {
+              id: { type: "STRING" },
+              title: { type: "STRING" },
+              description: { type: "STRING" },
+              status: { type: "STRING", enum: ["active", "completed", "archived"] },
+              priority: { type: "NUMBER" },
+              estimatedDuration: { type: "STRING" },
+              type: {
+                type: "STRING",
+                enum: ["career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"],
+              },
+              milestones: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    id: { type: "STRING" },
+                    title: { type: "STRING" },
+                    description: { type: "STRING" },
+                    status: { type: "STRING", enum: ["todo", "in_progress", "completed", "cancelled"] },
+                    priority: { type: "NUMBER" },
+                    estimatedDuration: { type: "STRING" },
+                    startDate: { type: "STRING" },
+                    endDate: { type: "STRING" },
+                    category: {
+                      type: "STRING",
+                      enum: [
+                        "Exam",
+                        "Study",
+                        "Hackathon",
+                        "Meetup",
+                        "Content Creation",
+                        "Startup",
+                        "Coding",
+                        "Reading",
+                        "Fitness",
+                        "Interview",
+                        "Personal",
+                      ],
+                    },
+                    importance: { type: "NUMBER" },
+                    flexibility: { type: "NUMBER" },
+                    goals: {
+                      type: "ARRAY",
+                      items: {
+                        type: "OBJECT",
+                        properties: {
+                          id: { type: "STRING" },
+                          title: { type: "STRING" },
+                          description: { type: "STRING" },
+                          status: { type: "STRING", enum: ["active", "completed", "paused", "cancelled"] },
+                          priority: { type: "NUMBER" },
+                          estimatedDuration: { type: "STRING" },
+                          tasks: {
+                            type: "ARRAY",
+                            items: {
+                              type: "OBJECT",
+                              properties: {
+                                id: { type: "STRING" },
+                                title: { type: "STRING" },
+                                description: { type: "STRING" },
+                                status: { type: "STRING", enum: ["todo", "in_progress", "completed", "missed"] },
+                                priority: { type: "NUMBER" },
+                                estimatedDuration: { type: "STRING" },
+                                suggestedDate: { type: "STRING" },
+                                timeBlock: { type: "STRING" },
+                                dependencies: {
+                                  type: "ARRAY",
+                                  items: { type: "STRING" },
+                                },
+                              },
+                              required: ["title", "status", "priority", "estimatedDuration", "suggestedDate"],
+                            },
+                          },
+                        },
+                        required: ["title", "status", "priority", "estimatedDuration", "tasks"],
+                      },
+                    },
+                  },
+                  required: [
+                    "title",
+                    "status",
+                    "priority",
+                    "estimatedDuration",
+                    "startDate",
+                    "endDate",
+                    "category",
+                    "importance",
+                    "flexibility",
+                    "goals",
+                  ],
+                },
+              },
+            },
+            required: ["title", "status", "priority", "estimatedDuration", "type", "milestones"],
+          },
+        },
+        required: [
+          "plan",
+          "planningConfidence",
+          "planningAction",
+          "plannerReasoning",
+          "changeSummary",
+          "detectedConstraints",
+          "mergeStrategy",
+          "timelineRecalculation",
+        ],
+      };
+
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
@@ -729,136 +855,54 @@ Remember:
           systemInstruction: PLANNER_SYSTEM_PROMPT.trim(),
           temperature: 0.2,
           responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              planningConfidence: { type: "NUMBER" },
-              planningAction: {
-                type: "STRING",
-                enum: ["create", "modify", "merge", "ignore"],
-              },
-              plannerReasoning: { type: "STRING" },
-              changeSummary: { type: "STRING" },
-              detectedConstraints: { type: "STRING" },
-              mergeStrategy: { type: "STRING" },
-              timelineRecalculation: { type: "STRING" },
-              plan: {
-                type: "OBJECT",
-                properties: {
-                  id: { type: "STRING" },
-                  title: { type: "STRING" },
-                  description: { type: "STRING" },
-                  status: { type: "STRING", enum: ["active", "completed", "archived"] },
-                  priority: { type: "NUMBER" },
-                  estimatedDuration: { type: "STRING" },
-                  type: {
-                    type: "STRING",
-                    enum: ["career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"],
-                  },
-                  milestones: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        id: { type: "STRING" },
-                        title: { type: "STRING" },
-                        description: { type: "STRING" },
-                        status: { type: "STRING", enum: ["todo", "in_progress", "completed", "cancelled"] },
-                        priority: { type: "NUMBER" },
-                        estimatedDuration: { type: "STRING" },
-                        startDate: { type: "STRING" },
-                        endDate: { type: "STRING" },
-                        category: {
-                          type: "STRING",
-                          enum: [
-                            "Exam",
-                            "Study",
-                            "Hackathon",
-                            "Meetup",
-                            "Content Creation",
-                            "Startup",
-                            "Coding",
-                            "Reading",
-                            "Fitness",
-                            "Interview",
-                            "Personal",
-                          ],
-                        },
-                        importance: { type: "NUMBER" },
-                        flexibility: { type: "NUMBER" },
-                        goals: {
-                          type: "ARRAY",
-                          items: {
-                            type: "OBJECT",
-                            properties: {
-                              id: { type: "STRING" },
-                              title: { type: "STRING" },
-                              description: { type: "STRING" },
-                              status: { type: "STRING", enum: ["active", "completed", "paused", "cancelled"] },
-                              priority: { type: "NUMBER" },
-                              estimatedDuration: { type: "STRING" },
-                              tasks: {
-                                type: "ARRAY",
-                                items: {
-                                  type: "OBJECT",
-                                  properties: {
-                                    id: { type: "STRING" },
-                                    title: { type: "STRING" },
-                                    description: { type: "STRING" },
-                                    status: { type: "STRING", enum: ["todo", "in_progress", "completed", "missed"] },
-                                    priority: { type: "NUMBER" },
-                                    estimatedDuration: { type: "STRING" },
-                                    suggestedDate: { type: "STRING" },
-                                    timeBlock: { type: "STRING" },
-                                    dependencies: {
-                                      type: "ARRAY",
-                                      items: { type: "STRING" },
-                                    },
-                                  },
-                                  required: ["title", "status", "priority", "estimatedDuration", "suggestedDate"],
-                                },
-                              },
-                            },
-                            required: ["title", "status", "priority", "estimatedDuration", "tasks"],
-                          },
-                        },
-                      },
-                      required: [
-                        "title",
-                        "status",
-                        "priority",
-                        "estimatedDuration",
-                        "startDate",
-                        "endDate",
-                        "category",
-                        "importance",
-                        "flexibility",
-                        "goals",
-                      ],
-                    },
-                  },
-                },
-                required: ["title", "status", "priority", "estimatedDuration", "type", "milestones"],
-              },
-            },
-            required: [
-              "plan",
-              "planningConfidence",
-              "planningAction",
-              "plannerReasoning",
-              "changeSummary",
-              "detectedConstraints",
-              "mergeStrategy",
-              "timelineRecalculation",
-            ],
-          },
+          responseSchema: planResponseSchema,
         },
       });
 
-      const responseText = response.text;
+      let responseText = response.text;
       if (!responseText) return null;
 
-      const result = JSON.parse(responseText);
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+        result = AIValidationService.validateAndRepairPlan(result);
+      } catch (validationErr: any) {
+        console.warn(`[AI Validation] Initial plan validation failed: ${validationErr.message}. Retrying once...`);
+        const store = telemetryStorage.getStore();
+        const state = store?.stateRef as any;
+        if (state) {
+          if (!state.retries) state.retries = [];
+          state.retries.push({ action: "planValidationRetry", attempt: 1, error: validationErr.message });
+        }
+
+        const retryPrompt = `
+${prompt}
+
+---
+IMPORTANT: Your previous response failed structural validation with the following error:
+"${validationErr.message}"
+
+Please fix this issue, ensure all required fields are present with correct types, and respond again in the exact requested schema.
+`;
+        const retryResponse = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
+          config: {
+            systemInstruction: PLANNER_SYSTEM_PROMPT.trim(),
+            temperature: 0.1,
+            responseMimeType: "application/json",
+            responseSchema: planResponseSchema,
+          },
+        });
+
+        const retryResponseText = retryResponse.text;
+        if (!retryResponseText) throw new Error("Retry plan response was empty");
+        responseText = retryResponseText;
+        result = JSON.parse(responseText);
+
+        result = AIValidationService.validateAndRepairPlan(result);
+      }
+
       return {
         ...result,
         promptText: prompt,
@@ -1042,6 +1086,48 @@ You must construct a realistic, believable daily structure based on the user's L
 Each block must have a clear startTime and endTime, non-overlapping, and must feel believably structured.
 `;
 
+    const scheduleResponseSchema: any = {
+      type: "OBJECT",
+      properties: {
+        lifeModelAnalysis: { type: "STRING" },
+        availabilityMap: { type: "STRING" },
+        weeklyRhythmReasoning: { type: "STRING" },
+        days: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              date: { type: "STRING" },
+              dayNumber: { type: "NUMBER" },
+              focusTheme: { type: "STRING" },
+              estimatedWorkload: { type: "STRING", enum: ["Light", "Medium", "Heavy"] },
+              plannedFocusHours: { type: "NUMBER" },
+              workBlocks: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    title: { type: "STRING" },
+                    startTime: { type: "STRING" },
+                    endTime: { type: "STRING" },
+                    duration: { type: "NUMBER" },
+                    priority: { type: "NUMBER" },
+                    taskIds: {
+                      type: "ARRAY",
+                      items: { type: "STRING" }
+                    }
+                  },
+                  required: ["title", "startTime", "endTime", "duration", "priority", "taskIds"]
+                }
+              }
+            },
+            required: ["date", "dayNumber", "focusTheme", "estimatedWorkload", "plannedFocusHours", "workBlocks"]
+          }
+        }
+      },
+      required: ["lifeModelAnalysis", "availabilityMap", "weeklyRhythmReasoning", "days"]
+    };
+
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
@@ -1050,53 +1136,54 @@ Each block must have a clear startTime and endTime, non-overlapping, and must fe
         systemInstruction: systemInstruction.trim(),
         temperature: 0.15,
         responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            lifeModelAnalysis: { type: "STRING" },
-            availabilityMap: { type: "STRING" },
-            weeklyRhythmReasoning: { type: "STRING" },
-            days: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  date: { type: "STRING" },
-                  dayNumber: { type: "NUMBER" },
-                  focusTheme: { type: "STRING" },
-                  estimatedWorkload: { type: "STRING", enum: ["Light", "Medium", "Heavy"] },
-                  plannedFocusHours: { type: "NUMBER" },
-                  workBlocks: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        title: { type: "STRING" },
-                        startTime: { type: "STRING" },
-                        endTime: { type: "STRING" },
-                        duration: { type: "NUMBER" },
-                        priority: { type: "NUMBER" },
-                        taskIds: {
-                          type: "ARRAY",
-                          items: { type: "STRING" }
-                        }
-                      },
-                      required: ["title", "startTime", "endTime", "duration", "priority", "taskIds"]
-                    }
-                  }
-                },
-                required: ["date", "dayNumber", "focusTheme", "estimatedWorkload", "plannedFocusHours", "workBlocks"]
-              }
-            }
-          },
-          required: ["lifeModelAnalysis", "availabilityMap", "weeklyRhythmReasoning", "days"]
-        }
+        responseSchema: scheduleResponseSchema,
       }
     });
 
     const content = response.text;
     if (!content) throw new Error("Empty response from Weekly Planner LLM");
-    return JSON.parse(content);
+
+    let result: any;
+    try {
+      result = JSON.parse(content);
+      result = AIValidationService.validateAndRepairSchedule(result, context.profile);
+    } catch (validationErr: any) {
+      console.warn(`[AI Validation] Initial schedule validation failed: ${validationErr.message}. Retrying once...`);
+      const store = telemetryStorage.getStore();
+      const state = store?.stateRef as any;
+      if (state) {
+        if (!state.retries) state.retries = [];
+        state.retries.push({ action: "scheduleValidationRetry", attempt: 1, error: validationErr.message });
+      }
+
+      const retryPrompt = `
+${prompt}
+
+---
+IMPORTANT: Your previous response failed structural validation with the following error:
+"${validationErr.message}"
+
+Please fix this issue, ensure all days have exactly 1 date and a workBlocks array, and respond again in the exact requested schema.
+`;
+      const retryResponse = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
+        config: {
+          systemInstruction: systemInstruction.trim(),
+          temperature: 0.1,
+          responseMimeType: "application/json",
+          responseSchema: scheduleResponseSchema,
+        }
+      });
+
+      const retryContent = retryResponse.text;
+      if (!retryContent) throw new Error("Retry schedule response was empty");
+      result = JSON.parse(retryContent);
+
+      result = AIValidationService.validateAndRepairSchedule(result, context.profile);
+    }
+
+    return result;
   }
 
   /**

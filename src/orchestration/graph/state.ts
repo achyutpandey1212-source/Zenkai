@@ -191,6 +191,12 @@ export interface GraphState {
   // ── Context Versioning ─────────────────────────────────────────────────────
   /** Context Version (Phase 16A) */
   contextVersion?: number;
+
+  // ── Phase 18 Guardrails Telemetry ──────────────────────────────────────────
+  guardrailTriggers?: string[];
+  retries?: { action: string; attempt: number; error: string }[];
+  calendarFailures?: { action: string; error: string }[];
+  planningConflicts?: { day: string; conflict: string }[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -241,6 +247,10 @@ export function createInitialState(overrides: Partial<GraphState> & {
     checkpointIds: [],
     pluginData: {},
     aiCalls: [],
+    guardrailTriggers: [],
+    retries: [],
+    calendarFailures: [],
+    planningConflicts: [],
     ...overrides,
   };
 }

@@ -3,6 +3,8 @@ import { ContextOrchestrator } from "@/services/context-orchestrator.service";
 import { ReflectionSyncService } from "@/services/reflection-sync.service";
 import type { GraphState } from "@/orchestration/graph/state";
 import type { NormalizedUserContext } from "@/types/context.types";
+import { AIValidationService } from "@/services/ai-validation.service";
+import { telemetryStorage } from "@/lib/telemetry-context";
 
 const REFLECTION_AGENT_SYSTEM_PROMPT = `
 You are the Reflection Engine Agent for Zenkai.
@@ -89,6 +91,62 @@ Ensure that:
 - Evolution reasons are detailed and explain the logic.
 `;
 
+      const reflectionSchema: any = {
+        type: "OBJECT",
+        properties: {
+          reflectionsToUpdate: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                reflectionId: { type: "STRING" },
+                title: { type: "STRING" },
+                category: { type: "STRING" },
+                content: { type: "STRING" },
+                summary: { type: "STRING" },
+                confidence: { type: "NUMBER" },
+                stability: { type: "NUMBER" },
+                importance: { type: "NUMBER" },
+                supportingMemoryIds: { type: "ARRAY", items: { type: "STRING" } },
+                supportingIdentityTraitIds: { type: "ARRAY", items: { type: "STRING" } },
+                status: { type: "STRING", enum: ["active", "deprecated"] },
+                evolutionReason: { type: "STRING" },
+                llmReasoning: { type: "STRING" }
+              },
+              required: [
+                "reflectionId", "title", "category", "content", "summary", 
+                "confidence", "stability", "importance", "supportingMemoryIds", 
+                "supportingIdentityTraitIds", "status", "evolutionReason", "llmReasoning"
+              ]
+            }
+          },
+          newReflections: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                title: { type: "STRING" },
+                category: { type: "STRING" },
+                content: { type: "STRING" },
+                summary: { type: "STRING" },
+                confidence: { type: "NUMBER" },
+                stability: { type: "NUMBER" },
+                importance: { type: "NUMBER" },
+                supportingMemoryIds: { type: "ARRAY", items: { type: "STRING" } },
+                supportingIdentityTraitIds: { type: "ARRAY", items: { type: "STRING" } },
+                llmReasoning: { type: "STRING" }
+              },
+              required: [
+                "title", "category", "content", "summary", 
+                "confidence", "stability", "importance", "supportingMemoryIds", 
+                "supportingIdentityTraitIds", "llmReasoning"
+              ]
+            }
+          }
+        },
+        required: ["reflectionsToUpdate", "newReflections"]
+      };
+
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -96,71 +154,58 @@ Ensure that:
           systemInstruction: REFLECTION_AGENT_SYSTEM_PROMPT.trim(),
           temperature: 0.2,
           responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              reflectionsToUpdate: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    reflectionId: { type: "STRING" },
-                    title: { type: "STRING" },
-                    category: { type: "STRING" },
-                    content: { type: "STRING" },
-                    summary: { type: "STRING" },
-                    confidence: { type: "NUMBER" },
-                    stability: { type: "NUMBER" },
-                    importance: { type: "NUMBER" },
-                    supportingMemoryIds: { type: "ARRAY", items: { type: "STRING" } },
-                    supportingIdentityTraitIds: { type: "ARRAY", items: { type: "STRING" } },
-                    status: { type: "STRING", enum: ["active", "deprecated"] },
-                    evolutionReason: { type: "STRING" },
-                    llmReasoning: { type: "STRING" }
-                  },
-                  required: [
-                    "reflectionId", "title", "category", "content", "summary", 
-                    "confidence", "stability", "importance", "supportingMemoryIds", 
-                    "supportingIdentityTraitIds", "status", "evolutionReason", "llmReasoning"
-                  ]
-                }
-              },
-              newReflections: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    title: { type: "STRING" },
-                    category: { type: "STRING" },
-                    content: { type: "STRING" },
-                    summary: { type: "STRING" },
-                    confidence: { type: "NUMBER" },
-                    stability: { type: "NUMBER" },
-                    importance: { type: "NUMBER" },
-                    supportingMemoryIds: { type: "ARRAY", items: { type: "STRING" } },
-                    supportingIdentityTraitIds: { type: "ARRAY", items: { type: "STRING" } },
-                    llmReasoning: { type: "STRING" }
-                  },
-                  required: [
-                    "title", "category", "content", "summary", 
-                    "confidence", "stability", "importance", "supportingMemoryIds", 
-                    "supportingIdentityTraitIds", "llmReasoning"
-                  ]
-                }
-              }
-            },
-            required: ["reflectionsToUpdate", "newReflections"]
-          }
+          responseSchema: reflectionSchema,
         }
       });
 
-      const responseText = response.text;
+      let responseText = response.text;
       if (!responseText) {
         console.warn(`[ReflectionAgent] Received empty response from Gemini.`);
         return null;
       }
 
-      return JSON.parse(responseText);
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+        result = AIValidationService.validateAndRepairReflections(result);
+      } catch (validationErr: any) {
+        console.warn(`[AI Validation] Initial reflections validation failed: ${validationErr.message}. Retrying once...`);
+        const store = telemetryStorage.getStore();
+        const state = store?.stateRef as any;
+        if (state) {
+          if (!state.retries) state.retries = [];
+          state.retries.push({ action: "reflectionValidationRetry", attempt: 1, error: validationErr.message });
+        }
+
+        const retryPrompt = `
+${prompt}
+
+---
+IMPORTANT: Your previous response failed structural validation with the following error:
+"${validationErr.message}"
+
+Please fix this issue, ensure all fields match their schema requirements, and respond again in the exact requested schema.
+`;
+        const retryResponse = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
+          config: {
+            systemInstruction: REFLECTION_AGENT_SYSTEM_PROMPT.trim(),
+            temperature: 0.1,
+            responseMimeType: "application/json",
+            responseSchema: reflectionSchema,
+          },
+        });
+
+        const retryResponseText = retryResponse.text;
+        if (!retryResponseText) throw new Error("Retry reflections response was empty");
+        responseText = retryResponseText;
+        result = JSON.parse(responseText);
+
+        result = AIValidationService.validateAndRepairReflections(result);
+      }
+
+      return result;
     } catch (err) {
       console.error("[ReflectionAgent] evaluateAndEvolveLogic failed:", err);
       return null;

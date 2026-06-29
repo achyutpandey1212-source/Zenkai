@@ -3,6 +3,8 @@ import { ContextOrchestrator } from "@/services/context-orchestrator.service";
 import { IdentitySyncService } from "@/services/identity-sync.service";
 import type { GraphState } from "@/orchestration/graph/state";
 import type { NormalizedUserContext } from "@/types/context.types";
+import { AIValidationService } from "@/services/ai-validation.service";
+import { telemetryStorage } from "@/lib/telemetry-context";
 
 const IDENTITY_AGENT_SYSTEM_PROMPT = `
 You are the Identity Engine Agent for Zenkai.
@@ -80,6 +82,44 @@ Remember:
 - New traits should be given an initial confidence based on the depth of the memories.
 `;
 
+      const identitySchema: any = {
+        type: "OBJECT",
+        properties: {
+          traitsToUpdate: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                traitId: { type: "STRING" },
+                trait: { type: "STRING" },
+                category: { type: "STRING" },
+                description: { type: "STRING" },
+                confidence: { type: "NUMBER" },
+                stability: { type: "NUMBER" },
+                evidence: { type: "STRING" },
+                status: { type: "STRING", enum: ["active", "candidate", "deprecated"] },
+              },
+              required: ["traitId", "trait", "category", "description", "confidence", "stability", "evidence", "status"],
+            },
+          },
+          newTraits: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                trait: { type: "STRING" },
+                category: { type: "STRING" },
+                description: { type: "STRING" },
+                confidence: { type: "NUMBER" },
+                evidence: { type: "STRING" },
+              },
+              required: ["trait", "category", "description", "confidence", "evidence"],
+            },
+          },
+        },
+        required: ["traitsToUpdate", "newTraits"],
+      };
+
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -87,53 +127,58 @@ Remember:
           systemInstruction: IDENTITY_AGENT_SYSTEM_PROMPT.trim(),
           temperature: 0.2,
           responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              traitsToUpdate: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    traitId: { type: "STRING" },
-                    trait: { type: "STRING" },
-                    category: { type: "STRING" },
-                    description: { type: "STRING" },
-                    confidence: { type: "NUMBER" },
-                    stability: { type: "NUMBER" },
-                    evidence: { type: "STRING" },
-                    status: { type: "STRING", enum: ["active", "candidate", "deprecated"] },
-                  },
-                  required: ["traitId", "trait", "category", "description", "confidence", "stability", "evidence", "status"],
-                },
-              },
-              newTraits: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    trait: { type: "STRING" },
-                    category: { type: "STRING" },
-                    description: { type: "STRING" },
-                    confidence: { type: "NUMBER" },
-                    evidence: { type: "STRING" },
-                  },
-                  required: ["trait", "category", "description", "confidence", "evidence"],
-                },
-              },
-            },
-            required: ["traitsToUpdate", "newTraits"],
-          },
+          responseSchema: identitySchema,
         },
       });
 
-      const responseText = response.text;
+      let responseText = response.text;
       if (!responseText) {
         console.warn(`[IdentityAgent] Received empty response from Gemini.`);
         return null;
       }
 
-      return JSON.parse(responseText);
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+        result = AIValidationService.validateAndRepairIdentity(result);
+      } catch (validationErr: any) {
+        console.warn(`[AI Validation] Initial identity validation failed: ${validationErr.message}. Retrying once...`);
+        const store = telemetryStorage.getStore();
+        const state = store?.stateRef as any;
+        if (state) {
+          if (!state.retries) state.retries = [];
+          state.retries.push({ action: "identityValidationRetry", attempt: 1, error: validationErr.message });
+        }
+
+        const retryPrompt = `
+${prompt}
+
+---
+IMPORTANT: Your previous response failed structural validation with the following error:
+"${validationErr.message}"
+
+Please fix this issue, ensure all fields match their schema requirements, and respond again in the exact requested schema.
+`;
+        const retryResponse = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
+          config: {
+            systemInstruction: IDENTITY_AGENT_SYSTEM_PROMPT.trim(),
+            temperature: 0.1,
+            responseMimeType: "application/json",
+            responseSchema: identitySchema,
+          },
+        });
+
+        const retryResponseText = retryResponse.text;
+        if (!retryResponseText) throw new Error("Retry identity response was empty");
+        responseText = retryResponseText;
+        result = JSON.parse(responseText);
+
+        result = AIValidationService.validateAndRepairIdentity(result);
+      }
+
+      return result;
     } catch (err) {
       console.error("[IdentityAgent] evaluateAndEvolveLogic failed:", err);
       return null;

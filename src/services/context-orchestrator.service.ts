@@ -84,11 +84,11 @@ export class ContextOrchestrator {
     const [
       userDoc,
       profileDoc,
-      allTraits,
+      rawAllTraits,
       pendingProposals,
-      activePlanTree,
-      activeReflections,
-      activeSchedule,
+      rawActivePlanTree,
+      rawActiveReflections,
+      rawActiveSchedule,
     ] = await Promise.all([
       User.findOne({ firebaseUid: uid }).lean(),
       ProfileRepository.findByFirebaseUid(uid),
@@ -100,6 +100,35 @@ export class ContextOrchestrator {
         .populate("days.workBlocks.tasks")
         .lean(),
     ]);
+
+    // Apply Context Guardrails on retrieved documents
+    // 1a. Filter invalid identity traits and enforce confidence threshold >= 0.5
+    const validCategories = ["core_identity", "aspiration", "principle", "behavior_pattern", "current_state"];
+    const validStatuses = ["candidate", "active"];
+    const allTraits = (rawAllTraits || []).filter((t: any) => {
+      if (!t.trait || !t.trait.trim()) return false;
+      if (!validCategories.includes(t.category)) return false;
+      if (!validStatuses.includes(t.status)) return false;
+      if ((t.confidence ?? 0.5) < 0.5) return false;
+      return true;
+    });
+
+    // 1b. Active plan status check - archived plans never leak
+    const activePlanTree = (rawActivePlanTree && rawActivePlanTree.status === "active") ? rawActivePlanTree : null;
+
+    // 1c. Reflections - enforce confidence threshold >= 0.5
+    const activeReflections = (rawActiveReflections || []).filter((r: any) => (r.confidence ?? 0.8) >= 0.5);
+
+    // 1d. Weekly Schedule stale check
+    const timezone = userDoc?.briefSettings?.timezone || "UTC";
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+    let activeSchedule = rawActiveSchedule;
+    if (activeSchedule) {
+      if (activeSchedule.status !== "ACTIVE" || (activeSchedule.validTo && todayStr > activeSchedule.validTo)) {
+        console.warn(`[Context Guardrails] Ignoring stale/archived weekly schedule: validTo is ${activeSchedule.validTo}, today is ${todayStr}`);
+        activeSchedule = null;
+      }
+    }
 
     // 2. Classify intent and profile
     const currentIntent = ContextRouterService.classifyIntent(userMessage || "", parentIntent || trigger);
@@ -150,6 +179,20 @@ export class ContextOrchestrator {
     } else {
       rawMemories = await MemoryRepository.findApprovedByUser(uid);
     }
+
+    // Apply Context Guardrails on memories: status approved, confidence >= 0.5, and deduplicate
+    rawMemories = (rawMemories || []).filter((m: any) => m.status === "approved" && (m.confidence ?? 0.8) >= 0.5);
+
+    const seenMemories = new Set<string>();
+    rawMemories = rawMemories.filter((m: any) => {
+      const summaryKey = (m.summary || m.content || "").trim().toLowerCase();
+      if (!summaryKey) return false;
+      if (seenMemories.has(summaryKey)) {
+        return false;
+      }
+      seenMemories.add(summaryKey);
+      return true;
+    });
 
     // 4. Selection & Relevance Pruning (Tag-Based)
     const droppedElements: { type: "memory" | "reflection" | "trait" | "section"; idOrName: string; reason: string }[] = [];
@@ -207,7 +250,7 @@ export class ContextOrchestrator {
     }
 
     // 5. Normalization mapping
-    const timezone = userDoc?.briefSettings?.timezone || "UTC";
+    // timezone is already declared above
 
     const normalizedProfile: NormalizedProfile = {
       profession: profileDoc?.profession,
