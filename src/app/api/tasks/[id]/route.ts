@@ -62,13 +62,13 @@ export async function PATCH(
     // Trigger recursive progress recalculation
     await PlanningAgent.recalculateProgress(user.firebaseUid, id);
 
-    // Notify BehaviorEngine
+    // Notify BehaviorEngine (async, do not await to keep response sub-second)
     if (status === "completed") {
-      await BehaviorEngine.updateFromTaskCompletion(user.firebaseUid, id).catch(err =>
+      BehaviorEngine.updateFromTaskCompletion(user.firebaseUid, id).catch(err =>
         console.error("[TaskPatchRoute] Failed to update behavior profile from completion:", err)
       );
     } else if (status === "skipped") {
-      await BehaviorEngine.updateFromTaskSkip(user.firebaseUid, id).catch(err =>
+      BehaviorEngine.updateFromTaskSkip(user.firebaseUid, id).catch(err =>
         console.error("[TaskPatchRoute] Failed to update behavior profile from skip:", err)
       );
     }

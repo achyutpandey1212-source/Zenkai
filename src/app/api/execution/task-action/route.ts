@@ -7,6 +7,7 @@ import { PlanningAgent } from "@/agents/planning-agent";
 import { dbConnect } from "@/lib/mongodb";
 import { Types } from "mongoose";
 import { BehaviorEngine } from "@/services/behavior-engine.service";
+import { DailyAgendaRepository } from "@/repositories/daily-agenda.repository";
 
 export const dynamic = "force-dynamic";
 
@@ -48,8 +49,8 @@ export async function POST(request: Request) {
       // Recalculate progress for the planning structure recursively
       await PlanningAgent.recalculateProgress(user.firebaseUid, taskId);
 
-      // Notify BehaviorEngine
-      await BehaviorEngine.updateFromTaskCompletion(user.firebaseUid, taskId).catch(err =>
+      // Notify BehaviorEngine (async, do not await to keep response sub-second)
+      BehaviorEngine.updateFromTaskCompletion(user.firebaseUid, taskId).catch(err =>
         console.error("[TaskActionRoute] Failed to update behavior profile from completion:", err)
       );
     } else if (action === "defer") {
@@ -68,8 +69,8 @@ export async function POST(request: Request) {
       task.lastExecutedAt = new Date();
       await task.save();
 
-      // Notify BehaviorEngine
-      await BehaviorEngine.updateFromTaskSkip(user.firebaseUid, taskId).catch(err =>
+      // Notify BehaviorEngine (async, do not await to keep response sub-second)
+      BehaviorEngine.updateFromTaskSkip(user.firebaseUid, taskId).catch(err =>
         console.error("[TaskActionRoute] Failed to update behavior profile from skip:", err)
       );
     } else if (action === "reschedule") {
@@ -92,8 +93,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
     }
 
-    // Trigger daily agenda rebalancing for today
-    const updatedAgenda = await ExecutionAgent.rebalanceAgenda(user.firebaseUid, targetDate);
+    // Fetch the current agenda with the updated populated tasks instantly
+    const updatedAgenda = await DailyAgendaRepository.findByUserAndDate(user.firebaseUid, targetDate);
+
+    // Queue rebalancing and calendar sync in the background so it doesn't block the UI
+    if (action === "defer" || action === "remove") {
+      // For deferrals or removals, we rebalance today's agenda in the background
+      ExecutionAgent.rebalanceAgenda(user.firebaseUid, targetDate).catch(err =>
+        console.error("[TaskActionRoute] Background rebalance failed:", err)
+      );
+    } else {
+      // Trigger calendar sync in the background
+      const { CalendarSyncService } = await import("@/services/calendar-sync.service");
+      CalendarSyncService.queueSync(user.firebaseUid).catch(err =>
+        console.error("[TaskActionRoute] Background calendar sync failed:", err)
+      );
+    }
 
     return NextResponse.json({
       success: true,

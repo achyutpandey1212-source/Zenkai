@@ -111,8 +111,34 @@ export default function Home({
 
   const handleToggleTask = async (taskId: string, currentStatus: string) => {
     const isCompleted = currentStatus === "completed";
+    const nextStatus = isCompleted ? "todo" : "completed";
     const nextAction = isCompleted ? "reschedule" : "complete";
     const dateStr = agenda?.date || new Date().toISOString().split("T")[0];
+
+    // Backup current agenda state in case we need to roll back
+    const previousAgenda = agenda;
+
+    // Optimistically update the UI instantly
+    if (agenda) {
+      setAgenda((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          workBlocks: (prev.workBlocks || []).map((block: any) => ({
+            ...block,
+            tasks: (block.tasks || []).map((task: any) =>
+              task._id === taskId ? { ...task, status: nextStatus } : task
+            ),
+          })),
+          optionalTasks: (prev.optionalTasks || []).map((task: any) =>
+            task._id === taskId ? { ...task, status: nextStatus } : task
+          ),
+          stretchGoals: (prev.stretchGoals || []).map((task: any) =>
+            task._id === taskId ? { ...task, status: nextStatus } : task
+          ),
+        };
+      });
+    }
 
     try {
       // Pulse the orb
@@ -141,10 +167,19 @@ export default function Home({
               setOrbState("idle");
             }
           }, 800);
+        } else {
+          // Rollback on server failure
+          setAgenda(previousAgenda);
+          setOrbState("idle");
         }
+      } else {
+        // Rollback on network error
+        setAgenda(previousAgenda);
+        setOrbState("idle");
       }
     } catch (err) {
       console.error("Failed to toggle task on home dashboard:", err);
+      setAgenda(previousAgenda);
       setOrbState("idle");
     }
   };

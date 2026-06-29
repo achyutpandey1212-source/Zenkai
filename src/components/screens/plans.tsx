@@ -151,6 +151,9 @@ export default function Plans({ planDataVersion }: { planDataVersion?: number })
       }
     }
 
+    // Backup plans state for rollback
+    const previousPlans = plans;
+
     try {
       // Optimistic update
       setPlans((prevPlans) =>
@@ -202,9 +205,12 @@ export default function Plans({ planDataVersion }: { planDataVersion?: number })
       if (res.ok) {
         // Refetch to synchronize all calculated progress
         await fetchPlans();
+      } else {
+        setPlans(previousPlans);
       }
     } catch (err) {
       console.error("Failed to update task:", err);
+      setPlans(previousPlans);
     }
   };
  
