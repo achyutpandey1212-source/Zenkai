@@ -100,9 +100,7 @@ Tailwind
 
 Shadcn
 
-Prisma
-
-PostgreSQL
+MongoDB
 
 Redis
 
