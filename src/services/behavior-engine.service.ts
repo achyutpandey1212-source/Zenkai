@@ -4,7 +4,7 @@ import { Task } from "@/models/Task";
 import { Plan } from "@/models/Plan";
 import { Milestone } from "@/models/Milestone";
 import { Goal } from "@/models/Goal";
-import { DailyAgenda } from "@/models/DailyAgenda";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { BriefingLog } from "@/models/BriefingLog";
 import { CalendarSyncLog } from "@/models/CalendarSyncLog";
 import { Reflection } from "@/models/Reflection";
@@ -97,14 +97,23 @@ export class BehaviorEngine {
     const completionRate = completionRateDenominator > 0 ? (completedCount / completionRateDenominator) * 100 : 0;
 
     // 3. Productivity & Focus Time
-    const agendas = await DailyAgenda.find({ firebaseUid: uid }).lean();
-    const dailyAgendaGenerated = agendas.length;
-    const totalPlannedFocusMinutes = agendas.reduce((sum, a) => sum + (a.estimatedFocusTime || 0), 0);
-    const averagePlannedHours = dailyAgendaGenerated > 0 ? (totalPlannedFocusMinutes / dailyAgendaGenerated) / 60 : 0;
+    const schedules = await WeeklyExecutionSchedule.find({ firebaseUid: uid }).lean();
+    let totalPlannedDays = 0;
+    let totalPlannedFocusMinutes = 0;
+    
+    schedules.forEach((schedule: any) => {
+      schedule.days.forEach((day: any) => {
+        totalPlannedDays++;
+        const dayMinutes = day.plannedFocusHours * 60;
+        totalPlannedFocusMinutes += (isNaN(dayMinutes) ? 0 : dayMinutes);
+      });
+    });
+
+    const averagePlannedHours = totalPlannedDays > 0 ? (totalPlannedFocusMinutes / totalPlannedDays) / 60 : 0;
 
     const totalCompletedFocusMinutes = completedTasks.reduce((sum, t) => sum + (t.estimatedMinutes || 30), 0); // Default to 30 min
-    const averageCompletedHours = dailyAgendaGenerated > 0 
-      ? (totalCompletedFocusMinutes / dailyAgendaGenerated) / 60 
+    const averageCompletedHours = totalPlannedDays > 0 
+      ? (totalCompletedFocusMinutes / totalPlannedDays) / 60 
       : (completedCount > 0 ? (totalCompletedFocusMinutes / completedCount) / 60 : 0);
 
     const workCompletionRatio = averagePlannedHours > 0 ? averageCompletedHours / averagePlannedHours : 0;
@@ -231,25 +240,30 @@ export class BehaviorEngine {
       : 0;
 
     // 10. Execution Reliability
-    let dailyAgendaCompleted = 0;
-    let totalAgendaCompletionsSum = 0;
-    for (const agenda of agendas) {
-      const taskIds = (agenda.workBlocks || []).flatMap(wb => (wb.tasks || []).map(t => t.toString()));
-      if (taskIds.length === 0) {
-        totalAgendaCompletionsSum += 100;
-        dailyAgendaCompleted++;
-        continue;
-      }
-      const agendaTasks = allTasks.filter(t => taskIds.includes(t._id.toString()));
-      const comp = agendaTasks.filter(t => t.status === "completed").length;
-      const completionPercentage = (comp / agendaTasks.length) * 100;
-      totalAgendaCompletionsSum += completionPercentage;
+    let totalScheduleDays = 0;
+    let scheduleDaysCompleted = 0;
+    let totalScheduleCompletionsSum = 0;
+    
+    for (const schedule of schedules) {
+      for (const day of schedule.days) {
+        totalScheduleDays++;
+        const taskIds = (day.workBlocks || []).flatMap((wb: any) => (wb.tasks || []).map((t: any) => t.toString()));
+        if (taskIds.length === 0) {
+          totalScheduleCompletionsSum += 100;
+          scheduleDaysCompleted++;
+          continue;
+        }
+        const dayTasks = allTasks.filter(t => taskIds.includes(t._id.toString()));
+        const comp = dayTasks.filter(t => t.status === "completed").length;
+        const completionPercentage = (comp / dayTasks.length) * 100;
+        totalScheduleCompletionsSum += completionPercentage;
 
-      if (comp === agendaTasks.length) {
-        dailyAgendaCompleted++;
+        if (comp === dayTasks.length) {
+          scheduleDaysCompleted++;
+        }
       }
     }
-    const averageAgendaCompletion = dailyAgendaGenerated > 0 ? totalAgendaCompletionsSum / dailyAgendaGenerated : 0;
+    const averageAgendaCompletion = totalScheduleDays > 0 ? totalScheduleCompletionsSum / totalScheduleDays : 0;
 
     // 11. Activity (Streak Recalculation)
     const { currentStreak, longestStreak, daysActive, lastActivity, activeDates } = await this.recalculateStreakMetrics(uid, timezone);
@@ -264,7 +278,7 @@ export class BehaviorEngine {
     profile.Planning = { plansCreated, plansCompleted, plansAbandoned, averagePlanLifetime };
     profile.Calendar = { calendarUsageDays, calendarCompletionRate };
     profile.Briefings = { morningBriefOpenRate, eveningBriefOpenRate };
-    profile.Execution = { dailyAgendaGenerated, dailyAgendaCompleted, averageAgendaCompletion };
+    profile.Execution = { dailyAgendaGenerated: totalScheduleDays, dailyAgendaCompleted: scheduleDaysCompleted, averageAgendaCompletion };
     profile.Metadata = { engineVersion: "1.0.0", lastComputed: new Date() };
 
     await profile.save();
@@ -319,10 +333,12 @@ export class BehaviorEngine {
       }
     });
 
-    // Daily Agendas generated
-    const agendas = await DailyAgenda.find({ firebaseUid: uid }).select("date").lean();
-    agendas.forEach(a => {
-      if (a.date) activityDates.add(a.date); // DailyAgenda date is already YYYY-MM-DD
+    // Weekly Schedules generated
+    const schedules = await WeeklyExecutionSchedule.find({ firebaseUid: uid }).select("days").lean();
+    schedules.forEach((s: any) => {
+      s.days.forEach((d: any) => {
+        if (d.date) activityDates.add(d.date); 
+      });
     });
 
     // Reflections created

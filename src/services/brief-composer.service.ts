@@ -1,6 +1,6 @@
 import { User } from "@/models/User";
 import { ProfileRepository } from "@/repositories/profile.repository";
-import { DailyAgendaRepository } from "@/repositories/daily-agenda.repository";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { PlanRepository } from "@/repositories/plan.repository";
 import { Task } from "@/models/Task";
 import { Goal } from "@/models/Goal";
@@ -26,7 +26,8 @@ export class BriefComposerService {
     const dateStr = new Date(localTimeStr).toISOString().split("T")[0];
 
     const profile = await ProfileRepository.findByFirebaseUid(uid);
-    const agenda = await DailyAgendaRepository.findByUserAndDate(uid, dateStr);
+    const schedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" }).populate("days.workBlocks.tasks").lean();
+    const agenda = schedule?.days.find((d: any) => d.date === dateStr);
     const plansTree = await PlanRepository.findFullTree(uid);
 
     const priorities: string[] = [];
@@ -36,14 +37,14 @@ export class BriefComposerService {
 
     // Agenda & top priorities
     if (agenda && agenda.workBlocks) {
-      agenda.workBlocks.forEach((wb) => {
+      agenda.workBlocks.forEach((wb: any) => {
         agendaBlocks.push({
           time: `${wb.startTime} - ${wb.endTime}`,
           title: wb.title,
         });
       });
-      if (agenda.focus) {
-        priorities.push(agenda.focus);
+      if (agenda.focusTheme) {
+        priorities.push(agenda.focusTheme);
       }
     }
 

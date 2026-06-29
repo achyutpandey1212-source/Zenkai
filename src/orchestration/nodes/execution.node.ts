@@ -1,23 +1,24 @@
 /**
  * Execution Node
  *
- * Foreground node responsible for building or rebalancing the user's daily agenda.
+ * Foreground node responsible for building or rebalancing the user's weekly schedule.
  * Only runs when the routing decision includes "execution" in the foreground list.
  *
  * Responsibilities:
- * - Force-regenerate agenda if planning just ran (fresh plan = fresh agenda)
- * - Rebalance agenda when intent is task_update
- * - Lazy-load agenda for execution_inquiry intent (only if not already present)
+ * - Force-regenerate schedule if planning just ran (fresh plan = fresh schedule)
+ * - Rebalance schedule when intent is task_update
+ * - Lazy-load schedule for execution_inquiry intent (only if not already present)
  * - Emit AgendaUpdated / AgendaCreated internal events
  * - Push real-time status events to the streaming controller
  */
 
 import type { NodeResult } from "../graph/types";
 import type { GraphState } from "../graph/state";
-import { ExecutionAgent } from "@/agents/execution-agent";
-import { DailyAgendaRepository } from "@/repositories/daily-agenda.repository";
+import { PlanningAgent } from "@/agents/planning-agent";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
+import { PlanRepository } from "@/repositories/plan.repository";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stream helpers
@@ -76,7 +77,7 @@ export async function executionNode(
     state,
     "execution",
     "running",
-    "Building your daily agenda\u2026"
+    "Building your weekly schedule…"
   );
 
   console.log(
@@ -87,64 +88,82 @@ export async function executionNode(
     const { uid, todayStr } = state;
     const intentType = state.intent?.type ?? "none";
 
-    let agenda: unknown | null = null;
+    let schedule: unknown | null = null;
     let agendaBuilt = false;
     let agendaAction: "created" | "regenerated" = "created";
     let callsMade = 0;
 
-    // ── Branch 1: Planning just succeeded — force-regenerate so agenda reflects new plan
+    // Helper to get active plan ID for schedule generation
+    const getActivePlanId = async () => {
+      const activePlans = await PlanRepository.findFullTree(uid);
+      return activePlans.length > 0 ? activePlans[0]._id.toString() : null;
+    };
+
+    // ── Branch 1: Planning just succeeded — force-regenerate so schedule reflects new plan
     if (state.planResult?.success === true) {
-      console.log(`[ExecutionNode] Plan was created/updated — force-regenerating agenda.`);
+      console.log(`[ExecutionNode] Plan was created/updated — force-regenerating schedule.`);
       emitStatusToStream(
         state,
         "execution",
         "running",
-        "New plan detected \u2014 rebuilding your agenda from scratch\u2026"
+        "New plan detected — rebuilding your schedule from scratch…"
       );
-      agenda = await ExecutionAgent.getOrCreateDailyAgenda(uid, todayStr, true, state);
-      agendaBuilt = agenda !== null;
-      agendaAction = "regenerated";
-      callsMade = agendaBuilt ? 1 : 0;
+      
+      const planId = await getActivePlanId();
+      if (planId) {
+        schedule = await PlanningAgent.generateWeeklySchedule(uid, planId);
+        agendaBuilt = schedule !== null;
+        agendaAction = "regenerated";
+        callsMade = agendaBuilt ? 1 : 0;
+      }
     }
 
-    // ── Branch 2: Task update intent — deterministically reload agenda from DB without calling Gemini
+    // ── Branch 2: Task update intent — deterministically reload schedule from DB
     else if (intentType === "task_update") {
-      console.log(`[ExecutionNode] Task update detected — deterministically reloading daily agenda.`);
+      console.log(`[ExecutionNode] Task update detected — reloading schedule.`);
       emitStatusToStream(
         state,
         "execution",
         "running",
-        "Task updated \u2014 updating daily agenda\u2026"
+        "Task updated — updating schedule…"
       );
-      agenda = await DailyAgendaRepository.findByUserAndDate(uid, todayStr);
-      agendaBuilt = false; // 0 Gemini calls
+      schedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" }).lean();
+      agendaBuilt = false; // 0 AI calls
       agendaAction = "created";
       callsMade = 0;
     }
 
-    // ── Branch 3: Execution inquiry + no agenda yet — lazy-load agenda
-    else if (intentType === "execution_inquiry" && state.todayAgenda === null) {
-      console.log(`[ExecutionNode] Execution inquiry — loading agenda for today.`);
-      const exists = await DailyAgendaRepository.findByUserAndDate(uid, todayStr);
+    // ── Branch 3: Execution inquiry + no schedule yet — lazy-load schedule
+    else if (intentType === "execution_inquiry" && state.todaySchedule === null) {
+      console.log(`[ExecutionNode] Execution inquiry — loading schedule.`);
+      const exists = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" }).lean();
       
-      agenda = await ExecutionAgent.getOrCreateDailyAgenda(uid, todayStr, false, state);
-      agendaBuilt = agenda !== null;
+      if (!exists) {
+        const planId = await getActivePlanId();
+        if (planId) {
+          schedule = await PlanningAgent.generateWeeklySchedule(uid, planId);
+        }
+      } else {
+        schedule = exists;
+      }
+      
+      agendaBuilt = schedule !== null;
       agendaAction = "created";
       callsMade = exists ? 0 : (agendaBuilt ? 1 : 0);
     }
 
-    // ── Branch 4: Agenda already in state — nothing to do
-    else if (state.todayAgenda !== null) {
-      console.log(`[ExecutionNode] Agenda already loaded — no action needed.`);
+    // ── Branch 4: Schedule already in state — nothing to do
+    else if (state.todaySchedule !== null) {
+      console.log(`[ExecutionNode] Schedule already loaded — no action needed.`);
     }
 
-    // ── Resolve final agenda value (prefer freshly-built, fall back to existing)
-    const todayAgenda = agenda ?? state.todayAgenda;
+    // ── Resolve final schedule value
+    const todaySchedule = schedule ?? state.todaySchedule;
 
     // ── Build internal events
     const newEvents: InternalEvent[] = [];
 
-    if (agendaBuilt && agenda !== null) {
+    if (agendaBuilt && schedule !== null) {
       const eventName =
         agendaAction === "regenerated" ? ZenkaiEvent.AgendaUpdated : ZenkaiEvent.AgendaCreated;
 
@@ -164,22 +183,22 @@ export async function executionNode(
         "execution",
         "completed",
         agendaAction === "regenerated"
-          ? "Agenda rebalanced for today."
-          : "Today\u2019s agenda is ready."
+          ? "Schedule rebalanced for today."
+          : "Today's schedule is ready."
       );
     } else {
       emitStatusToStream(
         state,
         "execution",
         "skipped",
-        "No agenda changes required."
+        "No schedule changes required."
       );
     }
 
     return {
       patch: {
         agendaBuilt,
-        todayAgenda,
+        todaySchedule,
         emittedEvents: [...state.emittedEvents, ...newEvents],
         aiCallsCount: state.aiCallsCount + callsMade,
       },
@@ -188,8 +207,8 @@ export async function executionNode(
         duration: Date.now() - startedAt,
         skipped: false,
         reason: agendaBuilt
-          ? `Agenda ${agendaAction} for ${todayStr} | Calls: ${callsMade}`
-          : `No agenda action taken | intent=${intentType} | Calls: ${callsMade}`,
+          ? `Schedule ${agendaAction} for ${todayStr} | Calls: ${callsMade}`
+          : `No schedule action taken | intent=${intentType} | Calls: ${callsMade}`,
       },
     };
   } catch (err) {
@@ -199,7 +218,7 @@ export async function executionNode(
       state,
       "execution",
       "skipped",
-      "Agenda could not be built \u2014 your session continues normally."
+      "Schedule could not be built — your session continues normally."
     );
 
     console.error(`[ExecutionNode] Error: ${errorMessage}`);
@@ -212,7 +231,7 @@ export async function executionNode(
         success: false,
         duration: Date.now() - startedAt,
         skipped: false,
-        reason: `ExecutionAgent threw: ${errorMessage}`,
+        reason: `ExecutionNode threw: ${errorMessage}`,
       },
     };
   }

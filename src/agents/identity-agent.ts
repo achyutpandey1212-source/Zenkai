@@ -55,8 +55,8 @@ export class IdentityAgent {
     try {
       console.log(`[IdentityAgent] Starting identity evolution for user: ${uid}`);
 
-      // 1. Fetch memories, current traits, and proposals — reuse GraphState where possible
-      const approvedMemories = state?.memoryContext?.memories ?? await MemoryRepository.findApprovedByUser(uid);
+      // 1. Fetch memories, current traits, and proposals
+      const approvedMemories = await MemoryRepository.findApprovedByUser(uid);
       const activeTraits = (state?.activeTraits && state.activeTraits.length > 0)
         ? state.activeTraits
         : await IdentityRepository.findActiveByUser(uid);

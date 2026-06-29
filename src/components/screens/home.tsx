@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import CompanionOrb, { OrbState } from "../ui/companion-orb";
-import { Sparkles, ArrowRight, BookOpen, CheckSquare, Compass } from "lucide-react";
+import { Sparkles, ArrowRight, BookOpen, CheckSquare, Compass, Calendar as CalendarIcon } from "lucide-react";
 
 interface HomeProps {
   sendMessage: (text: string) => Promise<void>;
@@ -31,7 +31,11 @@ export default function Home({
 }: HomeProps) {
   const [query, setQuery] = useState("");
   const [proactiveData, setProactiveData] = useState<ProactiveData | null>(null);
-  const [agenda, setAgenda] = useState<any | null>(null);
+  
+  // Weekly Schedule State
+  const [weeklySchedule, setWeeklySchedule] = useState<any | null>(null);
+  const [selectedDateStr, setSelectedDateStr] = useState<string>("");
+  const [agenda, setAgenda] = useState<any | null>(null); // Derived from weeklySchedule + selectedDateStr
   
   const [loadingProactive, setLoadingProactive] = useState(true);
   const [loadingAgenda, setLoadingAgenda] = useState(true);
@@ -46,10 +50,9 @@ export default function Home({
     "Reflect on Today",
   ];
 
-  // Fetch proactive details
   const fetchProactiveData = async () => {
     try {
-      const res = await fetch("/api/plans/proactive");
+      const res = await fetch("/api/plans/proactive", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.proactiveData) {
@@ -63,18 +66,29 @@ export default function Home({
     }
   };
 
-  // Fetch daily agenda details
-  const fetchAgenda = async () => {
+  const fetchWeeklySchedule = async () => {
     try {
-      const res = await fetch("/api/execution/agenda");
+      const res = await fetch("/api/execution/agenda", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
-          setAgenda(data.agenda);
+        if (data.success && data.weeklySchedule) {
+          setWeeklySchedule(data.weeklySchedule);
+          
+          // Set initial date if not set
+          if (!selectedDateStr) {
+            // Try to find today
+            const todayStr = new Date().toLocaleDateString("en-CA");
+            const hasToday = data.weeklySchedule.days.some((d: any) => d.date === todayStr);
+            if (hasToday) {
+              setSelectedDateStr(todayStr);
+            } else if (data.weeklySchedule.days.length > 0) {
+              setSelectedDateStr(data.weeklySchedule.days[0].date);
+            }
+          }
         }
       }
     } catch (err) {
-      console.error("Failed to load daily agenda on home:", err);
+      console.error("Failed to load weekly schedule:", err);
     } finally {
       setLoadingAgenda(false);
     }
@@ -82,7 +96,7 @@ export default function Home({
 
   useEffect(() => {
     fetchProactiveData();
-    fetchAgenda();
+    fetchWeeklySchedule();
 
     const hour = new Date().getHours();
     if (hour >= 5 && hour < 12) {
@@ -96,7 +110,14 @@ export default function Home({
     }
   }, []);
 
-  // Update Orb behavior based on agenda completion on mount/load
+  // Derive active agenda block from schedule
+  useEffect(() => {
+    if (weeklySchedule && selectedDateStr) {
+      const dayBlock = weeklySchedule.days.find((d: any) => d.date === selectedDateStr);
+      setAgenda(dayBlock || null);
+    }
+  }, [weeklySchedule, selectedDateStr]);
+
   useEffect(() => {
     if (agenda) {
       const totalCritical = agenda.workBlocks.reduce((acc: number, wb: any) => acc + wb.tasks.length, 0);
@@ -113,37 +134,32 @@ export default function Home({
     const isCompleted = currentStatus === "completed";
     const nextStatus = isCompleted ? "todo" : "completed";
     const nextAction = isCompleted ? "reschedule" : "complete";
-    const dateStr = agenda?.date || new Date().toISOString().split("T")[0];
+    const dateStr = selectedDateStr || new Date().toISOString().split("T")[0];
 
-    // Backup current agenda state in case we need to roll back
-    const previousAgenda = agenda;
+    const previousWeekly = weeklySchedule;
 
-    // Optimistically update the UI instantly
-    if (agenda) {
-      setAgenda((prev: any) => {
+    // Optimistically update
+    if (weeklySchedule) {
+      setWeeklySchedule((prev: any) => {
         if (!prev) return prev;
-        return {
-          ...prev,
-          workBlocks: (prev.workBlocks || []).map((block: any) => ({
-            ...block,
-            tasks: (block.tasks || []).map((task: any) =>
-              task._id === taskId ? { ...task, status: nextStatus } : task
-            ),
-          })),
-          optionalTasks: (prev.optionalTasks || []).map((task: any) =>
-            task._id === taskId ? { ...task, status: nextStatus } : task
-          ),
-          stretchGoals: (prev.stretchGoals || []).map((task: any) =>
-            task._id === taskId ? { ...task, status: nextStatus } : task
-          ),
-        };
+        const newDays = prev.days.map((d: any) => {
+          if (d.date !== dateStr) return d;
+          return {
+            ...d,
+            workBlocks: (d.workBlocks || []).map((block: any) => ({
+              ...block,
+              tasks: (block.tasks || []).map((task: any) =>
+                task._id === taskId ? { ...task, status: nextStatus } : task
+              ),
+            })),
+          };
+        });
+        return { ...prev, days: newDays };
       });
     }
 
     try {
-      // Pulse the orb
       setOrbState("completion");
-
       const res = await fetch("/api/execution/task-action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -152,39 +168,28 @@ export default function Home({
 
       if (res.ok) {
         const data = await res.json();
-        if (data.success && data.agenda) {
-          setAgenda(data.agenda);
+        if (data.success) {
+          // Task toggling doesn't return the full weekly schedule right now (it returns daily agenda), 
+          // so we should fetch the full schedule to be safe
+          await fetchWeeklySchedule();
           await fetchProactiveData();
           
-          // Re-evaluate complete state
-          const totalCritical = data.agenda.workBlocks.reduce((acc: number, wb: any) => acc + wb.tasks.length, 0);
-          const completedCritical = data.agenda.workBlocks.reduce((acc: number, wb: any) => acc + wb.tasks.filter((t: any) => t.status === "completed").length, 0);
-          
-          setTimeout(() => {
-            if (totalCritical > 0 && completedCritical === totalCritical) {
-              setOrbState("completion");
-            } else {
-              setOrbState("idle");
-            }
-          }, 800);
+          setTimeout(() => setOrbState("idle"), 800);
         } else {
-          // Rollback on server failure
-          setAgenda(previousAgenda);
+          setWeeklySchedule(previousWeekly);
           setOrbState("idle");
         }
       } else {
-        // Rollback on network error
-        setAgenda(previousAgenda);
+        setWeeklySchedule(previousWeekly);
         setOrbState("idle");
       }
     } catch (err) {
-      console.error("Failed to toggle task on home dashboard:", err);
-      setAgenda(previousAgenda);
+      console.error("Failed to toggle task:", err);
+      setWeeklySchedule(previousWeekly);
       setOrbState("idle");
     }
   };
 
-  // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -206,7 +211,6 @@ export default function Home({
     setQuery("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
-    // Switch to Companion Chat first, then send message
     if (onNavigate) {
       onNavigate("chat");
     }
@@ -226,7 +230,6 @@ export default function Home({
     textareaRef.current?.focus();
   };
 
-  // Calculate task stats for progress ring
   const getTaskStats = () => {
     if (!agenda) return { total: 0, completed: 0, percentage: 0 };
     let total = 0;
@@ -236,29 +239,18 @@ export default function Home({
       total++;
       if (t.status === "completed") completed++;
     }));
-    agenda.optionalTasks.forEach((t: any) => {
-      total++;
-      if (t.status === "completed") completed++;
-    });
-    agenda.stretchGoals.forEach((t: any) => {
-      total++;
-      if (t.status === "completed") completed++;
-    });
 
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { total, completed, percentage };
   };
 
   const stats = getTaskStats();
-  // SVG progress variables
   const radius = 32;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (stats.percentage / 100) * circumference;
 
   return (
     <div className="relative h-screen max-h-screen w-full overflow-y-auto bg-background scrollbar-none flex flex-col items-center">
-
-      {/* ── Temple Background ── */}
       <div
         className="fixed right-0 top-0 h-full w-full md:w-1/2 pointer-events-none select-none z-0"
         style={{
@@ -276,16 +268,12 @@ export default function Home({
         />
       </div>
 
-      {/* ── Main Layout ── */}
       <div className="relative z-10 w-full max-w-5xl flex flex-col items-center min-h-screen px-4 md:px-6">
-
-        {/* Top elastic spacer */}
         <div
           className="shrink-0 transition-all duration-700 ease-in-out"
           style={{ height: "clamp(20px, 4vh, 36px)" }}
         />
 
-        {/* Companion Orb + Greeting */}
         <div className="shrink-0 flex flex-col items-center w-full">
           <CompanionOrb
             state={orbState}
@@ -299,10 +287,10 @@ export default function Home({
             }`}
           >
             {orbState === "idle" && "Zenkai Listening"}
-            {orbState === "completion" && "Day Complete — Golden Glow"}
-            {orbState === "execution" && "Generating Agenda..."}
-            {orbState === "listening" && "Zenkai Listening..."}
-            {orbState === "typing" && "Zenkai Listening..."}
+            {orbState === "completion" && "Day Complete"}
+            {orbState === "execution" && "Thinking..."}
+            {orbState === "listening" && "Listening..."}
+            {orbState === "typing" && "Listening..."}
             {orbState === "thinking" && "Understanding..."}
             {orbState === "writing" && "Writing response..."}
           </span>
@@ -317,58 +305,64 @@ export default function Home({
           </div>
         </div>
 
-        {/* Proactive Daily Dashboard Skeleton Loader */}
+        {/* 7-Day Week Selector */}
+        {!loadingAgenda && weeklySchedule && (
+          <div className="w-full flex justify-center mt-8 mb-2">
+            <div className="flex gap-2 p-1.5 bg-secondary/30 border border-border/20 rounded-2xl overflow-x-auto scrollbar-none snap-x">
+              {weeklySchedule.days.map((day: any) => {
+                const isSelected = day.date === selectedDateStr;
+                const d = new Date(day.date + "T12:00:00Z");
+                const dayName = d.toLocaleDateString("en-US", { weekday: "short" });
+                const dateNum = d.toLocaleDateString("en-US", { day: "numeric" });
+                
+                return (
+                  <button
+                    key={day.date}
+                    onClick={() => setSelectedDateStr(day.date)}
+                    className={`snap-center flex flex-col items-center justify-center min-w-[56px] h-[64px] rounded-xl transition-all duration-200 ${
+                      isSelected 
+                        ? "bg-accent text-primary-foreground shadow-sm" 
+                        : "bg-transparent text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                    }`}
+                  >
+                    <span className="font-sans text-[10px] font-bold uppercase tracking-wider">{dayName}</span>
+                    <span className="font-heading text-xl">{dateNum}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {loadingAgenda && (
           <div className="w-full flex flex-col gap-6 mt-6 animate-pulse pb-4 opacity-40">
-            {/* Intention banner skeleton */}
             <div className="h-[76px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
-            
-            {/* Grid skeleton */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Left Column */}
               <div className="md:col-span-2 flex flex-col gap-5">
                 <div className="h-[82px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
                 <div className="h-[280px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
               </div>
-              {/* Right Column */}
               <div className="flex flex-col gap-5">
                 <div className="h-[210px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
                 <div className="h-[80px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
-                <div className="h-[120px] bg-secondary/30 border border-border/10 rounded-2xl w-full" />
               </div>
             </div>
           </div>
         )}
 
-        {/* Proactive Daily Dashboard */}
         {!loadingAgenda && agenda && (
-          <div className="w-full flex flex-col gap-6 mt-6 animate-slide-down-fade pb-4">
+          <div className="w-full flex flex-col gap-6 mt-4 animate-slide-down-fade pb-4">
             
-            {/* Today's Intention banner */}
             <div className="text-center bg-secondary/20 border border-border/30 px-6 py-4 rounded-2xl">
-              <span className="font-sans text-[8px] tracking-[0.2em] font-bold text-accent uppercase">Today's Intention</span>
+              <span className="font-sans text-[8px] tracking-[0.2em] font-bold text-accent uppercase">Daily Focus</span>
               <p className="font-heading text-lg md:text-xl font-light text-muted-foreground italic mt-1 leading-relaxed">
-                "{agenda.intention}"
+                "{agenda.focusTheme || "Focus on the roadmap"}"
               </p>
             </div>
 
-            {/* Main Grid content */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              
-              {/* Left Column (Focus & Work Blocks - takes 2 cols) */}
               <div className="md:col-span-2 flex flex-col gap-5">
                 
-                {/* Overarching Focus card */}
-                <div className="bg-secondary/40 border border-border/30 p-5 rounded-2xl flex flex-col gap-2">
-                  <span className="font-sans text-[9px] tracking-wider text-accent font-bold uppercase flex items-center gap-1.5">
-                    <Compass size={11} /> Today's Focus
-                  </span>
-                  <h3 className="font-heading text-xl font-light text-foreground">
-                    {agenda.focus}
-                  </h3>
-                </div>
-
-                {/* Work Blocks Checklist */}
                 <div className="bg-card border border-border/50 p-6 rounded-2xl flex flex-col gap-4 shadow-sm">
                   <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5 border-b border-border/10 pb-2.5">
                     <CheckSquare size={11} /> Suggested Work Blocks
@@ -426,10 +420,8 @@ export default function Home({
 
               </div>
 
-              {/* Right Column (Metrics & Deferrals - takes 1 col) */}
               <div className="flex flex-col gap-5">
                 
-                {/* Progress Ring Card */}
                 <div className="bg-secondary/40 border border-border/30 p-5 rounded-2xl flex flex-col items-center text-center gap-4">
                   <span className="font-sans text-[9px] tracking-wider text-accent font-bold uppercase">
                     Daily Progress
@@ -467,19 +459,6 @@ export default function Home({
                   </span>
                 </div>
 
-                {/* Next Upcoming Deadline */}
-                {agenda.upcomingDeadline && (
-                  <div className="bg-red-500/5 border border-red-500/10 p-4 rounded-xl flex flex-col gap-1.5">
-                    <span className="font-sans text-[8px] font-semibold text-red-400 uppercase tracking-widest flex items-center gap-1.5">
-                      📅 Upcoming Deadline
-                    </span>
-                    <h4 className="font-sans text-xs font-semibold text-foreground/90 leading-tight">
-                      {agenda.upcomingDeadline}
-                    </h4>
-                  </div>
-                )}
-
-                {/* Current Long term goal */}
                 {proactiveData?.currentGoal && (
                   <div className="bg-secondary/40 border border-border/30 p-4 rounded-xl flex flex-col gap-1.5">
                     <span className="font-sans text-[8px] font-semibold text-accent uppercase tracking-widest">
@@ -494,7 +473,6 @@ export default function Home({
                   </div>
                 )}
 
-                {/* Recent Reflection Card */}
                 {proactiveData?.recentReflection && (
                   <div className="bg-secondary/40 border border-border/40 p-5 rounded-2xl flex flex-col gap-2">
                     <span className="font-sans text-[9px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
@@ -506,13 +484,12 @@ export default function Home({
                   </div>
                 )}
 
-                {/* Resume Working gold CTA */}
                 {onNavigate && (
                   <button
                     onClick={() => onNavigate("tasks")}
                     className="w-full py-3.5 rounded-full bg-accent hover:bg-accent/90 text-primary-foreground font-sans font-semibold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2 shadow-sm mt-1"
                   >
-                    Resume Working <ArrowRight size={13} />
+                    View All Tasks <ArrowRight size={13} />
                   </button>
                 )}
 
@@ -523,10 +500,7 @@ export default function Home({
           </div>
         )}
 
-        {/* Input Area */}
         <div className="w-full px-4 shrink-0 pt-5 pb-7 z-10">
-          
-          {/* Quick Actions */}
           <div className="flex flex-wrap gap-2 justify-center mb-4">
             {quickActions.map((action) => (
               <button

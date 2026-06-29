@@ -6,7 +6,7 @@ import { Goal } from "@/models/Goal";
 import { Plan } from "@/models/Plan";
 import { Milestone } from "@/models/Milestone";
 import { Task } from "@/models/Task";
-import { DailyAgenda } from "@/models/DailyAgenda";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { BriefingLog } from "@/models/BriefingLog";
 import { User } from "@/models/User";
 
@@ -53,7 +53,7 @@ export class ConsistencyEngine {
       rawMilestones,
       rawCompletedTasks,
       briefingLogs,
-      agendas
+      schedules
     ] = await Promise.all([
       User.findOne({ firebaseUid: uid }).lean(),
       BehaviorProfile.findOne({ uid }).lean(),
@@ -63,7 +63,7 @@ export class ConsistencyEngine {
       Milestone.find({ firebaseUid: uid }).lean(),
       Task.find({ firebaseUid: uid, status: "completed" }).lean(),
       BriefingLog.find({ uid, status: "success" }).sort({ createdAt: -1 }).limit(14).lean(),
-      DailyAgenda.find({ firebaseUid: uid }).sort({ date: -1 }).limit(14).lean()
+      WeeklyExecutionSchedule.find({ firebaseUid: uid }).sort({ createdAt: -1 }).limit(2).lean()
     ]);
 
     const nonArchivedPlans = rawPlans.filter(p => p.status !== "archived");
@@ -305,7 +305,7 @@ export class ConsistencyEngine {
 
     const morningHours = morningLogs.map(l => this.getLocalDecimalHour(l.openedAt!, timezone));
     const eveningHours = eveningLogs.map(l => this.getLocalDecimalHour(l.openedAt!, timezone));
-    const agendaHours = agendas.map(a => this.getLocalDecimalHour(a.createdAt, timezone));
+    const agendaHours = schedules.map(s => this.getLocalDecimalHour(s.generatedAt, timezone));
 
     const sdMorning = this.calculateStdDev(morningHours);
     const sdEvening = this.calculateStdDev(eveningHours);
@@ -331,11 +331,11 @@ export class ConsistencyEngine {
       const mm = Math.round((avgAgendaHour - hh) * 60);
       preferredRoutine = `Morning Agenda & Brief (${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")})`;
 
-      // count how many days the user generated agenda within 1 hour of the average
-      daysFollowingRoutine = agendas.filter(a => {
-        const hr = this.getLocalDecimalHour(a.createdAt, timezone);
+      // count how many weeks the user generated schedules within 1 hour of the average
+      daysFollowingRoutine = schedules.filter(s => {
+        const hr = this.getLocalDecimalHour(s.generatedAt, timezone);
         return Math.abs(hr - avgAgendaHour) <= 1.0;
-      }).length;
+      }).length * 7; // approximate days based on weeks
     } else {
       preferredRoutine = "Not established";
       daysFollowingRoutine = 0;

@@ -8,7 +8,7 @@ import { Goal } from "@/models/Goal";
 import { Plan } from "@/models/Plan";
 import { Milestone } from "@/models/Milestone";
 import { Task } from "@/models/Task";
-import { DailyAgenda } from "@/models/DailyAgenda";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { BriefingLog } from "@/models/BriefingLog";
 import { Memory } from "@/models/Memory";
 import { Reflection } from "@/models/Reflection";
@@ -30,7 +30,7 @@ export class UserIntelligenceSnapshotBuilder {
       rawPlans,
       rawMilestones,
       rawTasks,
-      agendas,
+      schedules,
       syncLogs,
       memories,
       reflections,
@@ -46,7 +46,7 @@ export class UserIntelligenceSnapshotBuilder {
       Plan.find({ firebaseUid: uid }).lean(),
       Milestone.find({ firebaseUid: uid }).lean(),
       Task.find({ firebaseUid: uid }).lean(),
-      DailyAgenda.find({ firebaseUid: uid }).sort({ date: -1 }).limit(30).lean(),
+      WeeklyExecutionSchedule.find({ firebaseUid: uid }).sort({ createdAt: -1 }).limit(4).lean(),
       CalendarSyncLog.find({ uid }).sort({ createdAt: -1 }).limit(10).lean(),
       Memory.find({ firebaseUid: uid }).lean(),
       Reflection.find({ firebaseUid: uid }).lean(),
@@ -76,7 +76,7 @@ export class UserIntelligenceSnapshotBuilder {
       behavior: bp,
       consistency: cp,
       execution: {
-        dailyAgendas: agendas,
+        weeklySchedules: schedules,
         tasks
       },
       planning: {

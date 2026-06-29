@@ -131,7 +131,7 @@ export interface GraphState {
     biggestChallenge?: string;
   } | null;
   activePlans: unknown[];
-  todayAgenda: unknown | null;
+  todaySchedule: unknown | null;
 
   // ── Formatted Prompt Fragments (set by context.node) ─────────────────────
   memoryPromptText: string;
@@ -214,7 +214,7 @@ export function createInitialState(overrides: Partial<GraphState> & {
     activeReflections: [],
     profile: null,
     activePlans: [],
-    todayAgenda: null,
+    todaySchedule: null,
     memoryPromptText: "",
     identityPromptText: "",
     reflectionPromptText: "",

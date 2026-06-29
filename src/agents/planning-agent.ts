@@ -3,6 +3,7 @@ import { Plan, IPlan } from "@/models/Plan";
 import { Milestone, IMilestone } from "@/models/Milestone";
 import { Goal, IGoal } from "@/models/Goal";
 import { Task, ITask } from "@/models/Task";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { User } from "@/models/User";
 import { ProfileRepository } from "@/repositories/profile.repository";
 import { MemoryRepository } from "@/repositories/memory.repository";
@@ -122,7 +123,7 @@ You must return a JSON response matching the requested schema.
 `;
 
 const PLANNER_SYSTEM_PROMPT = `
-You are the Strategy and Execution Planning Agent for Zenkai.
+You are the Human-Centric Strategy and Execution Planning Agent for Zenkai.
 Your mission is to build, merge, or evolve a structured, chronological roadmap for the user.
 
 A plan is represented as a 4-tier hierarchy:
@@ -139,26 +140,45 @@ Every level contains:
 - priority: integer where 1 is highest priority.
 - estimatedDuration: string indicating duration (e.g., "4 weeks", "10 hours", "2 days").
 
+─── CORE PHILOSOPHY & PLANNING PRINCIPLES ───
+
+You must apply these key planning principles when building or updating any roadmap/plan:
+1. **Life First**: Schedule around the user's life. Do not expect the user's life to adapt to an unrealistic plan.
+2. **Consistency Beats Intensity**: Distribute learning and practice into shorter, recurring sessions. Avoid dumping excessive hours (e.g. 6+ hours) into a single day.
+3. **Minimize Context Switching**: Group similar work blocks together. Avoid chaotic transitions between unrelated domains.
+4. **Protect Deep Work**: Dedicate uninterrupted blocks of time for creative or complex tasks (e.g. coding, writing, designing).
+5. **Deadline Awareness**: Intensify focus as deadlines approach by allocating more time, without completely rewriting the long-term roadmap.
+6. **Preserve Buffers**: Keep realistic breathing room. Never schedule every free hour.
+
+─── 5-STAGE INTENTIONAL REASONING FLOW ───
+
+You must explicitly reason through these five steps before forming or modifying the plan tree:
+1. **Stage 1 — Build Life Model**: Analyze user details (Onboarding, memories, traits, reflections, daily availability, and profile). Infer wake-up, sleep, work/college hours, travel, meals, habits, and preferred deep work duration.
+2. **Stage 2 — Build Availability Map**: Identify occupied vs. available hours for the plan's duration. Separate Hard Constraints (exams, job hours, interviews) from Soft Constraints (gaming, reading, hobbies).
+3. **Stage 3 — Classify Activities**: Categorize milestones/tasks into:
+   - *Recurring*: Consistent habits (gym, reading).
+   - *Deadline-Driven*: Assignments, hackathons, exam revisions.
+   - *Creative*: Content creation, writing, coding projects.
+   - *Maintenance*: Cleaning, shopping, emails.
+   - *Flexible*: Gaming, friends, leisure.
+4. **Stage 4 — Weekly Rhythm Construction**: Design a logical weekly pattern (e.g. creative work grouped in deep blocks, recurring habits spaced out).
+5. **Stage 5 — Daily Work Block Planning**: Formulate hourly slots respecting sleep, meals, and transition buffers.
+
 ─── CONTEXT PRIORITY — STRICT ORDER (this determines what you plan) ───
 
 You receive context from multiple sources. ALWAYS give them this exact priority:
-
   1. EXPLICIT USER REQUEST (this session’s message + conversation context)
      → This is ABSOLUTE ground truth. If the user names a topic, skill, domain,
        or technology in their current message, that IS the plan’s subject.
        Do NOT override or reinterpret with any other context.
-
   2. CONVERSATION CONTEXT (recent message history)
      → Use to understand follow-ups, confirmations, and clarifications.
        “yes” or “go ahead” confirms whatever the assistant last proposed.
-
   3. ONBOARDING INFORMATION (profession, long-term goal, current focus)
      → Use to fill in gaps the user left unspecified (e.g., tech stack, daily
        availability). Never use to override an explicit request.
-
   4. LONG-TERM MEMORY (approved memories)
      → Use to personalize tone and approach, not to determine what to plan.
-
   5. PROFILE FIELDS (work style, availability, biggest challenge)
      → Use for scheduling realism only. Lowest priority.
 
@@ -171,20 +191,11 @@ Before generating a plan, assess your confidence that this message represents
 a genuine, deliberate intent to create or modify a roadmap.
 
 Return BOTH fields in your response:
-
   planningConfidence (0.0 to 1.0):
     0.9–1.0 — Explicit, unambiguous request. User clearly wants a plan NOW.
-              Examples: “I want to study DSA for a week, 3-5 hours daily”,
-                        “Plan my semester around these exam dates: ...”
     0.7–0.89 — Strong implicit signal. User shared structured life info.
-              Examples: “My end-sem exams start May 25”,
-                        “I have a placement interview in 3 weeks”
     0.5–0.69 — Ambiguous but plausible. Something might need updating.
-              Examples: “I might try competitive programming later”,
-                        “I’ve been thinking about fitness goals”
     0.0–0.49 — Too vague, hypothetical, or contradictory to act on.
-              Examples: “Maybe I should learn Rust someday”,
-                        “I wonder if I should change careers”
 
   planningAction: one of “create” | “modify” | “merge” | “ignore”
     “create”  — Confidence ≥ 0.80, no existing plan covers this domain/goal.
@@ -240,14 +251,8 @@ Adapt tasks dynamically to time remaining before the exam date:
 - If planningAction is "merge": ADD new milestones to the existing plan without deleting any existing items.
   Do NOT change status of existing milestones. Only add.
 - If the user cancels/removes an event, set its milestone status to "cancelled" — do NOT delete it.
-- Return:
-  - plannerReasoning: How you resolved conflicts, rescheduled tasks, respected constraints.
-  - changeSummary: Concise description of revision.
-  - detectedConstraints: Hard and soft constraints identified.
-  - mergeStrategy: How you preserved progress while updating dates.
-  - timelineRecalculation: Explanation of chronological date shifts.
 
-Return a JSON object containing the plan tree, confidence fields, and these diagnostic details.
+Return a JSON object containing the plan tree, confidence fields, and these diagnostic details. Inside the "plannerReasoning" field, you MUST explicitly output your step-by-step reasoning corresponding to the 5-Stage Intentional Reasoning Flow (Life Model analysis, Availability Map, Weekly Rhythm, and Daily Blocks allocation).
 `;
 
 export class PlanningAgent {
@@ -1230,12 +1235,8 @@ Remember:
         const timezone = user?.briefSettings?.timezone || "UTC";
         const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
 
-        // A. Set today's daily agenda as stale (instead of deleting it, keeping history)
-        const DailyAgendaModule = await import("@/models/DailyAgenda");
-        await DailyAgendaModule.DailyAgenda.updateOne(
-          { firebaseUid: uid, date: todayStr },
-          { $set: { isStale: true } }
-        );
+        // A. Generate Weekly Schedule (Phase 15B)
+        await this.generateWeeklySchedule(uid, planDoc._id.toString());
 
         // B. Ensure there is only 1 active plan at a time. If the current plan is active, auto-archive others.
         if (planDoc.status === "active") {
@@ -1388,6 +1389,203 @@ Remember:
       }
     } catch (error) {
       console.error(`[PlanningAgent] Failed to recalculate plan progress for plan ${planId}:`, error);
+    }
+  }
+  /**
+   * Generates a 7-day WeeklyExecutionSchedule using Gemini.
+   */
+  static async generateWeeklySchedule(uid: string, planId: string): Promise<any> {
+    const user = await User.findOne({ firebaseUid: uid }).lean();
+    const timezone = user?.briefSettings?.timezone || "UTC";
+    const startDate = new Date();
+    const startDateStr = startDate.toLocaleDateString("en-CA", { timeZone: timezone });
+    
+    // Fetch all active tasks
+    const planObjectId = new Types.ObjectId(planId);
+    const milestones = await Milestone.find({ planId: planObjectId, status: { $in: ["todo", "in_progress"] } }).lean();
+    const milestoneIds = milestones.map(m => m._id);
+    const goals = await Goal.find({ milestoneId: { $in: milestoneIds }, status: "active" }).lean();
+    const goalIds = goals.map(g => g._id);
+    const tasks = await Task.find({ 
+      goalId: { $in: goalIds }, 
+      status: { $in: ["todo", "in_progress", "deferred"] } 
+    }).lean();
+
+    // Fetch user context for high-realism planning
+    const profile = await ProfileRepository.findByFirebaseUid(uid);
+    const memories = await MemoryRepository.findApprovedByUser(uid);
+    const traits = await IdentityRepository.findActiveByUser(uid);
+    const reflections = await ReflectionRepository.findActiveByUser(uid);
+
+    const profileContext = profile ? `
+- Profession: ${profile.profession || "None"}
+- Long-term goal: ${profile.longTermGoal || "None"}
+- Current Focus: ${profile.currentFocus || "None"}
+- Peak focus availability: ${profile.dailyAvailability || "None"}
+- Working Style: ${profile.workStyle || "None"}
+` : "None";
+
+    const memoriesContext = memories.map(m => `- ${m.summary} (${m.category})`).join("\n") || "None";
+    const traitsContext = traits.map(t => `- ${t.trait}: ${t.description}`).join("\n") || "None";
+    const reflectionsContext = reflections.map(r => `- ${r.title}: ${r.summary}`).join("\n") || "None";
+
+    const systemInstruction = `
+You are the Human-Centric Weekly Planning Agent for Zenkai.
+Your mission is to distribute the user's active tasks across the next 7 days, starting from ${startDateStr}, in a way that respects their life model, availability constraints, and cognitive rhythm.
+
+─── CORE PHILOSOPHY & PLANNING PRINCIPLES ───
+1. **Life First**: Schedule around the user's life (school, work, travel, sleep, meals). Never expect the user's life to adapt to an unrealistic plan.
+2. **Consistency Beats Intensity**: Distribute learning and practice into shorter, recurring sessions. Avoid dumping 6+ hours of work into a single day.
+3. **Minimize Context Switching**: Group similar work blocks together. Avoid chaotic transitions between unrelated tasks.
+4. **Protect Deep Work**: Schedule uninterrupted blocks of time (e.g. 1.5 - 3 hours) for creative or complex tasks (e.g. coding, content creation, writing).
+5. **Deadline Awareness**: As deadlines approach, naturally allocate more time in the future schedule without completely rewriting the long-term roadmap.
+6. **Preserve Buffers**: Do not schedule every free hour. Leave realistic breathing room and transition buffers between blocks.
+
+─── 5-STAGE REASONING STEPS ───
+You must follow these 5 steps to design the weekly schedule:
+1. **Stage 1 — Build Life Model**: Analyze the user's profile, memories, traits, and reflections to deduce wake/sleep patterns, fixed obligations (school, work, travel), meals, and preferences.
+2. **Stage 2 — Build Availability Map**: For each of the 7 days, identify occupied hours vs. available hours.
+3. **Stage 3 — Classify Activities**: Group the available tasks into:
+   - *Recurring*: Habits or recurring studies.
+   - *Deadline-Driven*: Deliverables nearing their due dates.
+   - *Creative*: Project building, writing, video editing.
+   - *Maintenance*: Simple tasks, email, cleaning.
+   - *Flexible*: Casual study, leisure, entertainment.
+4. **Stage 4 — Weekly Rhythm Construction**: Design a consistent daily focus and workflow rhythm across the week.
+5. **Stage 5 — Daily Work Block Planning**: Create a clean daily timeline.
+   - STRICT RULE: Create exactly ONE consolidated calendar event (Work Block) per session, with tasks listed as children in that block.
+   - STRICT RULE: Never generate overlapping blocks. All blocks must have non-overlapping startTime and endTime.
+   - All times must be in the local timezone: ${timezone}.
+
+Your output must follow the requested JSON schema.
+`;
+
+    const prompt = `
+Create a realistic, human-centric 7-day schedule. Start Date: ${startDateStr}. Timezone: ${timezone}.
+
+## USER LIFE MODEL INPUTS
+### Profile Settings:
+${profileContext}
+
+### Admitted Long-term Memories:
+${memoriesContext}
+
+### Active Identity Traits:
+${traitsContext}
+
+### Behavioral Reflections:
+${reflectionsContext}
+
+## TASKS TO SCHEDULE
+${JSON.stringify(tasks.map(t => ({ id: t._id.toString(), title: t.title, durationMinutes: t.estimatedMinutes || 30, priority: t.priority })), null, 2)}
+`;
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+          systemInstruction: systemInstruction.trim(),
+          temperature: 0.15,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              lifeModelAnalysis: { type: "STRING" },
+              availabilityMap: { type: "STRING" },
+              weeklyRhythmReasoning: { type: "STRING" },
+              days: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    date: { type: "STRING" },
+                    dayNumber: { type: "NUMBER" },
+                    focusTheme: { type: "STRING" },
+                    estimatedWorkload: { type: "STRING", enum: ["Light", "Medium", "Heavy"] },
+                    plannedFocusHours: { type: "NUMBER" },
+                    workBlocks: {
+                      type: "ARRAY",
+                      items: {
+                        type: "OBJECT",
+                        properties: {
+                          title: { type: "STRING" },
+                          startTime: { type: "STRING" },
+                          endTime: { type: "STRING" },
+                          duration: { type: "NUMBER" },
+                          priority: { type: "NUMBER" },
+                          taskIds: {
+                            type: "ARRAY",
+                            items: { type: "STRING" }
+                          }
+                        },
+                        required: ["title", "startTime", "endTime", "duration", "priority", "taskIds"]
+                      }
+                    }
+                  },
+                  required: ["date", "dayNumber", "focusTheme", "estimatedWorkload", "plannedFocusHours", "workBlocks"]
+                }
+              }
+            },
+            required: ["lifeModelAnalysis", "availabilityMap", "weeklyRhythmReasoning", "days"]
+          }
+        }
+      });
+      
+      const content = response.text;
+      if (!content) throw new Error("Empty response from Weekly Planner");
+      
+      const scheduleData = JSON.parse(content);
+      
+      // Archive old schedules
+      await WeeklyExecutionSchedule.updateMany(
+        { firebaseUid: uid, planId: planObjectId, status: "ACTIVE" },
+        { $set: { status: "ARCHIVED" } }
+      );
+      
+      const lastSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, planId: planObjectId })
+        .sort({ version: -1 })
+        .lean();
+      const nextVersion = (lastSchedule?.version || 0) + 1;
+      
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 6);
+      const endDateStr = endDate.toLocaleDateString("en-CA", { timeZone: timezone });
+      
+      const days = scheduleData.days.map((d: any) => ({
+        date: d.date,
+        dayNumber: d.dayNumber,
+        focusTheme: d.focusTheme,
+        estimatedWorkload: d.estimatedWorkload,
+        plannedFocusHours: d.plannedFocusHours,
+        workBlocks: d.workBlocks.map((wb: any) => ({
+          title: wb.title,
+          startTime: wb.startTime,
+          endTime: wb.endTime,
+          duration: wb.duration,
+          priority: wb.priority,
+          tasks: wb.taskIds ? wb.taskIds.map((id: string) => new Types.ObjectId(id)) : []
+        }))
+      }));
+
+      const newSchedule = new WeeklyExecutionSchedule({
+        firebaseUid: uid,
+        planId: planObjectId,
+        version: nextVersion,
+        generatedAt: new Date(),
+        validFrom: startDateStr,
+        validTo: endDateStr,
+        status: "ACTIVE",
+        days: days
+      });
+      
+      await newSchedule.save();
+      console.log(`[PlanningAgent] WeeklyExecutionSchedule v${nextVersion} created successfully.`);
+      return newSchedule;
+    } catch (err) {
+      console.error("[PlanningAgent] Failed to generate weekly schedule:", err);
     }
   }
 }

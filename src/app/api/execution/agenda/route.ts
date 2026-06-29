@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth-service";
-import { ExecutionAgent } from "@/agents/execution-agent";
-import { DailyAgendaRepository } from "@/repositories/daily-agenda.repository";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { dbConnect } from "@/lib/mongodb";
+import { PlanningAgent } from "@/agents/planning-agent";
+import { PlanRepository } from "@/repositories/plan.repository";
 
 export const dynamic = "force-dynamic";
 
@@ -21,24 +22,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { searchParams } = new URL(request.url);
-    // Determine target local date (YYYY-MM-DD)
-    const clientDate = searchParams.get("date") || new Date().toISOString().split("T")[0];
-
     await dbConnect();
 
-    // Fetch or generate the daily agenda
-    let agenda = await ExecutionAgent.getOrCreateDailyAgenda(user.firebaseUid, clientDate);
-    if (agenda && agenda.isStale) {
-      console.log(`[AgendaRoute] Today's agenda is stale. Force regenerating...`);
-      agenda = await ExecutionAgent.getOrCreateDailyAgenda(user.firebaseUid, clientDate, true);
-      agenda.isStale = false;
-      await agenda.save();
-    }
+    // Fetch active WeeklyExecutionSchedule
+    const schedule = await WeeklyExecutionSchedule.findOne({
+      firebaseUid: user.firebaseUid,
+      status: "ACTIVE"
+    }).populate("days.workBlocks.tasks").lean();
 
     return NextResponse.json({
       success: true,
-      agenda
+      weeklySchedule: schedule
     });
   } catch (error) {
     console.error("GET /api/execution/agenda error:", error);
@@ -61,18 +55,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { date } = body;
-    const targetDate = date || new Date().toISOString().split("T")[0];
-
     await dbConnect();
 
-    // Force regeneration
-    const agenda = await ExecutionAgent.getOrCreateDailyAgenda(user.firebaseUid, targetDate, true);
+    // Find the active plan
+    const activePlans = await PlanRepository.findFullTree(user.firebaseUid);
+    if (!activePlans || activePlans.length === 0) {
+      return NextResponse.json({ success: false, error: "No active plan" }, { status: 400 });
+    }
+    const activePlan = activePlans[0];
+
+    // Force regeneration of weekly schedule
+    const schedule = await PlanningAgent.generateWeeklySchedule(user.firebaseUid, activePlan._id.toString());
+    
+    // We need to fetch it again with tasks populated
+    const populatedSchedule = await WeeklyExecutionSchedule.findById(schedule._id)
+      .populate("days.workBlocks.tasks").lean();
 
     return NextResponse.json({
       success: true,
-      agenda
+      weeklySchedule: populatedSchedule
     });
   } catch (error) {
     console.error("POST /api/execution/agenda error:", error);

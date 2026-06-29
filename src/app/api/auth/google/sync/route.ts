@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth-service";
-import { DailyAgendaRepository } from "@/repositories/daily-agenda.repository";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { CalendarSyncService } from "@/services/calendar-sync.service";
 import { User } from "@/models/User";
 import { dbConnect } from "@/lib/mongodb";
@@ -31,15 +31,15 @@ export async function POST() {
     const timezone = userDoc.briefSettings?.timezone || "UTC";
     const localDateStr = new Date().toLocaleDateString("en-CA", { timeZone: timezone }); // returns YYYY-MM-DD format
 
-    // Find the daily agenda for today
-    const agenda = await DailyAgendaRepository.findByUserAndDate(user.firebaseUid, localDateStr);
-    if (!agenda) {
-      return NextResponse.json({ success: false, error: `No daily agenda exists for today (${localDateStr}) to sync.` }, { status: 404 });
+    // Find the active weekly schedule
+    const schedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: user.firebaseUid, status: "ACTIVE" }).lean();
+    if (!schedule) {
+      return NextResponse.json({ success: false, error: `No active schedule exists for today to sync.` }, { status: 404 });
     }
 
     // Trigger calendar sync synchronously (bypassing debounce)
     console.log(`[ManualSyncApi] Running manual sync for ${user.firebaseUid} on ${localDateStr}`);
-    const result = await CalendarSyncService.syncAgenda(user.firebaseUid, agenda);
+    const result = await CalendarSyncService.syncWeeklySchedule(user.firebaseUid, schedule);
 
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error || "Sync pass failed" }, { status: 500 });

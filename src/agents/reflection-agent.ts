@@ -59,8 +59,8 @@ export class ReflectionAgent {
     try {
       console.log(`[ReflectionAgent] Starting reflection evolution for user: ${uid}`);
 
-      // 1. Fetch memories, identity traits, recent conversations, and existing reflections — reuse GraphState where possible
-      const approvedMemories = state?.memoryContext?.memories ?? await MemoryRepository.findApprovedByUser(uid);
+      // 1. Fetch memories, identity traits, recent conversations, and existing reflections
+      const approvedMemories = await MemoryRepository.findApprovedByUser(uid);
       const activeTraits = (state?.activeTraits && state.activeTraits.length > 0)
         ? state.activeTraits
         : await IdentityRepository.findActiveByUser(uid);

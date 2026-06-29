@@ -48,7 +48,20 @@ export default function Settings() {
 
           setMorningBrief(bs.morningBriefEnabled);
           setNightReflection(bs.eveningBriefEnabled);
-          setTimezone(bs.timezone || "UTC");
+          
+          let tz = bs.timezone || "UTC";
+          if (tz === "UTC" || !tz) {
+            const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (detectedTz && detectedTz !== "UTC") {
+              tz = detectedTz;
+              fetch("/api/user/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ briefSettings: { ...bs, timezone: detectedTz } })
+              }).catch(err => console.error("[Settings] Auto-timezone update failed:", err));
+            }
+          }
+          setTimezone(tz);
 
           setCalendarConnected(cs.connected);
           setCalendarEmail(cs.email || "");

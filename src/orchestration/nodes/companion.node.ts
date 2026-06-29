@@ -21,8 +21,8 @@ import { Task } from "@/models/Task";
 import { Goal } from "@/models/Goal";
 import { Milestone } from "@/models/Milestone";
 import { Plan } from "@/models/Plan";
-import { ExecutionAgent } from "@/agents/execution-agent";
 import { PlanningAgent } from "@/agents/planning-agent";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { BehaviorEngine } from "@/services/behavior-engine.service";
 import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
@@ -98,32 +98,20 @@ Focus on outcomes: celebrate progress briefly, reassure them that this moves the
 
 function buildExecutionAgendaPrompt(agenda: Record<string, unknown>): string {
   const formattedBlocks = (agenda.formattedBlocks as string[]) ?? [];
-  const optionalLines = (agenda.optionalLines as string[]) ?? [];
-  const stretchLines = (agenda.stretchLines as string[]) ?? [];
 
   return `
 ## Today's Daily Agenda (Execution Plan):
 Date: ${agenda.date as string}
-Intention: "${agenda.intention as string}"
-Focus: "${agenda.focus as string}"
+Focus Theme: "${agenda.focusTheme as string}"
+Estimated Workload: "${agenda.estimatedWorkload as string}"
+Planned Focus Time: ${agenda.plannedFocusHours as number} hours
 
 Suggested Work Blocks & Tasks:
 ${formattedBlocks.join("\n\n")}
 
-Optional Tasks:
-${optionalLines.join("\n") || "None"}
-
-Stretch Goals:
-${stretchLines.join("\n") || "None"}
-
-Estimated Focus Time: ${agenda.estimatedFocusTime as number} minutes
-Current Priority: ${agenda.currentPriority as string}
-Upcoming Deadline: ${agenda.upcomingDeadline as string}
-Execution Reasoning: "${agenda.executionReasoning as string}"
-
 INSTRUCTIONS FOR COMPANION AGENT:
 - Address the user's execution query by explaining what is on their agenda today.
-- Reference their intention, focus, work blocks, and task priorities.
+- Reference their focus theme, workload, work blocks, and task priorities.
 - Do NOT talk about long-term roadmaps. Keep attention on "Today's Agenda".
 - Speak naturally. Do NOT say "according to the execution agent" or "your daily agenda".
 `.trim();
@@ -283,7 +271,8 @@ export async function companionNode(
       );
 
       try {
-        const agenda = await ExecutionAgent.getOrCreateDailyAgenda(uid, todayStr);
+        const schedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" }).populate("days.workBlocks.tasks").lean();
+        const agenda = schedule?.days.find((d: any) => d.date === todayStr);
 
         if (agenda) {
           // Resolve work block task titles
@@ -304,37 +293,12 @@ export async function companionNode(
             })
           );
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const optionalTaskIds = (agenda.optionalTasks as any[]).map(
-            (t: any) => t._id || t
-          );
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const stretchGoalIds = (agenda.stretchGoals as any[]).map(
-            (t: any) => t._id || t
-          );
-
-          const [optionalDocs, stretchDocs] = await Promise.all([
-            optionalTaskIds.length > 0
-              ? Task.find({ _id: { $in: optionalTaskIds } }).lean()
-              : Promise.resolve([]),
-            stretchGoalIds.length > 0
-              ? Task.find({ _id: { $in: stretchGoalIds } }).lean()
-              : Promise.resolve([]),
-          ]);
-
           planPromptText = buildExecutionAgendaPrompt({
             date: agenda.date,
-            intention: agenda.intention,
-            focus: agenda.focus,
+            focusTheme: agenda.focusTheme,
+            estimatedWorkload: agenda.estimatedWorkload,
+            plannedFocusHours: agenda.plannedFocusHours,
             formattedBlocks,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            optionalLines: optionalDocs.map((t: any) => `- ${t.title} (${t.status})`),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            stretchLines: stretchDocs.map((t: any) => `- ${t.title} (${t.status})`),
-            estimatedFocusTime: agenda.estimatedFocusTime,
-            currentPriority: agenda.currentPriority,
-            upcomingDeadline: agenda.upcomingDeadline,
-            executionReasoning: agenda.executionReasoning,
           });
         }
       } catch (agendaErr) {

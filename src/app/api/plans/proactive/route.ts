@@ -32,20 +32,14 @@ export async function GET() {
     const activeReflections = await ReflectionRepository.findActiveByUser(user.firebaseUid);
     const recentReflection = activeReflections.length > 0 ? activeReflections[0] : null;
 
-    // Gather priorities (today's agenda tasks or fallback to milestone tasks)
+    // Gather priorities (today's schedule tasks or fallback to milestone tasks)
     let priorities: any[] = [];
-    if (state.todayAgenda) {
-      const agendaTasks: any[] = [];
-      state.todayAgenda.workBlocks.forEach((wb: any) => wb.tasks.forEach((t: any) => {
-        if (t) agendaTasks.push(t);
+    if (state.todaySchedule) {
+      const scheduleTasks: any[] = [];
+      state.todaySchedule.workBlocks.forEach((wb: any) => wb.tasks.forEach((t: any) => {
+        if (t) scheduleTasks.push(t);
       }));
-      state.todayAgenda.optionalTasks.forEach((t: any) => {
-        if (t) agendaTasks.push(t);
-      });
-      state.todayAgenda.stretchGoals.forEach((t: any) => {
-        if (t) agendaTasks.push(t);
-      });
-      priorities = agendaTasks;
+      priorities = scheduleTasks;
     } else if (state.activePlan) {
       const goalIds = state.activeGoals.map(g => g._id);
       if (state.activeMilestone) {

@@ -7,7 +7,7 @@ import { PlanningAgent } from "@/agents/planning-agent";
 import { dbConnect } from "@/lib/mongodb";
 import { Types } from "mongoose";
 import { BehaviorEngine } from "@/services/behavior-engine.service";
-import { DailyAgendaRepository } from "@/repositories/daily-agenda.repository";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 
 export const dynamic = "force-dynamic";
 
@@ -93,8 +93,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
     }
 
-    // Fetch the current agenda with the updated populated tasks instantly
-    const updatedAgenda = await DailyAgendaRepository.findByUserAndDate(user.firebaseUid, targetDate);
+    // Fetch the current schedule with the updated populated tasks instantly
+    const updatedAgenda = await WeeklyExecutionSchedule.findOne({ firebaseUid: user.firebaseUid, status: "ACTIVE" })
+      .populate("days.workBlocks.tasks").lean();
 
     // Queue rebalancing and calendar sync in the background so it doesn't block the UI
     if (action === "defer" || action === "remove") {

@@ -53,7 +53,7 @@ import { BriefComposerService } from "@/services/brief-composer.service";
 import { EmailService } from "@/services/email.service";
 import { CalendarSyncLog } from "@/models/CalendarSyncLog";
 import { CalendarSyncService } from "@/services/calendar-sync.service";
-import { DailyAgendaRepository } from "@/repositories/daily-agenda.repository";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 
 export async function getBriefingLogs() {
   await dbConnect();
@@ -204,12 +204,12 @@ export async function triggerManualCalendarSync(uid: string) {
     const timezone = user.briefSettings?.timezone || "UTC";
     const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
 
-    const agenda = await DailyAgendaRepository.findByUserAndDate(uid, todayStr);
-    if (!agenda) {
-      return { success: false, error: `No daily agenda exists for today (${todayStr}) to sync.` };
+    const schedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" }).lean();
+    if (!schedule) {
+      return { success: false, error: "No active weekly schedule found." };
     }
 
-    const result = await CalendarSyncService.syncAgenda(uid, agenda);
+    const result = await CalendarSyncService.syncWeeklySchedule(uid, schedule);
     
     if (!result.success) {
       return { success: false, error: result.error || "Sync execution failed" };

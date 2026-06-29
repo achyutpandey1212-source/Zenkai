@@ -6,10 +6,12 @@ import mongoose, { Schema, Model, Document, Types } from "mongoose";
  */
 
 export type TaskStatus = "todo" | "in_progress" | "completed" | "skipped" | "deferred" | "blocked" | "missed";
+export type TaskSource = "ROADMAP" | "USER" | "IMPORT" | "RECURRING";
 
 export interface ITask extends Document {
   firebaseUid: string;         // FK → users.firebaseUid
   goalId?: Types.ObjectId;     // optional FK → goals._id
+  source: TaskSource;
   title: string;
   description?: string;
   status: TaskStatus;
@@ -38,6 +40,11 @@ const TaskSchema = new Schema<ITask>(
     goalId: { type: Schema.Types.ObjectId, ref: "Goal" },
     title: { type: String, required: true },
     description: { type: String, default: "" },
+    source: {
+      type: String,
+      enum: ["ROADMAP", "USER", "IMPORT", "RECURRING"],
+      default: "ROADMAP",
+    },
     status: {
       type: String,
       enum: ["todo", "in_progress", "completed", "skipped", "deferred", "blocked", "missed"],
