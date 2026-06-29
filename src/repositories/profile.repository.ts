@@ -1,5 +1,5 @@
 import { dbConnect } from "@/lib/mongodb";
-import { Profile, IProfile } from "@/models/Profile";
+import { Profile, IProfile, ICommitment, IProfileGoal } from "@/models/Profile";
 
 export type ProfileCreateInput = {
   firebaseUid: string;
@@ -11,6 +11,16 @@ export type ProfileCreateInput = {
   workStyle?: string;
   biggestChallenge?: string;
   timezone?: string;
+  age?: number;
+  country?: string;
+  locale?: string;
+  commitments?: ICommitment[];
+  wakeUpTime?: string;
+  sleepTime?: string;
+  goals?: IProfileGoal[];
+  schedulingStyle?: "Strict" | "Flexible" | "Balanced";
+  focusDuration?: number;
+  deepWorkTime?: "Morning" | "Afternoon" | "Evening" | "Night";
 };
 
 export type ProfileUpdateInput = Partial<Omit<ProfileCreateInput, "firebaseUid">>;

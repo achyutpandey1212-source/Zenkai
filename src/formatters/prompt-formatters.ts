@@ -7,11 +7,31 @@ export class PlanningFormatter {
   public static format(context: PlanningContext): string {
     const { profile, identity, activePlan, memories, reflections } = context;
 
+    const commitmentsText = profile.commitments && profile.commitments.length > 0
+      ? profile.commitments.map((c) => `- **${c.name}**: ${c.startTime}-${c.endTime} (${c.days.join(", ")})`).join("\n")
+      : "None";
+
+    const goalsText = profile.goals && profile.goals.length > 0
+      ? profile.goals.map((g) => `- Priority ${g.priority}: ${g.title}`).join("\n")
+      : profile.longTermGoal ? `- Primary Goal: ${profile.longTermGoal}` : "None";
+
     const profileText = [
-      "## Onboarding Profile",
-      profile.profession ? `- **Profession**: ${profile.profession}` : null,
-      profile.longTermGoal ? `- **Long-term Goal**: ${profile.longTermGoal}` : null,
-      profile.currentFocus ? `- **Current Focus**: ${profile.currentFocus}` : null,
+      "## Onboarding Profile & Life Model",
+      profile.profession ? `- **Primary Role**: ${profile.profession}` : null,
+      profile.age ? `- **Age**: ${profile.age}` : null,
+      profile.country ? `- **Country**: ${profile.country}` : null,
+      profile.locale ? `- **Locale**: ${profile.locale}` : null,
+      profile.timezone ? `- **Timezone**: ${profile.timezone}` : null,
+      `- **Wake-up Time**: ${profile.wakeUpTime || "07:00"}`,
+      `- **Sleep Time**: ${profile.sleepTime || "23:00"}`,
+      "### Recurring Commitments (Fixed Occupied Time)",
+      commitmentsText,
+      "### Life Goals",
+      goalsText,
+      "### Planning Preferences",
+      profile.schedulingStyle ? `- **Scheduling Style**: ${profile.schedulingStyle}` : null,
+      profile.focusDuration ? `- **Preferred Focus Duration**: ${profile.focusDuration} mins` : null,
+      profile.deepWorkTime ? `- **Preferred Deep Work Time**: ${profile.deepWorkTime}` : null,
     ]
       .filter(Boolean)
       .join("\n");
@@ -54,13 +74,31 @@ export class CompanionFormatter {
   public static format(context: CompanionContext, planPromptText: string = ""): string {
     const { profile, identity, currentState, memories, reflections, todayAgenda } = context;
 
+    const commitmentsText = profile.commitments && profile.commitments.length > 0
+      ? profile.commitments.map((c) => `- **${c.name}**: ${c.startTime}-${c.endTime} (${c.days.join(", ")})`).join("\n")
+      : "None";
+
+    const goalsText = profile.goals && profile.goals.length > 0
+      ? profile.goals.map((g) => `- Priority ${g.priority}: ${g.title}`).join("\n")
+      : profile.longTermGoal ? `- Primary Goal: ${profile.longTermGoal}` : "None";
+
     const profileText = [
-      "## User Foundational Profile",
-      profile.profession ? `- **Profession**: ${profile.profession}` : null,
-      profile.longTermGoal ? `- **Long-term Goal**: ${profile.longTermGoal}` : null,
-      profile.currentFocus ? `- **Current Focus**: ${profile.currentFocus}` : null,
-      profile.dailyAvailability ? `- **Availability**: ${profile.dailyAvailability}` : null,
-      profile.workStyle ? `- **Working Style**: ${profile.workStyle}` : null,
+      "## User Foundational Profile & Life Model",
+      profile.profession ? `- **Primary Role**: ${profile.profession}` : null,
+      profile.age ? `- **Age**: ${profile.age}` : null,
+      profile.country ? `- **Country**: ${profile.country}` : null,
+      profile.locale ? `- **Locale**: ${profile.locale}` : null,
+      (profile as any).timezone ? `- **Timezone**: ${(profile as any).timezone}` : null,
+      `- **Wake-up Time**: ${profile.wakeUpTime || "07:00"}`,
+      `- **Sleep Time**: ${profile.sleepTime || "23:00"}`,
+      "### Recurring Commitments (Fixed Occupied Time)",
+      commitmentsText,
+      "### Life Goals",
+      goalsText,
+      "### Planning Preferences",
+      profile.schedulingStyle ? `- **Scheduling Style**: ${profile.schedulingStyle}` : null,
+      profile.focusDuration ? `- **Preferred Focus Duration**: ${profile.focusDuration} mins` : null,
+      profile.deepWorkTime ? `- **Preferred Deep Work Time**: ${profile.deepWorkTime}` : null,
     ]
       .filter(Boolean)
       .join("\n");

@@ -219,6 +219,16 @@ export class ContextOrchestrator {
       biggestChallenge: profileDoc?.biggestChallenge,
       timezone,
       calendarSynced: userDoc?.googleCalendarSettings?.connected === true,
+      age: profileDoc?.age,
+      country: profileDoc?.country,
+      locale: profileDoc?.locale,
+      commitments: profileDoc?.commitments,
+      wakeUpTime: profileDoc?.wakeUpTime,
+      sleepTime: profileDoc?.sleepTime,
+      goals: profileDoc?.goals,
+      schedulingStyle: profileDoc?.schedulingStyle,
+      focusDuration: profileDoc?.focusDuration,
+      deepWorkTime: profileDoc?.deepWorkTime,
     };
 
     const activeTraitsList: NormalizedIdentityTrait[] = [];

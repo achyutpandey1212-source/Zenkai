@@ -144,6 +144,24 @@ export interface NormalizedProfile {
   biggestChallenge?: string;
   timezone: string;
   calendarSynced: boolean;
+  age?: number;
+  country?: string;
+  locale?: string;
+  commitments?: {
+    name: string;
+    startTime: string;
+    endTime: string;
+    days: string[];
+  }[];
+  wakeUpTime?: string;
+  sleepTime?: string;
+  goals?: {
+    title: string;
+    priority: number;
+  }[];
+  schedulingStyle?: "Strict" | "Flexible" | "Balanced";
+  focusDuration?: number;
+  deepWorkTime?: "Morning" | "Afternoon" | "Evening" | "Night";
 }
 
 // ── The Consolidated Normalized Cache Package ──────────────────────────────

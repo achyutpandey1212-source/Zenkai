@@ -8,7 +8,7 @@ import Tasks from "./screens/tasks";
 import Identity from "./screens/identity";
 import Reflection from "./screens/reflection";
 import Settings from "./screens/settings";
-import Onboarding, { OnboardingData } from "./onboarding";
+import Onboarding from "./onboarding";
 import MemoryDebug from "./screens/memory-debug";
 import Plans from "./screens/plans";
 
@@ -25,11 +25,139 @@ interface ShellProps {
 
 export default function Shell({ initialUser }: ShellProps) {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>("home");
+  const [tourStep, setTourStep] = useState<number | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [themeInitialized, setThemeInitialized] = useState<boolean>(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(
     initialUser ? initialUser.onboardingCompleted : null
   );
+
+  const startTour = () => {
+    setTourStep(0);
+    setCurrentScreen("home");
+  };
+
+  const nextTourStep = () => {
+    if (tourStep === null) return;
+    const nextStep = tourStep + 1;
+    if (nextStep > 7) {
+      setTourStep(null);
+      setCurrentScreen("home");
+      if (typeof window !== "undefined") {
+        localStorage.setItem("has_seen_tour", "true");
+      }
+    } else {
+      setTourStep(nextStep);
+      // Navigate screen automatically
+      if (nextStep === 1) setCurrentScreen("home");
+      else if (nextStep === 2) setCurrentScreen("plans");
+      else if (nextStep === 3) setCurrentScreen("tasks");
+      else if (nextStep === 4) setCurrentScreen("plans");
+      else if (nextStep === 5) setCurrentScreen("identity");
+      else if (nextStep === 6) setCurrentScreen("reflection");
+      else if (nextStep === 7) setCurrentScreen("home");
+    }
+  };
+
+  const skipTour = () => {
+    setTourStep(null);
+    setCurrentScreen("home");
+    if (typeof window !== "undefined") {
+      localStorage.setItem("has_seen_tour", "true");
+    }
+  };
+
+  const renderTourStep = () => {
+    if (tourStep === null) return null;
+
+    const steps = [
+      {
+        title: "Welcome to Zenkai",
+        desc: "Let's take a quick 1-minute walkthrough to introduce your growth space.",
+        buttonText: "Start Tour",
+      },
+      {
+        title: "1. Home & Companion Orb",
+        desc: "Your primary growth terminal. Interact with the Companion Orb to record thoughts, get updates, or trigger re-scheduling.",
+        buttonText: "Next",
+      },
+      {
+        title: "2. Roadmaps & Plans",
+        desc: "Here Zenkai projects your long-term goals into structured milestones and tasks, adapting as your deadlines shift.",
+        buttonText: "Next",
+      },
+      {
+        title: "3. Backlog & Tasks",
+        desc: "A clean interface to review all todo items, adjust details, and organize your backlog.",
+        buttonText: "Next",
+      },
+      {
+        title: "4. Calendar & Timelines",
+        desc: "Displays daily work blocks and schedules. If connected, Zenkai mirrors these blocks directly to your Google Calendar.",
+        buttonText: "Next",
+      },
+      {
+        title: "5. Psychological Identity",
+        desc: "A reflection of your evolving character. Zenkai aggregates habits and cognitive styles into active identity traits.",
+        buttonText: "Next",
+      },
+      {
+        title: "6. Reflections & Insights",
+        desc: "Here Zenkai holds reviews of your consistency and productivity, alongside reflections on your daily progress.",
+        buttonText: "Next",
+      },
+      {
+        title: "You're Ready!",
+        desc: "Your elite personal executive assistant is set up and aligned. Enjoy your journey of focused growth.",
+        buttonText: "Finish",
+      },
+    ];
+
+    const current = steps[tourStep];
+
+    return (
+      <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center p-4">
+        {/* Soft highlight overlay for the active tour steps */}
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] pointer-events-auto" />
+        
+        <div className="relative bg-card/95 border border-accent/40 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 bg-accent rounded-full animate-ping" />
+            <span className="text-[10px] tracking-widest text-accent uppercase font-bold">Zenkai Tour</span>
+          </div>
+
+          <div className="space-y-1.5 text-left">
+            <h4 className="font-heading text-lg font-light text-foreground">{current.title}</h4>
+            <p className="font-sans text-xs text-muted-foreground leading-relaxed">{current.desc}</p>
+          </div>
+
+          <div className="flex justify-between items-center pt-2">
+            {tourStep > 0 && tourStep < 7 ? (
+              <span className="text-[10px] font-mono text-muted-foreground">Step {tourStep} of 6</span>
+            ) : (
+              <div />
+            )}
+            <div className="flex gap-2">
+              {tourStep < 7 && (
+                <button
+                  onClick={skipTour}
+                  className="py-1.5 px-3 rounded-lg text-[10px] font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  Skip
+                </button>
+              )}
+              <button
+                onClick={nextTourStep}
+                className="py-1.5 px-4 rounded-lg bg-primary text-primary-foreground hover:bg-accent hover:text-accent-foreground text-[10px] font-semibold font-sans tracking-wide transition-colors cursor-pointer"
+              >
+                {current.buttonText}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Lifted User info states
   const [userName, setUserName] = useState(initialUser?.name || "");
@@ -124,25 +252,24 @@ export default function Shell({ initialUser }: ShellProps) {
     }
   }, [onboardingCompleted]);
 
-  const handleOnboardingComplete = async (onboardingData: OnboardingData) => {
-    if (onboardingData.name) {
-      setUserName(onboardingData.name);
-    }
+  const handleOnboardingComplete = async () => {
     try {
-      const res = await fetch("/api/onboarding/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(onboardingData),
-      });
-
-      if (!res.ok) {
-        console.error("Failed to save onboarding data:", await res.text());
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user?.name) setUserName(data.user.name);
+        if (data.user?.email) setUserEmail(data.user.email);
       }
     } catch (err) {
-      console.error("Onboarding persistence error:", err);
+      console.error("Failed to fetch fresh user details after onboarding:", err);
     }
 
     setOnboardingCompleted(true);
+
+    if (typeof window !== "undefined" && !localStorage.getItem("has_seen_tour")) {
+      setTourStep(0);
+      setCurrentScreen("home");
+    }
   };
 
   // Shared send message handler
@@ -491,6 +618,9 @@ export default function Shell({ initialUser }: ShellProps) {
           {renderScreen()}
         </div>
       </main>
+
+      {/* Product Tour Overlay */}
+      {tourStep !== null && renderTourStep()}
     </div>
   );
 }
