@@ -1,9 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
-import { MemoryRepository } from "@/repositories/memory.repository";
-import { IdentityRepository } from "@/repositories/identity.repository";
-import { IdentityProposalRepository } from "@/repositories/identity-proposal.repository";
-import { IIdentityTrait, IdentityTraitCategory } from "@/models/IdentityTrait";
+import { ContextOrchestrator } from "@/services/context-orchestrator.service";
+import { IdentitySyncService } from "@/services/identity-sync.service";
 import type { GraphState } from "@/orchestration/graph/state";
+import type { NormalizedUserContext } from "@/types/context.types";
 
 const IDENTITY_AGENT_SYSTEM_PROMPT = `
 You are the Identity Engine Agent for Zenkai.
@@ -48,64 +47,27 @@ export class IdentityAgent {
   }
 
   /**
-   * Run the Identity Engine evolution process.
-   * Compares user's long-term memories with their current traits and generates updates and proposals.
+   * PURE AI Reasoning function. Consumes only normalized parameters and returns proposed updates/new traits.
    */
-  static async evaluateAndEvolve(uid: string, state?: GraphState): Promise<boolean> {
+  static async evaluateAndEvolveLogic(
+    memories: any[],
+    currentTraits: any[],
+    pendingProposals: any[]
+  ): Promise<{
+    traitsToUpdate: any[];
+    newTraits: any[];
+  } | null> {
     try {
-      console.log(`[IdentityAgent] Starting identity evolution for user: ${uid}`);
-
-      // 1. Fetch memories, current traits, and proposals
-      const approvedMemories = await MemoryRepository.findApprovedByUser(uid);
-      const activeTraits = (state?.activeTraits && state.activeTraits.length > 0)
-        ? state.activeTraits
-        : await IdentityRepository.findActiveByUser(uid);
-      const candidateTraits = await IdentityRepository.findCandidatesByUser(uid);
-      const pendingProposals = await IdentityProposalRepository.findPendingByUser(uid);
-
-      if (approvedMemories.length === 0) {
-        console.log(`[IdentityAgent] No approved memories found. Skipping evolution.`);
-        return false;
-      }
-
-      // Combine traits for the LLM
-      const currentTraitsFormatted = [...activeTraits, ...candidateTraits].map((t) => ({
-        id: t._id.toString(),
-        trait: t.trait,
-        category: t.category,
-        description: t.description,
-        confidence: t.confidence,
-        stability: t.stability,
-        version: t.version,
-        status: t.status,
-        evidence: t.evidence,
-        updatedAt: t.updatedAt,
-      }));
-
-      const memoriesFormatted = approvedMemories.map((m) => ({
-        category: m.category,
-        content: m.content,
-        summary: m.summary,
-        createdAt: m.createdAt,
-      }));
-
-      const pendingProposalsFormatted = pendingProposals.map((p) => ({
-        trait: p.trait,
-        category: p.category,
-        confidence: p.confidence,
-      }));
-
-      // 2. Query Gemini to determine updates and new proposals
       const ai = this.getClient();
       const prompt = `
 User Memories (Admitted Facts):
-${JSON.stringify(memoriesFormatted, null, 2)}
+${JSON.stringify(memories, null, 2)}
 
 Current User Identity Traits:
-${JSON.stringify(currentTraitsFormatted, null, 2)}
+${JSON.stringify(currentTraits, null, 2)}
 
 Current Pending Proposals:
-${JSON.stringify(pendingProposalsFormatted, null, 2)}
+${JSON.stringify(pendingProposals, null, 2)}
 
 Analyze the user's memories and existing identity traits. Determine if you should:
 1. Update existing active or candidate traits (refining descriptions, adjusting confidence/stability, updating evidence).
@@ -168,176 +130,111 @@ Remember:
       const responseText = response.text;
       if (!responseText) {
         console.warn(`[IdentityAgent] Received empty response from Gemini.`);
+        return null;
+      }
+
+      return JSON.parse(responseText);
+    } catch (err) {
+      console.error("[IdentityAgent] evaluateAndEvolveLogic failed:", err);
+      return null;
+    }
+  }
+
+  /**
+   * Shell wrapper for identity evolution.
+   * Resolves context using ContextOrchestrator and delegates persistence to IdentitySyncService.
+   */
+  static async evaluateAndEvolve(uid: string, state?: GraphState): Promise<boolean> {
+    try {
+      console.log(`[IdentityAgent] Starting identity evolution workflow shell for user: ${uid}`);
+      const workflowId = state?.workflowId || `fallback-identity-${uid}-${Date.now()}`;
+
+      // 1. Fetch context (using cached orchestrator if inside request, else load fallback)
+      let normalizedContext: NormalizedUserContext;
+      if (state && state.contextVersion) {
+        normalizedContext = ContextOrchestrator.getContext(workflowId);
+      } else {
+        normalizedContext = await ContextOrchestrator.loadContext(
+          uid,
+          workflowId,
+          "Fallback identity evolution execution"
+        );
+      }
+
+      const memoriesFormatted = normalizedContext.memories.map((m) => ({
+        category: m.category,
+        content: m.content,
+        summary: m.summary,
+        createdAt: m.createdAt,
+      }));
+
+      if (memoriesFormatted.length === 0) {
+        console.log(`[IdentityAgent] No approved memories found. Skipping evolution.`);
         return false;
       }
 
-      const result = JSON.parse(responseText) as {
-        traitsToUpdate: {
-          traitId: string;
-          trait: string;
-          category: IdentityTraitCategory;
-          description: string;
-          confidence: number;
-          stability: number;
-          evidence: string;
-          status: "active" | "candidate" | "deprecated";
-        }[];
-        newTraits: {
-          trait: string;
-          category: IdentityTraitCategory;
-          description: string;
-          confidence: number;
-          evidence: string;
-        }[];
-      };
+      const activeTraits = normalizedContext.identity.activeTraits;
+      const candidateTraits = normalizedContext.identity.candidateTraits;
 
-      console.log(`[IdentityAgent] Gemini response parsed. Updates: ${result.traitsToUpdate.length}, New Traits: ${result.newTraits.length}`);
+      const currentTraitsFormatted = [...activeTraits, ...candidateTraits].map((t) => ({
+        id: t.id,
+        trait: t.trait,
+        category: t.category,
+        description: t.description,
+        confidence: t.confidence,
+        stability: t.stability,
+        version: t.version,
+        status: t.status,
+        evidence: t.evidence,
+        updatedAt: t.updatedAt,
+      }));
 
-      // 3. Process Updates
-      for (const update of result.traitsToUpdate) {
-        const existing = [...activeTraits, ...candidateTraits].find(
-          (t) => t._id.toString() === update.traitId
-        );
+      // Since we don't hold pending proposals inside context caching (only count),
+      // we query pending proposals directly if fallback, or we can query it inside SyncService.
+      // For shell simplicity, we can load it from proposal repo:
+      const { IdentityProposalRepository } = await import("@/repositories/identity-proposal.repository");
+      const pendingProposals = await IdentityProposalRepository.findPendingByUser(uid);
+      const pendingProposalsFormatted = pendingProposals.map((p) => ({
+        trait: p.trait,
+        category: p.category,
+        confidence: p.confidence,
+      }));
 
-        if (existing) {
-          const hasChanged =
-            existing.confidence !== update.confidence ||
-            existing.stability !== update.stability ||
-            existing.description !== update.description ||
-            existing.status !== update.status ||
-            existing.evidence !== update.evidence;
+      // 2. Execute Pure AI Logic
+      const aiResult = await this.evaluateAndEvolveLogic(
+        memoriesFormatted,
+        currentTraitsFormatted,
+        pendingProposalsFormatted
+      );
 
-          if (hasChanged) {
-            const nextVersion = (existing.version || 1) + 1;
-            console.log(`[IdentityAgent] Updating trait "${existing.trait}" to version ${nextVersion} (Status: ${update.status})`);
-            await IdentityRepository.update(update.traitId, {
-              confidence: update.confidence,
-              stability: update.stability,
-              description: update.description,
-              status: update.status,
-              evidence: update.evidence,
-              version: nextVersion,
-            });
-
-            // If an existing candidate trait's confidence rises to >= 0.70, trigger a proposal
-            if (
-              existing.status === "candidate" &&
-              update.status === "candidate" &&
-              update.confidence >= 0.70
-            ) {
-              const duplicateProposal = await IdentityProposalRepository.findByNameCategoryAndStatus(
-                uid,
-                update.trait,
-                update.category,
-                "pending"
-              );
-
-              if (!duplicateProposal) {
-                console.log(`[IdentityAgent] Candidate trait "${update.trait}" crossed 70% threshold. Creating proposal.`);
-                await IdentityProposalRepository.create({
-                  firebaseUid: uid,
-                  trait: update.trait,
-                  category: update.category,
-                  confidence: update.confidence,
-                  reason: update.evidence || update.description,
-                });
-              }
-            }
-          }
-        }
+      if (!aiResult) {
+        return false;
       }
 
-      // 4. Process New Traits
-      for (const newTrait of result.newTraits) {
-        // Check duplicates
-        const existingActive = await IdentityRepository.findByNameAndCategory(
-          uid,
-          newTrait.trait,
-          newTrait.category
-        );
+      // 3. Persist modifications using IdentitySyncService
+      const success = await IdentitySyncService.persistIdentityEvolution(
+        uid,
+        activeTraits,
+        candidateTraits,
+        aiResult
+      );
 
-        if (existingActive) {
-          console.log(`[IdentityAgent] Trait "${newTrait.trait}" already exists in profile. Skipping creation.`);
-          continue;
-        }
-
-        // If confidence is >= 0.70, create a pending Proposal AND save trait as candidate
-        if (newTrait.confidence >= 0.70) {
-          // Check for pending proposals to avoid duplicates
-          const pending = await IdentityProposalRepository.findByNameCategoryAndStatus(
-            uid,
-            newTrait.trait,
-            newTrait.category,
-            "pending"
-          );
-
-          if (!pending) {
-            console.log(`[IdentityAgent] Creating proposal for new trait: "${newTrait.trait}" (Confidence: ${newTrait.confidence})`);
-            await IdentityProposalRepository.create({
-              firebaseUid: uid,
-              trait: newTrait.trait,
-              category: newTrait.category,
-              confidence: newTrait.confidence,
-              reason: newTrait.evidence || newTrait.description,
-            });
-          }
-
-          // Create the candidate trait if not already created
-          const duplicateCandidate = await IdentityRepository.findByNameAndCategory(
-            uid,
-            newTrait.trait,
-            newTrait.category
-          );
-          if (!duplicateCandidate) {
-            await IdentityRepository.create({
-              firebaseUid: uid,
-              trait: newTrait.trait,
-              category: newTrait.category,
-              description: newTrait.description,
-              confidence: newTrait.confidence,
-              stability: 0.1, // starting stability
-              version: 1,
-              status: "candidate",
-              evidence: newTrait.evidence,
-            });
-          }
-        } else {
-          // If confidence is < 0.70, save directly as a candidate (Hypothesis / Emerging state)
-          const duplicateCandidate = await IdentityRepository.findByNameAndCategory(
-            uid,
-            newTrait.trait,
-            newTrait.category
-          );
-
-          if (!duplicateCandidate) {
-            console.log(`[IdentityAgent] Creating candidate trait: "${newTrait.trait}" (Confidence: ${newTrait.confidence})`);
-            await IdentityRepository.create({
-              firebaseUid: uid,
-              trait: newTrait.trait,
-              category: newTrait.category,
-              description: newTrait.description,
-              confidence: newTrait.confidence,
-              stability: 0.1,
-              version: 1,
-              status: "candidate",
-              evidence: newTrait.evidence,
-            });
-          }
-        }
+      // Clean up fallback cache
+      if (!state || !state.contextVersion) {
+        ContextOrchestrator.invalidateCache(workflowId);
       }
 
-      console.log(`[IdentityAgent] Identity evolution completed successfully.`);
-      return true;
+      return success;
     } catch (error) {
-      console.error(`[IdentityAgent] Error during identity evolution:`, error);
+      console.error(`[IdentityAgent] Error during identity evolution shell:`, error);
       return false;
     }
   }
 
   /**
-   * Formats the list of active identity traits into a system prompt injection block.
+   * Backwards-compatible prompt formatting helper
    */
-  static formatIdentityForPrompt(traits: IIdentityTrait[]): string {
+  static formatIdentityForPrompt(traits: any[]): string {
     if (!traits || traits.length === 0) {
       return "";
     }

@@ -1,10 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
-import { MemoryRepository } from "@/repositories/memory.repository";
-import { IdentityRepository } from "@/repositories/identity.repository";
-import { ReflectionRepository } from "@/repositories/reflection.repository";
-import { MessageRepository } from "@/repositories/message.repository";
-import { IReflection, ReflectionType, ReflectionStatus } from "@/models/Reflection";
+import { ContextOrchestrator } from "@/services/context-orchestrator.service";
+import { ReflectionSyncService } from "@/services/reflection-sync.service";
 import type { GraphState } from "@/orchestration/graph/state";
+import type { NormalizedUserContext } from "@/types/context.types";
 
 const REFLECTION_AGENT_SYSTEM_PROMPT = `
 You are the Reflection Engine Agent for Zenkai.
@@ -53,95 +51,31 @@ export class ReflectionAgent {
   }
 
   /**
-   * Run the Reflection Engine pattern detection and evolution pipeline.
+   * PURE AI Reasoning function for reflection patterns detection.
    */
-  static async evaluateAndEvolve(uid: string, state?: GraphState): Promise<boolean> {
+  static async evaluateAndEvolveLogic(
+    memories: any[],
+    traits: any[],
+    recentMessages: any[],
+    reflections: any[]
+  ): Promise<{
+    reflectionsToUpdate: any[];
+    newReflections: any[];
+  } | null> {
     try {
-      console.log(`[ReflectionAgent] Starting reflection evolution for user: ${uid}`);
-
-      // 1. Fetch memories, identity traits, recent conversations, and existing reflections
-      const approvedMemories = await MemoryRepository.findApprovedByUser(uid);
-      const activeTraits = (state?.activeTraits && state.activeTraits.length > 0)
-        ? state.activeTraits
-        : await IdentityRepository.findActiveByUser(uid);
-      const candidateTraits = await IdentityRepository.findCandidatesByUser(uid);
-      
-      // Load recent conversations to identify behavior patterns — reuse state history
-      let recentMessagesFormatted: any[] = [];
-      if (state?.history && state.history.length > 0) {
-        recentMessagesFormatted = state.history.map(msg => ({
-          role: msg.role,
-          content: msg.content,
-        }));
-      } else {
-        const conversations = await MessageRepository.findConversationsByUser(uid);
-        if (conversations.length > 0) {
-          const latestConvId = conversations[0]._id.toString();
-          const messages = await MessageRepository.findRecentMessages(latestConvId, 30);
-          recentMessagesFormatted = messages.map(msg => ({
-            role: msg.role,
-            content: msg.content,
-            timestamp: msg.createdAt
-          }));
-        }
-      }
-
-      const activeReflections = (state?.activeReflections && state.activeReflections.length > 0)
-        ? state.activeReflections
-        : await ReflectionRepository.findActiveByUser(uid);
-
-      if (approvedMemories.length === 0 && activeReflections.length === 0) {
-        console.log(`[ReflectionAgent] No memories or existing reflections found. Skipping.`);
-        return false;
-      }
-
-      // Format data for prompt
-      const memoriesFormatted = approvedMemories.map(m => ({
-        id: m._id.toString(),
-        category: m.category,
-        content: m.content,
-        summary: m.summary,
-        createdAt: m.createdAt
-      }));
-
-      const traitsFormatted = [...activeTraits, ...candidateTraits].map(t => ({
-        id: t._id.toString(),
-        trait: t.trait,
-        category: t.category,
-        description: t.description,
-        confidence: t.confidence,
-        status: t.status
-      }));
-
-      const reflectionsFormatted = activeReflections.map(r => ({
-        id: r._id.toString(),
-        title: r.title,
-        category: r.category,
-        content: r.content,
-        summary: r.summary,
-        confidence: r.confidence,
-        stability: r.stability,
-        importance: r.importance,
-        version: r.version,
-        evidenceCount: r.evidenceCount,
-        supportingMemoryIds: r.supportingMemoryIds,
-        supportingIdentityTraitIds: r.supportingIdentityTraitIds
-      }));
-
-      // 2. Query Gemini to determine updates, deprecations, and new reflections
       const ai = this.getClient();
       const prompt = `
 User Memories (Approved Facts):
-${JSON.stringify(memoriesFormatted, null, 2)}
+${JSON.stringify(memories, null, 2)}
 
 User Identity Blueprint:
-${JSON.stringify(traitsFormatted, null, 2)}
+${JSON.stringify(traits, null, 2)}
 
 Recent Conversation Exchange:
-${JSON.stringify(recentMessagesFormatted, null, 2)}
+${JSON.stringify(recentMessages, null, 2)}
 
 Existing Active Reflections:
-${JSON.stringify(reflectionsFormatted, null, 2)}
+${JSON.stringify(reflections, null, 2)}
 
 Perform a deep pattern analysis on the user's data. Identify behavioral, planning, or learning habits.
 Decide if you should:
@@ -223,164 +157,131 @@ Ensure that:
       const responseText = response.text;
       if (!responseText) {
         console.warn(`[ReflectionAgent] Received empty response from Gemini.`);
+        return null;
+      }
+
+      return JSON.parse(responseText);
+    } catch (err) {
+      console.error("[ReflectionAgent] evaluateAndEvolveLogic failed:", err);
+      return null;
+    }
+  }
+
+  /**
+   * Shell wrapper for reflection evolution.
+   * Resolves context using ContextOrchestrator and delegates persistence to ReflectionSyncService.
+   */
+  static async evaluateAndEvolve(uid: string, state?: GraphState): Promise<boolean> {
+    try {
+      console.log(`[ReflectionAgent] Starting reflection evolution workflow shell for user: ${uid}`);
+      const workflowId = state?.workflowId || `fallback-reflection-${uid}-${Date.now()}`;
+
+      // 1. Fetch context
+      let normalizedContext: NormalizedUserContext;
+      if (state && state.contextVersion) {
+        normalizedContext = ContextOrchestrator.getContext(workflowId);
+      } else {
+        normalizedContext = await ContextOrchestrator.loadContext(
+          uid,
+          workflowId,
+          "Fallback reflection evolution execution"
+        );
+      }
+
+      const memoriesFormatted = normalizedContext.memories.map((m) => ({
+        id: m.id,
+        category: m.category,
+        content: m.content,
+        summary: m.summary,
+        createdAt: m.createdAt,
+      }));
+
+      const traitsFormatted = [
+        ...normalizedContext.identity.activeTraits,
+        ...normalizedContext.identity.candidateTraits,
+      ].map((t) => ({
+        id: t.id,
+        trait: t.trait,
+        category: t.category,
+        description: t.description,
+        confidence: t.confidence,
+        status: t.status,
+      }));
+
+      const activeReflections = normalizedContext.reflections;
+      const reflectionsFormatted = activeReflections.map((r) => ({
+        id: r.id,
+        title: r.title,
+        category: r.category,
+        content: r.content,
+        summary: r.summary,
+        confidence: r.confidence,
+        stability: r.stability,
+        importance: r.importance,
+        evidenceCount: r.evidenceCount,
+      }));
+
+      // Format recent messages from state history, or load fallback
+      let recentMessagesFormatted: any[] = [];
+      if (state?.history && state.history.length > 0) {
+        recentMessagesFormatted = state.history.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }));
+      } else {
+        const { MessageRepository } = await import("@/repositories/message.repository");
+        const conversations = await MessageRepository.findConversationsByUser(uid);
+        if (conversations.length > 0) {
+          const latestConvId = conversations[0]._id.toString();
+          const messages = await MessageRepository.findRecentMessages(latestConvId, 30);
+          recentMessagesFormatted = messages.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.createdAt,
+          }));
+        }
+      }
+
+      if (memoriesFormatted.length === 0 && reflectionsFormatted.length === 0) {
+        console.log(`[ReflectionAgent] No memories or existing reflections found. Skipping.`);
         return false;
       }
 
-      const result = JSON.parse(responseText) as {
-        reflectionsToUpdate: {
-          reflectionId: string;
-          title: string;
-          category: string;
-          content: string;
-          summary: string;
-          confidence: number;
-          stability: number;
-          importance: number;
-          supportingMemoryIds: string[];
-          supportingIdentityTraitIds: string[];
-          status: "active" | "deprecated";
-          evolutionReason: string;
-          llmReasoning: string;
-        }[];
-        newReflections: {
-          title: string;
-          category: string;
-          content: string;
-          summary: string;
-          confidence: number;
-          stability: number;
-          importance: number;
-          supportingMemoryIds: string[];
-          supportingIdentityTraitIds: string[];
-          llmReasoning: string;
-        }[];
-      };
+      // 2. Execute Pure AI Logic
+      const aiResult = await this.evaluateAndEvolveLogic(
+        memoriesFormatted,
+        traitsFormatted,
+        recentMessagesFormatted,
+        reflectionsFormatted
+      );
 
-      console.log(`[ReflectionAgent] Gemini parsed. Updates: ${result.reflectionsToUpdate.length}, New: ${result.newReflections.length}`);
-
-      // 3. Process Updates & Versioning
-      for (const update of result.reflectionsToUpdate) {
-        const existing = activeReflections.find(
-          r => r._id.toString() === update.reflectionId
-        );
-
-        if (existing) {
-          const hasChanged =
-            existing.confidence !== update.confidence ||
-            existing.stability !== update.stability ||
-            existing.status !== update.status ||
-            existing.content !== update.content ||
-            existing.title !== update.title ||
-            existing.summary !== update.summary;
-
-          if (hasChanged) {
-            const nextVersion = (existing.version || 1) + 1;
-            console.log(`[ReflectionAgent] Evolving reflection "${existing.title}" to version ${nextVersion} (Status: ${update.status})`);
-
-            // Push current state to versions history array
-            const versionSnapshot = {
-              version: existing.version || 1,
-              title: existing.title,
-              content: existing.content,
-              summary: existing.summary,
-              confidence: existing.confidence,
-              stability: existing.stability,
-              evidenceCount: existing.evidenceCount || 1,
-              supportingMemoryIds: existing.supportingMemoryIds || [],
-              supportingIdentityTraitIds: existing.supportingIdentityTraitIds || [],
-              evolutionReason: existing.evolutionReason || "Initial version",
-              llmReasoning: existing.llmReasoning || "",
-              updatedAt: existing.updatedAt || new Date()
-            };
-
-            // Build confidence history
-            const nextConfidenceHistory = [
-              ...(existing.confidenceHistory || []),
-              {
-                confidence: update.confidence,
-                timestamp: new Date(),
-                reason: update.evolutionReason
-              }
-            ];
-
-            await ReflectionRepository.update(update.reflectionId, {
-              title: update.title,
-              category: update.category,
-              content: update.content,
-              summary: update.summary,
-              confidence: update.confidence,
-              stability: update.stability,
-              importance: update.importance,
-              supportingMemoryIds: update.supportingMemoryIds,
-              supportingIdentityTraitIds: update.supportingIdentityTraitIds,
-              status: update.status,
-              version: nextVersion,
-              evidenceCount: update.supportingMemoryIds.length,
-              llmReasoning: update.llmReasoning,
-              evolutionReason: update.evolutionReason,
-              lastValidatedAt: new Date(),
-              confidenceHistory: nextConfidenceHistory,
-              versions: [...(existing.versions || []), versionSnapshot]
-            });
-          }
-        }
+      if (!aiResult) {
+        return false;
       }
 
-      // 4. Process New Reflections
-      for (const newRef of result.newReflections) {
-        // Double check duplicate title/category just in case
-        const duplicate = await ReflectionRepository.findByNameAndCategory(
-          uid,
-          newRef.title,
-          newRef.category
-        );
+      // 3. Persist modifications using ReflectionSyncService
+      const success = await ReflectionSyncService.persistReflectionEvolution(
+        uid,
+        activeReflections,
+        aiResult
+      );
 
-        if (duplicate) {
-          console.log(`[ReflectionAgent] Reflection "${newRef.title}" in category "${newRef.category}" already exists. Skipping.`);
-          continue;
-        }
-
-        console.log(`[ReflectionAgent] Creating new reflection: "${newRef.title}" (Confidence: ${newRef.confidence})`);
-        
-        await ReflectionRepository.create({
-          firebaseUid: uid,
-          reflectionType: "weekly", // Default to weekly/monthly level pattern
-          title: newRef.title,
-          category: newRef.category,
-          content: newRef.content,
-          summary: newRef.summary,
-          confidence: newRef.confidence,
-          stability: newRef.stability || 0.1,
-          importance: newRef.importance || 5.0,
-          supportingMemoryIds: newRef.supportingMemoryIds,
-          supportingIdentityTraitIds: newRef.supportingIdentityTraitIds,
-          status: "active",
-          version: 1,
-          evidenceCount: newRef.supportingMemoryIds.length,
-          llmReasoning: newRef.llmReasoning,
-          evolutionReason: "Initial pattern detected.",
-          confidenceHistory: [
-            {
-              confidence: newRef.confidence,
-              timestamp: new Date(),
-              reason: "Initial pattern detection"
-            }
-          ],
-          versions: []
-        });
+      // Clean up fallback cache
+      if (!state || !state.contextVersion) {
+        ContextOrchestrator.invalidateCache(workflowId);
       }
 
-      return true;
+      return success;
     } catch (error) {
-      console.error(`[ReflectionAgent] Error during reflection evolution:`, error);
+      console.error(`[ReflectionAgent] Error during reflection evolution shell:`, error);
       return false;
     }
   }
 
   /**
-   * Formats active reflections for companion system prompt context.
+   * Backwards-compatible prompt formatting helper
    */
-  static formatReflectionsForPrompt(reflections: IReflection[]): string {
+  static formatReflectionsForPrompt(reflections: any[]): string {
     if (!reflections || reflections.length === 0) {
       return "";
     }

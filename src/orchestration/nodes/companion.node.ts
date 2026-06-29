@@ -22,10 +22,10 @@ import { Goal } from "@/models/Goal";
 import { Milestone } from "@/models/Milestone";
 import { Plan } from "@/models/Plan";
 import { PlanningAgent } from "@/agents/planning-agent";
-import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { BehaviorEngine } from "@/services/behavior-engine.service";
 import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
+import { ContextOrchestrator } from "@/services/context-orchestrator.service";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Streaming protocol helper — null-byte delimited control events
@@ -139,6 +139,7 @@ export async function companionNode(
       profilePromptText,
       reflectionPromptText,
       todayStr,
+      workflowId,
     } = state;
 
     let planPromptText = "";
@@ -269,42 +270,16 @@ export async function companionNode(
         encoder,
         makeStatusEvent("execution", "running", "Creating actionable work blocks...")
       );
-
       try {
-        const schedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" }).populate("days.workBlocks.tasks").lean();
-        const agenda = schedule?.days.find((d: any) => d.date === todayStr);
-
-        if (agenda) {
-          // Resolve work block task titles
-          const formattedBlocks = await Promise.all(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (agenda.workBlocks as any[]).map(async (wb: any) => {
-              const taskIds = wb.tasks.map((t: any) => t._id || t);
-              const taskDocs =
-                taskIds.length > 0
-                  ? await Task.find({ _id: { $in: taskIds } }).lean()
-                  : [];
-              const taskTitles = taskDocs
-                .map((t: any) => `- ${t.title} (${t.status})`)
-                .join("\n");
-              return `Block: ${wb.title} (${wb.startTime} - ${wb.endTime})\nTasks:\n${
-                taskTitles || "No tasks scheduled"
-              }`;
-            })
-          );
-
-          planPromptText = buildExecutionAgendaPrompt({
-            date: agenda.date,
-            focusTheme: agenda.focusTheme,
-            estimatedWorkload: agenda.estimatedWorkload,
-            plannedFocusHours: agenda.plannedFocusHours,
-            formattedBlocks,
-          });
-        }
+        planPromptText = ContextOrchestrator.formatDailyAgendaPrompt(workflowId, todayStr);
       } catch (agendaErr) {
-        console.error("[CompanionNode] Failed to inject daily agenda context:", agendaErr);
+        console.error("[CompanionNode] Failed to inject daily agenda context from cache:", agendaErr);
       }
     }
+
+    // ── 1d. Add Active Plan Overview summary to prevent task overload ─────────
+    const activePlanOverviewText = ContextOrchestrator.formatActivePlanOverviewPrompt(workflowId);
+    const finalPlanPromptText = [activePlanOverviewText, planPromptText].filter(Boolean).join("\n\n");
 
     // ── 2. Call Gemini streaming ───────────────────────────────────────────────
     const geminiStream = await GeminiService.generateCompanionStreamWithMemory(
@@ -314,7 +289,7 @@ export async function companionNode(
       identityPromptText,
       profilePromptText,
       reflectionPromptText,
-      planPromptText
+      finalPlanPromptText
     );
 
     let accumulatedText = "";

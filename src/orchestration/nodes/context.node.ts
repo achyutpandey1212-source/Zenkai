@@ -17,16 +17,8 @@
 
 import type { NodeResult } from "../graph/types";
 import type { GraphState } from "../graph/state";
-import { MemoryAgent } from "@/agents/memory-agent";
-import { IdentityAgent } from "@/agents/identity-agent";
-import { ReflectionAgent } from "@/agents/reflection-agent";
-import { IdentityRepository } from "@/repositories/identity.repository";
-import { ReflectionRepository } from "@/repositories/reflection.repository";
-import { ProfileRepository } from "@/repositories/profile.repository";
-import { PlanRepository } from "@/repositories/plan.repository";
+import { ContextOrchestrator } from "@/services/context-orchestrator.service";
 import type { RetrievalContextPacket } from "@/memory/retrieval-pipeline";
-import type { IIdentityTrait } from "@/models/IdentityTrait";
-import type { IReflection } from "@/models/Reflection";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Streaming helper
@@ -55,30 +47,6 @@ function enqueueEvent(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Profile formatter — mirrors the format used in the existing route.ts
-// ─────────────────────────────────────────────────────────────────────────────
-
-function formatProfileForPrompt(
-  profile: GraphState["profile"]
-): string {
-  if (!profile) return "";
-
-  return [
-    "## User Foundational Profile (from Onboarding)",
-    profile.profession ? `- **Profession**: ${profile.profession}` : null,
-    profile.longTermGoal ? `- **Long-term Goal**: ${profile.longTermGoal}` : null,
-    profile.currentFocus ? `- **Current Focus**: ${profile.currentFocus}` : null,
-    profile.motivation ? `- **Motivation**: ${profile.motivation}` : null,
-    profile.dailyAvailability ? `- **Daily Availability**: ${profile.dailyAvailability}` : null,
-    profile.workStyle ? `- **Working Style**: ${profile.workStyle}` : null,
-    profile.biggestChallenge ? `- **Biggest Challenge**: ${profile.biggestChallenge}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Context Node Function
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -88,7 +56,7 @@ export async function contextNode(
   const startedAt = Date.now();
 
   try {
-    const { uid, userMessage, streamController, encoder } = state;
+    const { uid, userMessage, streamController, encoder, workflowId } = state;
 
     // ── 1. Signal memory retrieval start ─────────────────────────────────────
     enqueueEvent(
@@ -97,72 +65,48 @@ export async function contextNode(
       makeStatusEvent("memory", "running", "Remembering important details...")
     );
 
-    // ── 2. Load all context in a single parallel blast ────────────────────────
-    // Each call is individually wrapped so one failure doesn't poison the rest.
-    const [
-      memoryContextResult,
-      activeTraitsResult,
-      activeReflectionsResult,
-      profileResult,
-      activePlansResult,
-    ] = await Promise.allSettled([
-      MemoryAgent.retrieveForContext(uid, userMessage),
-      IdentityRepository.findActiveByUser(uid),
-      ReflectionRepository.findActiveByUser(uid),
-      ProfileRepository.findByFirebaseUid(uid),
-      PlanRepository.findFullTree(uid),
-    ]);
+    // ── 2. Load all context using the centralized ContextOrchestrator ─────────
+    const normalizedContext = await ContextOrchestrator.loadContext(
+      uid,
+      workflowId,
+      "Initial graph load",
+      userMessage
+    );
 
-    // ── 3. Unwrap results (fall back to safe defaults on failure) ─────────────
-    const memoryContext: RetrievalContextPacket =
-      memoryContextResult.status === "fulfilled"
-        ? memoryContextResult.value
-        : { intent: "chat", memories: [], extractedKeywords: [] };
+    // Extract values for backwards compatibility
+    const memoryContext: RetrievalContextPacket = {
+      intent: "chat",
+      memories: normalizedContext.memories as any[],
+      extractedKeywords: [],
+    };
 
-    const activeTraits: IIdentityTrait[] =
-      activeTraitsResult.status === "fulfilled" ? activeTraitsResult.value : [];
+    const activeTraits = normalizedContext.identity.activeTraits as any[];
+    const activeReflections = normalizedContext.reflections as any[];
+    const profile = normalizedContext.profile;
+    const activePlans = normalizedContext.activePlan ? [normalizedContext.activePlan] : [];
 
-    const activeReflections: IReflection[] =
-      activeReflectionsResult.status === "fulfilled" ? activeReflectionsResult.value : [];
+    // ── 3. Format prompt fragments via Orchestrator ──────────────────────────
+    const memoryPromptText = ContextOrchestrator.formatMemoryPrompt(workflowId);
+    const identityPromptText = ContextOrchestrator.formatIdentityPrompt(workflowId);
+    const reflectionPromptText = ContextOrchestrator.formatReflectionPrompt(workflowId);
+    const profilePromptText = ContextOrchestrator.formatProfilePrompt(workflowId);
 
-    const profile: GraphState["profile"] =
-      profileResult.status === "fulfilled" ? (profileResult.value as GraphState["profile"]) : null;
-
-    const activePlans: unknown[] =
-      activePlansResult.status === "fulfilled" ? activePlansResult.value : [];
-
-    // Log any failures for observability
-    if (memoryContextResult.status === "rejected") {
-      console.error("[ContextNode] Memory retrieval failed:", memoryContextResult.reason);
-    }
-    if (activeTraitsResult.status === "rejected") {
-      console.error("[ContextNode] Identity retrieval failed:", activeTraitsResult.reason);
-    }
-    if (activeReflectionsResult.status === "rejected") {
-      console.error("[ContextNode] Reflection retrieval failed:", activeReflectionsResult.reason);
-    }
-    if (profileResult.status === "rejected") {
-      console.error("[ContextNode] Profile retrieval failed:", profileResult.reason);
-    }
-    if (activePlansResult.status === "rejected") {
-      console.error("[ContextNode] Plan retrieval failed:", activePlansResult.reason);
-    }
-
-    // ── 4. Format prompt fragments ────────────────────────────────────────────
-    const memoryPromptText = MemoryAgent.formatMemoriesForPrompt(memoryContext.memories);
-    const identityPromptText = IdentityAgent.formatIdentityForPrompt(activeTraits);
-    const reflectionPromptText = ReflectionAgent.formatReflectionsForPrompt(activeReflections);
-    const profilePromptText = formatProfileForPrompt(profile);
-
-    // ── 5. Signal memory retrieval complete ───────────────────────────────────
+    // ── 4. Signal memory retrieval complete ───────────────────────────────────
     enqueueEvent(
       streamController,
       encoder,
       makeStatusEvent("memory", "completed", "Remembered key details from conversation history.")
     );
 
+    // ── 5. Stream diagnostics event to developer ──────────────────────────────
+    const diagnosticsEvent = `\0${JSON.stringify({
+      __type: "diagnostics",
+      diagnostics: normalizedContext.metadata.diagnostics,
+    })}\0`;
+    enqueueEvent(streamController, encoder, diagnosticsEvent);
+
     console.log(
-      `[ContextNode] Context loaded — memories: ${memoryContext.memories.length}, traits: ${activeTraits.length}, reflections: ${activeReflections.length}, plans: ${activePlans.length}, profile: ${!!profile}`
+      `[ContextNode] Context loaded (v${normalizedContext.metadata.version}) — memories: ${normalizedContext.memories.length}, traits: ${activeTraits.length}, reflections: ${activeReflections.length}, plans: ${activePlans.length}, profile: ${!!profile}`
     );
 
     return {
@@ -176,12 +120,13 @@ export async function contextNode(
         identityPromptText,
         reflectionPromptText,
         profilePromptText,
+        contextVersion: normalizedContext.metadata.version,
       },
       metadata: {
         success: true,
         duration: Date.now() - startedAt,
         skipped: false,
-        reason: `Context loaded — ${memoryContext.memories.length} memories, ${activeTraits.length} traits, ${activeReflections.length} reflections`,
+        reason: `Context loaded — v${normalizedContext.metadata.version} | ${normalizedContext.memories.length} memories, ${activeTraits.length} traits, ${activeReflections.length} reflections`,
       },
     };
   } catch (err) {
@@ -199,6 +144,7 @@ export async function contextNode(
         identityPromptText: "",
         reflectionPromptText: "",
         profilePromptText: "",
+        contextVersion: 0,
       },
       metadata: {
         success: false,

@@ -1,18 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
-import { Plan, IPlan } from "@/models/Plan";
-import { Milestone, IMilestone } from "@/models/Milestone";
-import { Goal, IGoal } from "@/models/Goal";
-import { Task, ITask } from "@/models/Task";
-import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
-import { User } from "@/models/User";
-import { ProfileRepository } from "@/repositories/profile.repository";
-import { MemoryRepository } from "@/repositories/memory.repository";
-import { IdentityRepository } from "@/repositories/identity.repository";
-import { ReflectionRepository } from "@/repositories/reflection.repository";
-import { PlanRepository } from "@/repositories/plan.repository";
-import { Types } from "mongoose";
 import type { GraphState } from "@/orchestration/graph/state";
-import { BehaviorEngine } from "@/services/behavior-engine.service";
+import { ContextOrchestrator } from "@/services/context-orchestrator.service";
+import { PlanSyncService } from "@/services/plan-sync.service";
+import type { PlanningContext, NormalizedUserContext } from "@/types/context.types";
 
 // Re-exported so chat route can import them
 export type LifeEvent = {
@@ -674,84 +664,29 @@ Determine the intent:
     }
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // PLAN GENERATION / EVOLUTION
-  // ───────────────────────────────────────────────────────────────────────────
   /**
-   * Generate or evolve a plan. Returns plan stats on success, null on failure.
+   * PURE AI Reasoning function. Consumes typed context contracts only.
+   * No database, no repository, no Mongoose models.
    */
-  static async generateOrEvolvePlan(
-    uid: string,
+  static async generateOrEvolvePlanLogic(
+    context: PlanningContext,
     intent: PlanningIntent,
     userMessage: string,
-    lifeEvents?: LifeEventExtraction,
-    state?: GraphState
-  ): Promise<{ success: boolean; milestonesCreated: number; tasksCreated: number; planVersion?: number; ignored?: boolean } | null> {
-    const startTime = Date.now();
+    lifeEvents?: LifeEventExtraction
+  ): Promise<{
+    plan: any;
+    planningConfidence: number;
+    planningAction: "create" | "modify" | "merge" | "ignore";
+    plannerReasoning: string;
+    changeSummary: string;
+    detectedConstraints: string;
+    mergeStrategy: string;
+    timelineRecalculation: string;
+    promptText: string;
+    rawGeminiOutput: string;
+  } | null> {
     try {
-      console.log(`[PlanningAgent] Executing plan generation/evolution for user ${uid}`);
-      // 1. Fetch user context — reuse GraphState if available to avoid duplicate DB reads
-      const profile = state?.profile ?? await ProfileRepository.findByFirebaseUid(uid);
-      
-      // Use pruned top-N memories from GraphState, falls back to full list
-      const memories = state?.memoryContext?.memories ?? await MemoryRepository.findApprovedByUser(uid);
-      
-      const traits = (state?.activeTraits && state.activeTraits.length > 0) 
-        ? state.activeTraits 
-        : await IdentityRepository.findActiveByUser(uid);
-        
-      const reflections = (state?.activeReflections && state.activeReflections.length > 0) 
-        ? state.activeReflections 
-        : await ReflectionRepository.findActiveByUser(uid);
-        
-      const existingPlans = (state?.activePlans && state.activePlans.length > 0) 
-        ? state.activePlans 
-        : await PlanRepository.findFullTree(uid);
-
-      // Prune existingPlans to strip heavy fields like history and diagnostics
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const prunedPlans = existingPlans.map((p: any) => ({
-        id: p._id?.toString() || p.id,
-        title: p.title,
-        description: p.description || "",
-        status: p.status,
-        priority: p.priority,
-        estimatedDuration: p.estimatedDuration,
-        type: p.type,
-        progress: p.progress,
-        milestones: (p.milestones || []).map((m: any) => ({
-          id: m._id?.toString() || m.id,
-          title: m.title,
-          description: m.description || "",
-          status: m.status,
-          priority: m.priority,
-          estimatedDuration: m.estimatedDuration,
-          category: m.category,
-          startDate: m.startDate,
-          endDate: m.endDate,
-          progress: m.progress,
-          goals: (m.goals || []).map((g: any) => ({
-            id: g._id?.toString() || g.id,
-            title: g.title,
-            description: g.description || "",
-            status: g.status,
-            priority: g.priority,
-            progress: g.progress,
-            tasks: (g.tasks || []).map((t: any) => ({
-              id: t._id?.toString() || t.id,
-              title: t.title,
-              description: t.description || "",
-              status: t.status,
-              priority: t.priority,
-              suggestedDate: t.suggestedDate,
-              timeBlock: t.timeBlock,
-              dependencies: t.dependencies,
-            })),
-          })),
-        })),
-      }));
-
-      // 2. Format context for prompt — ordered by priority (user request first)
+      const plansList = context.activePlan ? [context.activePlan] : [];
       const lifeEventsContext = lifeEvents?.detectedEvents?.length
         ? `\nDetected Life Events (auto-extracted):\n${JSON.stringify(lifeEvents.detectedEvents, null, 2)}\n`
         : "";
@@ -765,22 +700,22 @@ ${lifeEventsContext}
 (The recent message history provides follow-up and confirmation signals. "yes" or "go ahead" confirms the last proposed plan.)
 
 ## PRIORITY 3 — ONBOARDING INFORMATION (fills gaps only, never overrides Priority 1)
-- Profession: ${profile?.profession || "None"}
-- Long-term goal: ${profile?.longTermGoal || "None"}
-- Current Focus: ${profile?.currentFocus || "None"}
+- Profession: ${context.profile?.profession || "None"}
+- Long-term goal: ${context.profile?.longTermGoal || "None"}
+- Current Focus: ${context.profile?.currentFocus || "None"}
 
 ## PRIORITY 4 — LONG-TERM MEMORY (personalizes approach, does not determine what to plan)
-${JSON.stringify(memories.map((m) => m.summary), null, 2)}
+${JSON.stringify(context.memories.map((m) => m.summary), null, 2)}
 
 Active Traits:
-${JSON.stringify(traits.map((t) => ({ trait: t.trait, description: t.description })), null, 2)}
+${JSON.stringify(context.identity.activeTraits.map((t) => ({ trait: t.trait, description: t.description })), null, 2)}
 
 Active Reflections:
-${JSON.stringify(reflections.map((r) => ({ title: r.title, summary: r.summary })), null, 2)}
+${JSON.stringify(context.reflections.map((r) => ({ title: r.title, summary: r.summary })), null, 2)}
 
 ## PRIORITY 5 — PROFILE FIELDS (scheduling realism only)
-- Peak focus availability: ${profile?.dailyAvailability || "None"}
-- Working Style: ${profile?.workStyle || "None"}
+- Peak focus availability: ${context.profile?.dailyAvailability || "None"}
+- Working Style: ${context.profile?.workStyle || "None"}
 
 ## CURRENT DATE/TIME CONTEXT
 - Current Timestamp: ${new Date().toString()}
@@ -788,7 +723,7 @@ ${JSON.stringify(reflections.map((r) => ({ title: r.title, summary: r.summary })
 - Current Local Time: ${new Date().toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit' })}
 
 ## EXISTING PLANS TREE (for evolution/merging)
-${JSON.stringify(prunedPlans, null, 2)}
+${JSON.stringify(plansList, null, 2)}
 `;
 
       const prompt = `
@@ -804,7 +739,7 @@ Remember:
 - CRITICAL Date & Time Reasoning: Reason about relative time terms (like "today", "tomorrow", "this evening", "this weekend", "next week") relative to the Current Date/Time Context.
 `;
 
-      const ai = this.getClient();
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -815,19 +750,16 @@ Remember:
           responseSchema: {
             type: "OBJECT",
             properties: {
-              // ── Confidence gate fields (evaluated BEFORE any plan write) ──
               planningConfidence: { type: "NUMBER" },
               planningAction: {
                 type: "STRING",
                 enum: ["create", "modify", "merge", "ignore"],
               },
-              // ── Diagnostic fields ──
               plannerReasoning: { type: "STRING" },
               changeSummary: { type: "STRING" },
               detectedConstraints: { type: "STRING" },
               mergeStrategy: { type: "STRING" },
               timelineRecalculation: { type: "STRING" },
-              // ── Plan tree ──
               plan: {
                 type: "OBJECT",
                 properties: {
@@ -944,490 +876,145 @@ Remember:
       const responseText = response.text;
       if (!responseText) return null;
 
-      const result = JSON.parse(responseText) as {
-        plan: any;
-        planningConfidence: number;
-        planningAction: "create" | "modify" | "merge" | "ignore";
-        plannerReasoning: string;
-        changeSummary: string;
-        detectedConstraints: string;
-        mergeStrategy: string;
-        timelineRecalculation: string;
-      };
-
-      // ── Confidence Gate ─────────────────────────────────────────────────────
-      const confidence = result.planningConfidence ?? 0;
-      const planningAction = result.planningAction ?? "ignore";
-
-      console.log(`[PlanningAgent] Confidence: ${confidence} | Action: ${planningAction}`);
-
-      if (planningAction === "ignore" || confidence < 0.50) {
-        console.log(`[PlanningAgent] Confidence ${confidence} below threshold (action=${planningAction}). Skipping plan write.`);
-        return { success: false, milestonesCreated: 0, tasksCreated: 0, ignored: true };
-      }
-
-      // merge mode: disable orphan deletion so no existing items are removed
-      const isMergeMode = planningAction === "merge" || (confidence >= 0.50 && confidence < 0.80);
-
-      const normalizedPlan = result.plan;
-      const executionTimeMs = Date.now() - startTime;
-
-      // Track stats
-      let totalTasksCreated = 0;
-      let totalMilestonesCreated = 0;
-
-      // 3. Persist to Database
-      let planDoc: any;
-      const diagnostics = {
-        planningPrompt: prompt,
-        rawGeminiOutput: responseText,
-        normalizedPlan: JSON.stringify(normalizedPlan, null, 2),
-        executionTimeMs,
-        plannerReasoning: result.plannerReasoning,
-        detectedConstraints: result.detectedConstraints,
-        mergeStrategy: result.mergeStrategy,
-        timelineRecalculation: result.timelineRecalculation,
-      };
-
-      if (normalizedPlan.id && Types.ObjectId.isValid(normalizedPlan.id)) {
-        // Update existing plan
-        planDoc = await Plan.findByIdAndUpdate(
-          normalizedPlan.id,
-          {
-            $set: {
-              title: normalizedPlan.title,
-              description: normalizedPlan.description || "",
-              status: normalizedPlan.status,
-              priority: normalizedPlan.priority,
-              estimatedDuration: normalizedPlan.estimatedDuration,
-              type: normalizedPlan.type,
-              diagnostics,
-            },
-          },
-          { returnDocument: "after" }
-        );
-      } else {
-        // Create new plan
-        planDoc = await Plan.create({
-          firebaseUid: uid,
-          title: normalizedPlan.title,
-          description: normalizedPlan.description || "",
-          status: normalizedPlan.status || "active",
-          priority: normalizedPlan.priority || 1,
-          estimatedDuration: normalizedPlan.estimatedDuration,
-          type: normalizedPlan.type || "personal",
-          progress: 0,
-          diagnostics,
-        });
-      }
-
-      if (!planDoc) {
-        throw new Error("Failed to create or update Plan document.");
-      }
-
-      const planId = planDoc._id;
-
-      // Fetch all existing milestones, goals, and tasks for clean ORM sync/deletion
-      const existingMilestones = await Milestone.find({ planId });
-      const existingMilestoneIds = existingMilestones.map((m) => m._id.toString());
-
-      const milestoneIdsInPayload = new Set<string>();
-      const goalIdsInPayload = new Set<string>();
-      const taskIdsInPayload = new Set<string>();
-
-      // Process Milestones
-      for (const milestone of normalizedPlan.milestones) {
-        let milestoneDoc: any;
-        if (milestone.id && Types.ObjectId.isValid(milestone.id)) {
-          milestoneDoc = await Milestone.findByIdAndUpdate(
-            milestone.id,
-            {
-              $set: {
-                title: milestone.title,
-                description: milestone.description || "",
-                status: milestone.status,
-                priority: milestone.priority,
-                estimatedDuration: milestone.estimatedDuration,
-                startDate: milestone.startDate || "",
-                endDate: milestone.endDate || "",
-                category: milestone.category || "Personal",
-                importance: milestone.importance || 5,
-                flexibility: milestone.flexibility || 5,
-              },
-            },
-            { returnDocument: "after" }
-          );
-          milestoneIdsInPayload.add(milestone.id);
-        } else {
-          milestoneDoc = await Milestone.create({
-            planId,
-            firebaseUid: uid,
-            title: milestone.title,
-            description: milestone.description || "",
-            status: milestone.status || "todo",
-            priority: milestone.priority || 1,
-            estimatedDuration: milestone.estimatedDuration,
-            progress: 0,
-            startDate: milestone.startDate || "",
-            endDate: milestone.endDate || "",
-            category: milestone.category || "Personal",
-            importance: milestone.importance || 5,
-            flexibility: milestone.flexibility || 5,
-          });
-          milestoneIdsInPayload.add(milestoneDoc._id.toString());
-          totalMilestonesCreated++;
-        }
-
-        const milestoneId = milestoneDoc._id;
-
-        // Process Goals under this Milestone
-        for (const goal of milestone.goals) {
-          let goalDoc: any;
-          if (goal.id && Types.ObjectId.isValid(goal.id)) {
-            goalDoc = await Goal.findByIdAndUpdate(
-              goal.id,
-              {
-                $set: {
-                  planId,
-                  milestoneId,
-                  title: goal.title,
-                  description: goal.description || "",
-                  status: goal.status,
-                  priority: goal.priority,
-                  estimatedDuration: goal.estimatedDuration,
-                },
-              },
-              { returnDocument: "after" }
-            );
-            goalIdsInPayload.add(goal.id);
-          } else {
-            goalDoc = await Goal.create({
-              firebaseUid: uid,
-              planId,
-              milestoneId,
-              title: goal.title,
-              description: goal.description || "",
-              status: goal.status || "active",
-              priority: goal.priority || 1,
-              estimatedDuration: goal.estimatedDuration,
-              progress: 0,
-            });
-            goalIdsInPayload.add(goalDoc._id.toString());
-          }
-
-          const goalId = goalDoc._id;
-
-          // Process Tasks under this Goal
-          for (const task of goal.tasks) {
-            let taskDoc: any;
-            if (task.id && Types.ObjectId.isValid(task.id)) {
-              taskDoc = await Task.findByIdAndUpdate(
-                task.id,
-                {
-                  $set: {
-                    goalId,
-                    title: task.title,
-                    description: task.description || "",
-                    status: task.status,
-                    priority: task.priority,
-                    estimatedDuration: task.estimatedDuration,
-                    dependencies: task.dependencies || [],
-                    suggestedDate: task.suggestedDate || "",
-                    timeBlock: task.timeBlock || "",
-                  },
-                },
-                { returnDocument: "after" }
-              );
-              taskIdsInPayload.add(task.id);
-            } else {
-              taskDoc = await Task.create({
-                firebaseUid: uid,
-                goalId,
-                title: task.title,
-                description: task.description || "",
-                status: task.status || "todo",
-                priority: task.priority || 1,
-                estimatedDuration: task.estimatedDuration,
-                dependencies: task.dependencies || [],
-                suggestedDate: task.suggestedDate || "",
-                timeBlock: task.timeBlock || "",
-              });
-              taskIdsInPayload.add(taskDoc._id.toString());
-              totalTasksCreated++;
-            }
-          }
-        }
-      }
-
-      // Sync deletes: Remove orphaned elements NOT in the new payload.
-      // Guard: only delete if payload is non-empty (protects against truncated LLM responses).
-      // Merge mode: SKIP all deletions — only add new items, never remove.
-      if (!isMergeMode) {
-        const goalsOfThisPlan = await Goal.find({ planId });
-        const goalIdsOfThisPlan = goalsOfThisPlan.map((g) => g._id);
-
-        if (taskIdsInPayload.size > 0) {
-          await Task.deleteMany({
-            goalId: { $in: goalIdsOfThisPlan },
-            _id: { $nin: Array.from(taskIdsInPayload).map((id) => new Types.ObjectId(id)) },
-          });
-        }
-
-        if (goalIdsInPayload.size > 0) {
-          await Goal.deleteMany({
-            planId,
-            _id: { $nin: Array.from(goalIdsInPayload).map((id) => new Types.ObjectId(id)) },
-          });
-        }
-
-        if (milestoneIdsInPayload.size > 0) {
-          await Milestone.deleteMany({
-            planId,
-            _id: { $nin: Array.from(milestoneIdsInPayload).map((id) => new Types.ObjectId(id)) },
-          });
-        }
-      } else {
-        console.log(`[PlanningAgent] Merge mode: skipping orphan deletion to preserve existing plan items.`);
-      }
-
-      // 4. Trigger progress recalculation for the entire plan structure to sync numbers
-      await this.recalculatePlanProgress(planId.toString());
-
-      // 5. Version Control: Capture full snapshot of updated plan and push to history
-      const updatedPlanTree = await Plan.findById(planId).lean();
-      const updatedMilestones = await Milestone.find({ planId }).sort({ startDate: 1 }).lean();
-      const milestoneTrees = [];
-      for (const m of updatedMilestones) {
-        const goals = await Goal.find({ milestoneId: m._id }).sort({ priority: 1 }).lean();
-        const goalTrees = [];
-        for (const g of goals) {
-          const tasks = await Task.find({ goalId: g._id }).sort({ priority: 1 }).lean();
-          goalTrees.push({ ...g, tasks });
-        }
-        milestoneTrees.push({ ...m, goals: goalTrees });
-      }
-      const fullSnapshot = {
-        ...updatedPlanTree,
-        milestones: milestoneTrees
-      };
-
-      const changeSummary = result.changeSummary || (normalizedPlan.id ? "Updated plan" : "New plan");
-      const updatedPlanDoc = await Plan.findByIdAndUpdate(planId, {
-        $push: {
-          history: {
-            timestamp: new Date(),
-            changeSummary,
-            snapshot: JSON.stringify(fullSnapshot),
-          },
-        },
-        $inc: { version: 1 }, // increment version on every write — used for frontend cache-busting
-      }, { returnDocument: "after" });
-
-      const newPlanVersion = updatedPlanDoc?.version ?? 1;
-
-      console.log(
-        `[PlanningAgent] Plan complete in ${Date.now() - startTime}ms. Milestones: ${updatedMilestones.length}, New tasks: ${totalTasksCreated}, Version: ${newPlanVersion}`
-      );
-
-      // 4. Synchronization and Invalidation (Phase 15A)
-      try {
-        const user = await User.findOne({ firebaseUid: uid }).lean();
-        const timezone = user?.briefSettings?.timezone || "UTC";
-        const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
-
-        // A. Generate Weekly Schedule (Phase 15B)
-        await this.generateWeeklySchedule(uid, planDoc._id.toString());
-
-        // B. Ensure there is only 1 active plan at a time. If the current plan is active, auto-archive others.
-        if (planDoc.status === "active") {
-          const plansToArchive = await Plan.find({
-            firebaseUid: uid,
-            _id: { $ne: planDoc._id },
-            status: "active"
-          });
-          const planIdsToArchive = plansToArchive.map(p => p._id.toString());
-
-          if (planIdsToArchive.length > 0) {
-            await Plan.updateMany(
-              { firebaseUid: uid, _id: { $in: planIdsToArchive } },
-              { $set: { status: "archived" } }
-            );
-
-            // Clean up mirrored Google Calendar events for newly archived plans
-            const { CalendarSyncService } = await import("@/services/calendar-sync.service");
-            for (const pid of planIdsToArchive) {
-              await CalendarSyncService.cleanObsoleteEvents(uid, pid).catch(err => {
-                console.error("[PlanningAgent] Failed to clean obsolete events for auto-archived plan:", pid, err);
-              });
-            }
-          }
-        } else if (planDoc.status === "archived") {
-          // If the evolved plan itself was archived, clean it up
-          const { CalendarSyncService } = await import("@/services/calendar-sync.service");
-          await CalendarSyncService.cleanObsoleteEvents(uid, planDoc._id.toString()).catch(err => {
-            console.error("[PlanningAgent] Failed to clean obsolete events for evolved plan:", planDoc._id, err);
-          });
-        }
-      } catch (syncErr) {
-        console.error("[PlanningAgent] Error during workspace active-state synchronization:", syncErr);
-      }
-
-      // Notify BehaviorEngine
-      await BehaviorEngine.updateFromPlan(uid, planId, "update").catch(err =>
-        console.error("[PlanningAgent] Failed to update behavior profile from plan update:", err)
-      );
-
+      const result = JSON.parse(responseText);
       return {
-        success: true,
-        milestonesCreated: updatedMilestones.length,
-        tasksCreated: totalTasksCreated,
-        planVersion: newPlanVersion,
+        ...result,
+        promptText: prompt,
+        rawGeminiOutput: responseText,
       };
-    } catch (error) {
-      console.error("[PlanningAgent] Plan generation/evolution error:", error);
+    } catch (err) {
+      console.error("[PlanningAgent] generateOrEvolvePlanLogic failed:", err);
       return null;
     }
   }
 
   /**
-   * Recalculates progress recursively starting from a task ID.
+   * Shell wrapper for plan generation/evolution to preserve compatibility with Graph Node and routes.
+   * Handles cached load fallback and delegates persistence to PlanSyncService.
    */
-  static async recalculateProgress(uid: string, taskId: string): Promise<void> {
+  static async generateOrEvolvePlan(
+    uid: string,
+    intent: PlanningIntent,
+    userMessage: string,
+    lifeEvents?: LifeEventExtraction,
+    state?: GraphState
+  ): Promise<{ success: boolean; milestonesCreated: number; tasksCreated: number; planVersion?: number; ignored?: boolean } | null> {
+    const startTime = Date.now();
     try {
-      const task = await Task.findById(taskId);
-      if (!task || !task.goalId) return;
+      console.log(`[PlanningAgent] Executing planning workflow shell for user ${uid}`);
+      const workflowId = state?.workflowId || `fallback-planning-${uid}-${Date.now()}`;
 
-      const goalId = task.goalId.toString();
-      const goal = await Goal.findById(goalId);
-      if (!goal) return;
-
-      // 1. Recalculate Goal Progress
-      const tasks = await Task.find({ goalId: task.goalId });
-      const totalTasks = tasks.length;
-      const completedTasks = tasks.filter((t) => t.status === "completed").length;
-      const goalProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-      const goalStatus = goalProgress === 100 ? "completed" : "active";
-
-      await Goal.findByIdAndUpdate(goalId, {
-        $set: { progress: goalProgress, status: goalStatus },
-      });
-
-      if (!goal.milestoneId) return;
-
-      const milestoneId = goal.milestoneId.toString();
-      const milestone = await Milestone.findById(milestoneId);
-      if (!milestone) return;
-
-      // 2. Recalculate Milestone Progress
-      const goals = await Goal.find({ milestoneId: goal.milestoneId });
-      const totalGoals = goals.length;
-      const completedGoalsProgress = goals.reduce((sum, g) => sum + (g.progress || 0), 0);
-      const milestoneProgress = totalGoals > 0 ? Math.round(completedGoalsProgress / totalGoals) : 0;
-      const milestoneStatus = milestoneProgress === 100 ? "completed" : "in_progress";
-
-      await Milestone.findByIdAndUpdate(milestoneId, {
-        $set: { progress: milestoneProgress, status: milestoneStatus },
-      });
-
-      if (!milestone.planId) return;
-
-      // 3. Recalculate Plan Progress
-      const planId = milestone.planId.toString();
-      const milestones = await Milestone.find({ planId: milestone.planId });
-      const totalMilestones = milestones.length;
-      const completedMilestonesProgress = milestones.reduce((sum, m) => sum + (m.progress || 0), 0);
-      const planProgress = totalMilestones > 0 ? Math.round(completedMilestonesProgress / totalMilestones) : 0;
-      const planStatus = planProgress === 100 ? "completed" : "active";
-
-      await Plan.findByIdAndUpdate(planId, {
-        $set: { progress: planProgress, status: planStatus },
-      });
-
-      console.log(`[PlanningAgent] Recalculated progress recursively. Plan ${planId}: ${planProgress}%`);
-    } catch (error) {
-      console.error("[PlanningAgent] Error during recursive progress calculation:", error);
-    }
-  }
-
-  /**
-   * Helper to recalculate progress for an entire plan by its ID.
-   */
-  static async recalculatePlanProgress(planId: string): Promise<void> {
-    try {
-      const milestones = await Milestone.find({ planId: new Types.ObjectId(planId) });
-      for (const m of milestones) {
-        const goals = await Goal.find({ milestoneId: m._id });
-        for (const g of goals) {
-          const tasks = await Task.find({ goalId: g._id });
-          const totalTasks = tasks.length;
-          const completedTasks = tasks.filter((t) => t.status === "completed").length;
-          const goalProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-          const goalStatus = goalProgress === 100 ? "completed" : g.status;
-          await Goal.findByIdAndUpdate(g._id, { $set: { progress: goalProgress, status: goalStatus } });
-        }
-
-        const totalGoals = goals.length;
-        const milestoneProgress = totalGoals > 0
-          ? Math.round(goals.reduce((sum, g) => sum + (g.progress || 0), 0) / totalGoals)
-          : 0;
-        const milestoneStatus = milestoneProgress === 100 ? "completed" : m.status;
-        await Milestone.findByIdAndUpdate(m._id, { $set: { progress: milestoneProgress, status: milestoneStatus } });
-      }
-
-      const totalMilestones = milestones.length;
-      const planProgress = totalMilestones > 0
-        ? Math.round(milestones.reduce((sum, m) => sum + (m.progress || 0), 0) / totalMilestones)
-        : 0;
-      const plan = await Plan.findById(planId);
-      const planStatus = planProgress === 100 ? "completed" : (plan?.status || "active");
-      await Plan.findByIdAndUpdate(planId, { $set: { progress: planProgress, status: planStatus } });
-
-      if (plan) {
-        await BehaviorEngine.updateFromPlan(plan.firebaseUid, planId, planStatus === "completed" ? "complete" : "update").catch(err =>
-          console.error("[PlanningAgent] Failed to update behavior profile from plan progress update:", err)
+      // 1. Resolve normalized user context
+      let normalizedContext: NormalizedUserContext;
+      if (state && state.contextVersion) {
+        normalizedContext = ContextOrchestrator.getContext(workflowId);
+      } else {
+        // Fallback loading when called outside request lifecycle
+        normalizedContext = await ContextOrchestrator.loadContext(
+          uid,
+          workflowId,
+          "Fallback planning shell execution",
+          userMessage
         );
       }
+
+      // Map to contract PlanningContext
+      const planningContext: PlanningContext = {
+        metadata: normalizedContext.metadata,
+        identity: {
+          activeTraits: normalizedContext.identity.activeTraits,
+        },
+        activePlan: normalizedContext.activePlan,
+        memories: normalizedContext.memories,
+        reflections: normalizedContext.reflections,
+        profile: normalizedContext.profile,
+      };
+
+      // 2. Execute Pure AI Logic
+      const aiResult = await this.generateOrEvolvePlanLogic(
+        planningContext,
+        intent,
+        userMessage,
+        lifeEvents
+      );
+
+      if (!aiResult) {
+        return null;
+      }
+
+      const confidence = aiResult.planningConfidence ?? 0;
+      const planningAction = aiResult.planningAction ?? "ignore";
+
+      if (planningAction === "ignore" || confidence < 0.50) {
+        console.log(`[PlanningAgent] Shell: Confidence ${confidence} too low or ignore action. Skipping persistence.`);
+        return { success: false, milestonesCreated: 0, tasksCreated: 0, ignored: true };
+      }
+
+      // 3. Write plan tree updates using PlanSyncService (decoupled DB writes)
+      const executionTimeMs = Date.now() - startTime;
+      const syncResult = await PlanSyncService.persistPlanChanges(
+        uid,
+        aiResult,
+        aiResult.promptText,
+        aiResult.rawGeminiOutput,
+        executionTimeMs
+      );
+
+      // 4. Generate Weekly schedule automatically for the active plan
+      await this.generateWeeklySchedule(uid, syncResult.planId, state);
+
+      // Invalidate fallback cache if we instantiated it ourselves
+      if (!state || !state.contextVersion) {
+        ContextOrchestrator.invalidateCache(workflowId);
+      }
+
+      return {
+        success: syncResult.success,
+        milestonesCreated: syncResult.milestonesCreated,
+        tasksCreated: syncResult.tasksCreated,
+        planVersion: syncResult.planVersion,
+      };
     } catch (error) {
-      console.error(`[PlanningAgent] Failed to recalculate plan progress for plan ${planId}:`, error);
+      console.error("[PlanningAgent] Evolve plan shell failed:", error);
+      return null;
     }
   }
+
   /**
-   * Generates a 7-day WeeklyExecutionSchedule using Gemini.
+   * Backwards-compatible progress recalculation wrapper.
    */
-  static async generateWeeklySchedule(uid: string, planId: string): Promise<any> {
-    const user = await User.findOne({ firebaseUid: uid }).lean();
-    const timezone = user?.briefSettings?.timezone || "UTC";
-    const startDate = new Date();
-    const startDateStr = startDate.toLocaleDateString("en-CA", { timeZone: timezone });
-    
-    // Fetch all active tasks
-    const planObjectId = new Types.ObjectId(planId);
-    const milestones = await Milestone.find({ planId: planObjectId, status: { $in: ["todo", "in_progress"] } }).lean();
-    const milestoneIds = milestones.map(m => m._id);
-    const goals = await Goal.find({ milestoneId: { $in: milestoneIds }, status: "active" }).lean();
-    const goalIds = goals.map(g => g._id);
-    const tasks = await Task.find({ 
-      goalId: { $in: goalIds }, 
-      status: { $in: ["todo", "in_progress", "deferred"] } 
-    }).lean();
+  static async recalculateProgress(uid: string, taskId: string): Promise<void> {
+    await PlanSyncService.recalculateProgress(uid, taskId);
+  }
 
-    // Fetch user context for high-realism planning
-    const profile = await ProfileRepository.findByFirebaseUid(uid);
-    const memories = await MemoryRepository.findApprovedByUser(uid);
-    const traits = await IdentityRepository.findActiveByUser(uid);
-    const reflections = await ReflectionRepository.findActiveByUser(uid);
+  /**
+   * Backwards-compatible plan progress recalculation wrapper.
+   */
+  static async recalculatePlanProgress(planId: string): Promise<void> {
+    await PlanSyncService.recalculatePlanProgress(planId);
+  }
 
-    const profileContext = profile ? `
-- Profession: ${profile.profession || "None"}
-- Long-term goal: ${profile.longTermGoal || "None"}
-- Current Focus: ${profile.currentFocus || "None"}
-- Peak focus availability: ${profile.dailyAvailability || "None"}
-- Working Style: ${profile.workStyle || "None"}
+  /**
+   * PURE AI Reasoning function for weekly scheduling.
+   * Consumes only typed contracts and active tasks, returning the generated schedule days.
+   */
+  static async generateWeeklyScheduleLogic(
+    context: PlanningContext,
+    activeTasks: any[],
+    startDateStr: string,
+    timezone: string
+  ): Promise<any> {
+    const profileContext = context.profile ? `
+- Profession: ${context.profile.profession || "None"}
+- Long-term goal: ${context.profile.longTermGoal || "None"}
+- Current Focus: ${context.profile.currentFocus || "None"}
+- Peak focus availability: ${context.profile.dailyAvailability || "None"}
+- Working Style: ${context.profile.workStyle || "None"}
 ` : "None";
 
-    const memoriesContext = memories.map(m => `- ${m.summary} (${m.category})`).join("\n") || "None";
-    const traitsContext = traits.map(t => `- ${t.trait}: ${t.description}`).join("\n") || "None";
-    const reflectionsContext = reflections.map(r => `- ${r.title}: ${r.summary}`).join("\n") || "None";
+    const memoriesContext = context.memories.map(m => `- ${m.summary} (${m.category})`).join("\n") || "None";
+    const traitsContext = context.identity.activeTraits.map(t => `- ${t.trait}: ${t.description}`).join("\n") || "None";
+    const reflectionsContext = context.reflections.map(r => `- ${r.title}: ${r.summary}`).join("\n") || "None";
 
     const systemInstruction = `
 You are the Human-Centric Weekly Planning Agent for Zenkai.
@@ -1477,115 +1064,152 @@ ${traitsContext}
 ${reflectionsContext}
 
 ## TASKS TO SCHEDULE
-${JSON.stringify(tasks.map(t => ({ id: t._id.toString(), title: t.title, durationMinutes: t.estimatedMinutes || 30, priority: t.priority })), null, 2)}
+${JSON.stringify(activeTasks.map(t => ({ id: t.id, title: t.title, durationMinutes: t.estimatedMinutes || 30, priority: t.priority })), null, 2)}
 `;
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: systemInstruction.trim(),
-          temperature: 0.15,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              lifeModelAnalysis: { type: "STRING" },
-              availabilityMap: { type: "STRING" },
-              weeklyRhythmReasoning: { type: "STRING" },
-              days: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    date: { type: "STRING" },
-                    dayNumber: { type: "NUMBER" },
-                    focusTheme: { type: "STRING" },
-                    estimatedWorkload: { type: "STRING", enum: ["Light", "Medium", "Heavy"] },
-                    plannedFocusHours: { type: "NUMBER" },
-                    workBlocks: {
-                      type: "ARRAY",
-                      items: {
-                        type: "OBJECT",
-                        properties: {
-                          title: { type: "STRING" },
-                          startTime: { type: "STRING" },
-                          endTime: { type: "STRING" },
-                          duration: { type: "NUMBER" },
-                          priority: { type: "NUMBER" },
-                          taskIds: {
-                            type: "ARRAY",
-                            items: { type: "STRING" }
-                          }
-                        },
-                        required: ["title", "startTime", "endTime", "duration", "priority", "taskIds"]
-                      }
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction: systemInstruction.trim(),
+        temperature: 0.15,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            lifeModelAnalysis: { type: "STRING" },
+            availabilityMap: { type: "STRING" },
+            weeklyRhythmReasoning: { type: "STRING" },
+            days: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  date: { type: "STRING" },
+                  dayNumber: { type: "NUMBER" },
+                  focusTheme: { type: "STRING" },
+                  estimatedWorkload: { type: "STRING", enum: ["Light", "Medium", "Heavy"] },
+                  plannedFocusHours: { type: "NUMBER" },
+                  workBlocks: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        title: { type: "STRING" },
+                        startTime: { type: "STRING" },
+                        endTime: { type: "STRING" },
+                        duration: { type: "NUMBER" },
+                        priority: { type: "NUMBER" },
+                        taskIds: {
+                          type: "ARRAY",
+                          items: { type: "STRING" }
+                        }
+                      },
+                      required: ["title", "startTime", "endTime", "duration", "priority", "taskIds"]
                     }
-                  },
-                  required: ["date", "dayNumber", "focusTheme", "estimatedWorkload", "plannedFocusHours", "workBlocks"]
-                }
+                  }
+                },
+                required: ["date", "dayNumber", "focusTheme", "estimatedWorkload", "plannedFocusHours", "workBlocks"]
               }
-            },
-            required: ["lifeModelAnalysis", "availabilityMap", "weeklyRhythmReasoning", "days"]
-          }
+            }
+          },
+          required: ["lifeModelAnalysis", "availabilityMap", "weeklyRhythmReasoning", "days"]
         }
-      });
-      
-      const content = response.text;
-      if (!content) throw new Error("Empty response from Weekly Planner");
-      
-      const scheduleData = JSON.parse(content);
-      
-      // Archive old schedules
-      await WeeklyExecutionSchedule.updateMany(
-        { firebaseUid: uid, planId: planObjectId, status: "ACTIVE" },
-        { $set: { status: "ARCHIVED" } }
+      }
+    });
+
+    const content = response.text;
+    if (!content) throw new Error("Empty response from Weekly Planner LLM");
+    return JSON.parse(content);
+  }
+
+  /**
+   * Generates a 7-day WeeklyExecutionSchedule using Gemini.
+   */
+  static async generateWeeklySchedule(uid: string, planId: string, state?: GraphState): Promise<any> {
+    try {
+      console.log(`[PlanningAgent] Executing weekly scheduling workflow shell for plan ${planId}`);
+      const workflowId = state?.workflowId || `fallback-scheduling-${uid}-${Date.now()}`;
+
+      // 1. Resolve normalized user context
+      let normalizedContext: NormalizedUserContext;
+      if (state && state.contextVersion) {
+        normalizedContext = ContextOrchestrator.getContext(workflowId);
+      } else {
+        // Fallback loading
+        normalizedContext = await ContextOrchestrator.loadContext(
+          uid,
+          workflowId,
+          "Fallback weekly schedule shell execution"
+        );
+      }
+
+      const timezone = normalizedContext.profile.timezone || "UTC";
+      const startDate = new Date();
+      const startDateStr = startDate.toLocaleDateString("en-CA", { timeZone: timezone });
+
+      // 2. Fetch all active tasks from context
+      const activeTasks: any[] = [];
+      if (normalizedContext.activePlan) {
+        normalizedContext.activePlan.milestones.forEach((m) => {
+          if (m.status === "todo" || m.status === "in_progress") {
+            m.goals.forEach((g) => {
+              if (g.status === "active") {
+                g.tasks.forEach((t) => {
+                  if (t.status === "todo" || t.status === "in_progress") {
+                    activeTasks.push(t);
+                  }
+                });
+              }
+            });
+          }
+        });
+      }
+
+      // Map to PlanningContext
+      const planningContext: PlanningContext = {
+        metadata: normalizedContext.metadata,
+        identity: {
+          activeTraits: normalizedContext.identity.activeTraits,
+        },
+        activePlan: normalizedContext.activePlan,
+        memories: normalizedContext.memories,
+        reflections: normalizedContext.reflections,
+        profile: normalizedContext.profile,
+      };
+
+      // 3. Call Pure AI Weekly Schedule reasoning logic
+      const scheduleData = await this.generateWeeklyScheduleLogic(
+        planningContext,
+        activeTasks,
+        startDateStr,
+        timezone
       );
-      
-      const lastSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, planId: planObjectId })
-        .sort({ version: -1 })
-        .lean();
-      const nextVersion = (lastSchedule?.version || 0) + 1;
-      
+
+      // 4. Save schedule using PlanSyncService (database layer)
       const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + 6);
       const endDateStr = endDate.toLocaleDateString("en-CA", { timeZone: timezone });
-      
-      const days = scheduleData.days.map((d: any) => ({
-        date: d.date,
-        dayNumber: d.dayNumber,
-        focusTheme: d.focusTheme,
-        estimatedWorkload: d.estimatedWorkload,
-        plannedFocusHours: d.plannedFocusHours,
-        workBlocks: d.workBlocks.map((wb: any) => ({
-          title: wb.title,
-          startTime: wb.startTime,
-          endTime: wb.endTime,
-          duration: wb.duration,
-          priority: wb.priority,
-          tasks: wb.taskIds ? wb.taskIds.map((id: string) => new Types.ObjectId(id)) : []
-        }))
-      }));
 
-      const newSchedule = new WeeklyExecutionSchedule({
-        firebaseUid: uid,
-        planId: planObjectId,
-        version: nextVersion,
-        generatedAt: new Date(),
-        validFrom: startDateStr,
-        validTo: endDateStr,
-        status: "ACTIVE",
-        days: days
-      });
-      
-      await newSchedule.save();
-      console.log(`[PlanningAgent] WeeklyExecutionSchedule v${nextVersion} created successfully.`);
-      return newSchedule;
+      const scheduleDoc = await PlanSyncService.persistWeeklySchedule(
+        uid,
+        planId,
+        scheduleData,
+        startDateStr,
+        endDateStr,
+        timezone
+      );
+
+      // Invalidate fallback cache if instantiated here
+      if (!state || !state.contextVersion) {
+        ContextOrchestrator.invalidateCache(workflowId);
+      }
+
+      return scheduleDoc;
     } catch (err) {
-      console.error("[PlanningAgent] Failed to generate weekly schedule:", err);
+      console.error("[PlanningAgent] Weekly Schedule shell failed:", err);
+      return null;
     }
   }
 }

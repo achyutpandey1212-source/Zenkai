@@ -73,6 +73,52 @@ export const PlanRepository = {
     await Plan.findByIdAndDelete(id);
   },
 
+  async findActivePlanTree(uid: string): Promise<any | null> {
+    await dbConnect();
+    const activePlan = await Plan.findOne({ firebaseUid: uid, status: "active" }).lean();
+    if (!activePlan) return null;
+
+    const planId = activePlan._id;
+    const [milestones, goals] = await Promise.all([
+      Milestone.find({ planId }).sort({ priority: 1 }).lean(),
+      Goal.find({ planId }).sort({ priority: 1 }).lean()
+    ]);
+
+    const goalIds = goals.map(g => g._id);
+    const tasks = goalIds.length > 0
+      ? await Task.find({ goalId: { $in: goalIds } }).sort({ priority: 1 }).lean()
+      : [];
+
+    // Assemble the hierarchical structure in-memory
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const goalsMap = new Map<string, any>(
+      goals.map(g => [g._id.toString(), { ...g, id: g._id.toString(), tasks: [] }])
+    );
+    tasks.forEach(t => {
+      if (t.goalId) {
+        const g = goalsMap.get(t.goalId.toString());
+        if (g) g.tasks.push({ ...t, id: t._id.toString() });
+      }
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const milestonesMap = new Map<string, any>(
+      milestones.map(m => [m._id.toString(), { ...m, id: m._id.toString(), goals: [] }])
+    );
+    Array.from(goalsMap.values()).forEach(g => {
+      if (g.milestoneId) {
+        const m = milestonesMap.get(g.milestoneId.toString());
+        if (m) m.goals.push(g);
+      }
+    });
+
+    return {
+      ...activePlan,
+      id: planId.toString(),
+      milestones: Array.from(milestonesMap.values())
+    };
+  },
+
   async findFullTree(uid: string): Promise<any[]> {
     await dbConnect();
     const plans = await Plan.find({ firebaseUid: uid }).sort({ createdAt: -1 });

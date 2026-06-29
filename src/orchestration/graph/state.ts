@@ -187,6 +187,10 @@ export interface GraphState {
   aiCallsCount: number;
   /** Maximum number of Gemini API calls allowed for this workflow run */
   maxAiCallsAllowed: number;
+
+  // ── Context Versioning ─────────────────────────────────────────────────────
+  /** Context Version (Phase 16A) */
+  contextVersion?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
