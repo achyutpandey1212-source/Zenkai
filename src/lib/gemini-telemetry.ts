@@ -111,6 +111,33 @@ async function* wrapStream(originalStream: any, params: any, startTime: number) 
   }
 }
 
+async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3, initialDelayMs = 2500): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      attempt++;
+      const errorMessage = error.message || "";
+      const status = error.status || error.statusCode || 0;
+      const isRateLimit = status === 429 ||
+                          status === 403 ||
+                          errorMessage.includes("429") ||
+                          errorMessage.includes("RESOURCE_EXHAUSTED") ||
+                          errorMessage.includes("quota") ||
+                          errorMessage.includes("limit");
+
+      if (isRateLimit && attempt <= maxRetries) {
+        const delay = initialDelayMs * Math.pow(2, attempt - 1);
+        console.warn(`[Gemini Telemetry] Rate limit / quota hit (Attempt ${attempt}/${maxRetries}). Retrying in ${delay}ms... Reason: ${errorMessage}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 // Global hook using prototype getter/setter to bypass ES module freezing
 Object.defineProperty(GoogleGenAI.prototype, "models", {
   get() {
@@ -123,7 +150,7 @@ Object.defineProperty(GoogleGenAI.prototype, "models", {
         GlobalTelemetryTracker.recordCall();
         const startTime = Date.now();
         try {
-          const result = await originalGenerateContent.call(val, params);
+          const result = await retryWithBackoff(() => originalGenerateContent.call(val, params));
           const duration = Date.now() - startTime;
           recordAICall(params, result, duration, null);
           return result;
@@ -139,7 +166,7 @@ Object.defineProperty(GoogleGenAI.prototype, "models", {
         GlobalTelemetryTracker.recordCall();
         const startTime = Date.now();
         try {
-          const stream = await originalGenerateContentStream.call(val, params);
+          const stream = await retryWithBackoff(() => originalGenerateContentStream.call(val, params));
           return wrapStream(stream, params, startTime);
         } catch (error: any) {
           const duration = Date.now() - startTime;

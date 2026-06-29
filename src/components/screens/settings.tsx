@@ -155,6 +155,11 @@ export default function Settings() {
   const handleSignOut = async () => {
     setSignOutLoading(true);
     try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("zenkai_onboarding_draft");
+        localStorage.removeItem("has_seen_tour");
+        localStorage.removeItem("show_first_draft_card");
+      }
       await signOut(auth);
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/login";

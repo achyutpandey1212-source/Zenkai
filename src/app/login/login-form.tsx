@@ -15,6 +15,14 @@ import ThemeToggle from "@/components/theme-toggle";
 
 export default function LoginForm() {
   const router = useRouter();
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("zenkai_onboarding_draft");
+      localStorage.removeItem("has_seen_tour");
+      localStorage.removeItem("show_first_draft_card");
+    }
+  }, []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
