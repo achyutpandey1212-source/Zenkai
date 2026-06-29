@@ -40,8 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-fonts
-assets
+
 
 # local scratch, debug, and IDE files
 /scratch/
