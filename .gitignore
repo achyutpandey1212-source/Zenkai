@@ -42,3 +42,10 @@ next-env.d.ts
 
 fonts
 assets
+
+# local scratch, debug, and IDE files
+/scratch/
+/test_save.js
+/diff.txt
+.vscode/
+.idea/
