@@ -56,7 +56,8 @@ export async function contextNode(
   const startedAt = Date.now();
 
   try {
-    const { uid, userMessage, streamController, encoder, workflowId } = state;
+    const { uid, userMessage, streamController, encoder, workflowId, intent: parentIntentObj } = state;
+    const parentIntent = parentIntentObj?.type;
 
     // ── 1. Signal memory retrieval start ─────────────────────────────────────
     enqueueEvent(
@@ -70,7 +71,8 @@ export async function contextNode(
       uid,
       workflowId,
       "Initial graph load",
-      userMessage
+      userMessage,
+      parentIntent
     );
 
     // Extract values for backwards compatibility
@@ -105,8 +107,23 @@ export async function contextNode(
     })}\0`;
     enqueueEvent(streamController, encoder, diagnosticsEvent);
 
+    const diagnostics = normalizedContext.metadata.diagnostics as any;
+    const droppedElements = diagnostics.droppedElements || [];
+    const totalTokens = diagnostics.totalTokens || 0;
+    const budgetLimit = diagnostics.budgetLimit || 0;
+
+    const droppedTokens = droppedElements.reduce((acc: number, el: any) => {
+      if (el.type === "memory") return acc + 35;
+      if (el.type === "reflection") return acc + 50;
+      if (el.type === "trait") return acc + 50;
+      if (el.type === "section") return acc + 500;
+      return acc;
+    }, 0);
+    const rawEst = totalTokens + droppedTokens;
+    const reductionPct = rawEst > 0 ? Math.round((droppedTokens / rawEst) * 100) : 0;
+
     console.log(
-      `[ContextNode] Context loaded (v${normalizedContext.metadata.version}) — memories: ${normalizedContext.memories.length}, traits: ${activeTraits.length}, reflections: ${activeReflections.length}, plans: ${activePlans.length}, profile: ${!!profile}`
+      `[ContextNode] Intent routed to: ${diagnostics.currentIntent} (Profile: ${diagnostics.contextProfileUsed}) | Budget Limit: ${budgetLimit} | Total Tokens: ${totalTokens} | Tokens Saved: ${droppedTokens} (~${reductionPct}% reduction)`
     );
 
     return {

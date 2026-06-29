@@ -9,6 +9,9 @@ import { ReflectionRepository } from "@/repositories/reflection.repository";
 import { PlanRepository } from "@/repositories/plan.repository";
 import { RetrievalPipeline } from "@/memory/retrieval-pipeline";
 import { RankingEngine } from "@/memory/ranking-engine";
+import { ContextRouterService } from "@/services/context-router.service";
+import { getContextBudgets } from "@/config/context-budgets.config";
+import type { ContextIntent, ContextProfile } from "@/services/context-router.service";
 import type {
   NormalizedUserContext,
   NormalizedIdentityTrait,
@@ -20,8 +23,35 @@ import type {
   NormalizedProfile,
 } from "@/types/context.types";
 
+const PROFILE_TAGS: Record<ContextProfile, string[] | null> = {
+  planning: [
+    "goal",
+    "project",
+    "constraint",
+    "planning",
+    "goal execution",
+    "time management",
+    "productivity",
+    "core_identity",
+    "aspiration",
+    "principle",
+    "discipline",
+    "deadline",
+  ],
+  weekly_scheduling: ["planning", "schedule", "calendar", "time management", "productivity", "core_identity", "deadline"],
+  companion: null,
+  motivation: ["motivation", "habit", "stress", "emotional regulation", "resilience", "perfectionism", "confidence", "burnout"],
+  identity: null,
+  reflection: null,
+  progress_review: ["goal execution", "productivity", "metrics", "consistency", "analytics", "progress"],
+};
+
+const matchesTags = (text: string, tags: string[]): boolean => {
+  const lowerText = text.toLowerCase();
+  return tags.some((tag) => lowerText.includes(tag.toLowerCase()));
+};
+
 export class ContextOrchestrator {
-  // Request-scoped cache keyed by workflowId
   private static cache = new Map<string, NormalizedUserContext>();
 
   /**
@@ -34,14 +64,15 @@ export class ContextOrchestrator {
   }
 
   /**
-   * Loads raw database data, normalizes it, estimates diagnostics tokens,
-   * caches, and returns a NormalizedUserContext.
+   * Loads raw database data, maps it to context intent profiles, applies tag filtering,
+   * enforces token budget limits, and caches the result.
    */
   public static async loadContext(
     uid: string,
     workflowId: string,
     trigger: string,
-    userMessage?: string
+    userMessage?: string,
+    parentIntent?: string
   ): Promise<NormalizedUserContext> {
     if (this.cache.has(workflowId)) {
       return this.cache.get(workflowId)!;
@@ -70,10 +101,18 @@ export class ContextOrchestrator {
         .lean(),
     ]);
 
-    // 2. Fetch or load memories
+    // 2. Classify intent and profile
+    const currentIntent = ContextRouterService.classifyIntent(userMessage || "", parentIntent || trigger);
+    const contextProfileUsed = ContextRouterService.getIntentProfile(currentIntent);
+
+    // Load budget config limits based on tier
+    const userTier = (userDoc as any)?.planTier || "free";
+    const budgets = getContextBudgets(userTier);
+    const budgetLimit = budgets[contextProfileUsed];
+
+    // 3. Fetch or load memories
     let rawMemories = [];
     if (userMessage) {
-      // Perform contextual ranked memory retrieval
       const intent = RetrievalPipeline.detectIntent(userMessage);
       const keywords = RetrievalPipeline.extractKeywords(userMessage);
 
@@ -109,11 +148,65 @@ export class ContextOrchestrator {
       const candidates = Array.from(uniqueMap.values());
       rawMemories = RankingEngine.rankMemories(candidates, userMessage, intent);
     } else {
-      // Fallback: fetch approved memories
       rawMemories = await MemoryRepository.findApprovedByUser(uid);
     }
 
-    // 3. Normalization mapping
+    // 4. Selection & Relevance Pruning (Tag-Based)
+    const droppedElements: { type: "memory" | "reflection" | "trait" | "section"; idOrName: string; reason: string }[] = [];
+    let ignoredMemoriesCount = 0;
+
+    const targetTags = PROFILE_TAGS[contextProfileUsed];
+
+    let filteredMemories = rawMemories;
+    if (targetTags) {
+      filteredMemories = rawMemories.filter((m: any) => {
+        const textToMatch = `${m.category || ""} ${m.summary || ""} ${m.content || ""}`;
+        if (matchesTags(textToMatch, targetTags)) {
+          return true;
+        }
+        ignoredMemoriesCount++;
+        droppedElements.push({
+          type: "memory",
+          idOrName: m.summary || m.content,
+          reason: "Low relevance (no matching tags)",
+        });
+        return false;
+      });
+    }
+
+    let filteredReflections = activeReflections;
+    if (targetTags) {
+      filteredReflections = activeReflections.filter((r: any) => {
+        const textToMatch = `${r.category || ""} ${r.title || ""} ${r.content || ""} ${r.summary || ""}`;
+        if (matchesTags(textToMatch, targetTags)) {
+          return true;
+        }
+        droppedElements.push({
+          type: "reflection",
+          idOrName: r.title,
+          reason: "Low relevance (no matching tags)",
+        });
+        return false;
+      });
+    }
+
+    let filteredTraits = allTraits;
+    if (targetTags) {
+      filteredTraits = allTraits.filter((t: any) => {
+        const textToMatch = `${t.category || ""} ${t.trait || ""} ${t.description || ""}`;
+        if (matchesTags(textToMatch, targetTags)) {
+          return true;
+        }
+        droppedElements.push({
+          type: "trait",
+          idOrName: t.trait,
+          reason: "Low relevance (no matching tags)",
+        });
+        return false;
+      });
+    }
+
+    // 5. Normalization mapping
     const timezone = userDoc?.briefSettings?.timezone || "UTC";
 
     const normalizedProfile: NormalizedProfile = {
@@ -128,10 +221,10 @@ export class ContextOrchestrator {
       calendarSynced: userDoc?.googleCalendarSettings?.connected === true,
     };
 
-    const activeTraits: NormalizedIdentityTrait[] = [];
-    const candidateTraits: NormalizedIdentityTrait[] = [];
+    const activeTraitsList: NormalizedIdentityTrait[] = [];
+    const candidateTraitsList: NormalizedIdentityTrait[] = [];
 
-    allTraits.forEach((t: any) => {
+    filteredTraits.forEach((t: any) => {
       const trait: NormalizedIdentityTrait = {
         id: t._id.toString(),
         trait: t.trait,
@@ -144,13 +237,13 @@ export class ContextOrchestrator {
         evidence: t.evidence || "",
         updatedAt: t.updatedAt?.toISOString(),
       };
-      if (t.status === "active") activeTraits.push(trait);
-      else if (t.status === "candidate") candidateTraits.push(trait);
+      if (t.status === "active") activeTraitsList.push(trait);
+      else if (t.status === "candidate") candidateTraitsList.push(trait);
     });
 
     const normalizedIdentity: NormalizedIdentity = {
-      activeTraits,
-      candidateTraits,
+      activeTraits: activeTraitsList,
+      candidateTraits: candidateTraitsList,
       pendingProposalsCount: pendingProposals.length,
     };
 
@@ -221,7 +314,7 @@ export class ContextOrchestrator {
       };
     }
 
-    const normalizedMemories: NormalizedMemory[] = rawMemories.map((m: any) => ({
+    let normalizedMemories = filteredMemories.map((m: any) => ({
       id: m._id.toString(),
       category: m.category,
       content: m.content,
@@ -233,7 +326,7 @@ export class ContextOrchestrator {
       createdAt: m.createdAt?.toISOString(),
     }));
 
-    const normalizedReflections: NormalizedReflection[] = activeReflections.map((r: any) => ({
+    let normalizedReflections = filteredReflections.map((r: any) => ({
       id: r._id.toString(),
       title: r.title,
       category: r.category,
@@ -245,29 +338,147 @@ export class ContextOrchestrator {
       evidenceCount: r.evidenceCount || 1,
     }));
 
-    // 4. Token Diagnostics Computation
-    const tokensPerLayer: Record<string, number> = {
-      profile: this.estimateTokens(normalizedProfile),
-      identity: this.estimateTokens(normalizedIdentity.activeTraits),
-      plan: normalizedPlan ? this.estimateTokens({
+    // Prune complete milestones/goals tree if in companion chat profile
+    if (contextProfileUsed === "companion" && normalizedPlan) {
+      normalizedPlan = {
+        id: normalizedPlan.id,
         title: normalizedPlan.title,
         description: normalizedPlan.description,
-        progress: normalizedPlan.progress,
         status: normalizedPlan.status,
-      }) : 0,
-      weeklySchedule: this.estimateTokens(normalizedWeeklySchedule),
-      memories: this.estimateTokens(normalizedMemories),
-      reflections: this.estimateTokens(normalizedReflections),
-    };
-
-    if (normalizedPlan) {
-      // Planning agent gets the full tree, compute that diagnostics entry too
-      tokensPerLayer.planningFullTree = this.estimateTokens(normalizedPlan);
+        priority: normalizedPlan.priority,
+        type: normalizedPlan.type,
+        progress: normalizedPlan.progress,
+        milestones: [],
+      };
+      droppedElements.push({
+        type: "section",
+        idOrName: "milestoneHierarchy",
+        reason: "Excluded by companion context profile",
+      });
     }
 
-    const totalTokens = Object.values(tokensPerLayer).reduce((a, b) => a + b, 0);
+    // 6. Progressive Budget Trimming
+    const getTokensCount = () => {
+      const tokensPerLayer: Record<string, number> = {
+        profile: this.estimateTokens(normalizedProfile),
+        identity: this.estimateTokens(normalizedIdentity.activeTraits),
+        plan: normalizedPlan ? this.estimateTokens(normalizedPlan) : 0,
+        weeklySchedule: this.estimateTokens(normalizedWeeklySchedule),
+        memories: this.estimateTokens(normalizedMemories),
+        reflections: this.estimateTokens(normalizedReflections),
+      };
+      const total = Object.values(tokensPerLayer).reduce((a, b) => a + b, 0);
+      return { total, tokensPerLayer };
+    };
 
-    const contextVersion = this.cache.size + 1; // versioning increment
+    let { total: currentTotal, tokensPerLayer } = getTokensCount();
+
+    // Trim 1: Completed milestones/goals/tasks from planning tree if budget exceeded
+    if (currentTotal > budgetLimit && normalizedPlan && normalizedPlan.milestones.length > 0) {
+      normalizedPlan.milestones = normalizedPlan.milestones.map((m) => {
+        if (m.status === "completed") {
+          droppedElements.push({
+            type: "section",
+            idOrName: `milestone:${m.title}`,
+            reason: "Budget exceeded (trimmed completed milestone)",
+          });
+          return { ...m, goals: [] };
+        }
+        return {
+          ...m,
+          goals: m.goals.filter((g) => {
+            if (g.status === "completed" || g.status === "cancelled") {
+              droppedElements.push({
+                type: "section",
+                idOrName: `goal:${g.title}`,
+                reason: "Budget exceeded (trimmed completed/cancelled goal)",
+              });
+              return false;
+            }
+            return true;
+          }),
+        };
+      });
+
+      const updated = getTokensCount();
+      currentTotal = updated.total;
+      tokensPerLayer = updated.tokensPerLayer;
+    }
+
+    // Trim 2: Memories Pruning
+    while (currentTotal > budgetLimit && normalizedMemories.length > 0) {
+      const popped = normalizedMemories.pop();
+      if (popped) {
+        droppedElements.push({
+          type: "memory",
+          idOrName: popped.summary,
+          reason: "Budget exceeded (trimmed)",
+        });
+      }
+      const updated = getTokensCount();
+      currentTotal = updated.total;
+      tokensPerLayer = updated.tokensPerLayer;
+    }
+
+    // Trim 3: Reflections Pruning
+    while (currentTotal > budgetLimit && normalizedReflections.length > 0) {
+      const popped = normalizedReflections.pop();
+      if (popped) {
+        droppedElements.push({
+          type: "reflection",
+          idOrName: popped.title,
+          reason: "Budget exceeded (trimmed)",
+        });
+      }
+      const updated = getTokensCount();
+      currentTotal = updated.total;
+      tokensPerLayer = updated.tokensPerLayer;
+    }
+
+    // Trim 4: Candidate Traits Pruning
+    while (currentTotal > budgetLimit && normalizedIdentity.candidateTraits.length > 0) {
+      const popped = normalizedIdentity.candidateTraits.pop();
+      if (popped) {
+        droppedElements.push({
+          type: "trait",
+          idOrName: popped.trait,
+          reason: "Budget exceeded (trimmed)",
+        });
+      }
+      const updated = getTokensCount();
+      currentTotal = updated.total;
+      tokensPerLayer = updated.tokensPerLayer;
+    }
+
+    // Trim 5: Active Traits Pruning
+    while (currentTotal > budgetLimit && normalizedIdentity.activeTraits.length > 0) {
+      const popped = normalizedIdentity.activeTraits.pop();
+      if (popped) {
+        droppedElements.push({
+          type: "trait",
+          idOrName: popped.trait,
+          reason: "Budget exceeded (trimmed)",
+        });
+      }
+      const updated = getTokensCount();
+      currentTotal = updated.total;
+      tokensPerLayer = updated.tokensPerLayer;
+    }
+
+    // Trim 6: Drop weeklySchedule if still exceeded
+    if (currentTotal > budgetLimit && normalizedWeeklySchedule) {
+      normalizedWeeklySchedule = null;
+      droppedElements.push({
+        type: "section",
+        idOrName: "weeklySchedule",
+        reason: "Budget exceeded (trimmed)",
+      });
+      const updated = getTokensCount();
+      currentTotal = updated.total;
+      tokensPerLayer = updated.tokensPerLayer;
+    }
+
+    const contextVersion = this.cache.size + 1;
 
     const normalizedContext: NormalizedUserContext = {
       metadata: {
@@ -275,8 +486,14 @@ export class ContextOrchestrator {
         createdAt: new Date().toISOString(),
         generatedFrom: trigger,
         diagnostics: {
-          totalTokens,
+          totalTokens: currentTotal,
           tokensPerLayer,
+          currentIntent,
+          contextProfileUsed,
+          budgetLimit,
+          remainingBudget: Math.max(0, budgetLimit - currentTotal),
+          ignoredMemoriesCount,
+          droppedElements,
         },
       },
       identity: normalizedIdentity,
@@ -288,7 +505,10 @@ export class ContextOrchestrator {
     };
 
     this.cache.set(workflowId, normalizedContext);
-    console.log(`[ContextOrchestrator][wf:${workflowId.slice(0, 8)}] Context loaded (v${contextVersion}, trigger="${trigger}"). Est. total tokens: ${totalTokens}`);
+    console.log(
+      `[ContextOrchestrator][wf:${workflowId.slice(0, 8)}] Intent: ${currentIntent} | Profile: ${contextProfileUsed} | Tokens: ${currentTotal}/${budgetLimit} (Dropped: ${droppedElements.length})`
+    );
+
     return normalizedContext;
   }
 
@@ -344,11 +564,9 @@ export class ContextOrchestrator {
    */
   public static formatMemoryPrompt(workflowId: string): string {
     const { memories } = this.getContext(workflowId);
-    // Limit to companion budget of 5 memories
-    const budgeted = memories.slice(0, 5);
-    if (budgeted.length === 0) return "";
+    if (memories.length === 0) return "";
 
-    const memoryBlocks = budgeted.map((mem) => {
+    const memoryBlocks = memories.map((mem) => {
       return `- ${mem.summary} (Category: ${mem.category}, Detail: ${mem.content})`;
     });
 
@@ -420,17 +638,15 @@ Directives for tone and recommendation adaptation:
 
   /**
    * Formats a lightweight summary of the active plan for companion general awareness.
-   * This excludes the heavy task lists, saving huge amounts of tokens.
    */
   public static formatActivePlanOverviewPrompt(workflowId: string): string {
     const { activePlan } = this.getContext(workflowId);
     if (!activePlan) return "";
 
     let currentMilestoneStr = "None";
-    const inProgress = activePlan.milestones.find((m) => m.status === "in_progress");
-    const nextTodo = activePlan.milestones.find((m) => m.status === "todo");
-    const m = inProgress || nextTodo;
-    if (m) {
+    // Since milestones might be pruned, check if any exists
+    if (activePlan.milestones && activePlan.milestones.length > 0) {
+      const m = activePlan.milestones[0];
       currentMilestoneStr = `"${m.title}" (${m.category}, Status: ${m.status}, Dates: ${m.startDate || "N/A"} to ${m.endDate || "N/A"})`;
     }
 
@@ -440,7 +656,6 @@ You are aware that the user is currently working on the following roadmap. Do NO
 - **Active Plan**: "${activePlan.title}" (${activePlan.type}, Progress: ${activePlan.progress}%)
 - **Plan Description**: "${activePlan.description}"
 - **Current Milestone Focus**: ${currentMilestoneStr}
-- **Active Goals Count**: ${activePlan.milestones.reduce((acc, m) => acc + m.goals.filter(g => g.status === 'active').length, 0)} goals
 `.trim();
   }
 
@@ -452,24 +667,25 @@ You are aware that the user is currently working on the following roadmap. Do NO
     const schedule = ctx.weeklySchedule;
     if (!schedule) return "";
 
-    const agenda = schedule.days.find(d => d.date === todayStr);
+    const agenda = schedule.days.find((d) => d.date === todayStr);
     if (!agenda) return "";
 
-    // Flat map of all tasks from activePlan
     const taskMap = new Map<string, any>();
-    ctx.activePlan?.milestones.forEach(m => {
-      m.goals.forEach(g => {
-        g.tasks.forEach(t => {
+    ctx.activePlan?.milestones.forEach((m) => {
+      m.goals.forEach((g) => {
+        g.tasks.forEach((t) => {
           taskMap.set(t.id, t);
         });
       });
     });
 
-    const formattedBlocks = agenda.workBlocks.map(wb => {
-      const taskTitles = wb.tasks.map(id => {
-        const t = taskMap.get(id);
-        return t ? `- ${t.title} (${t.status})` : `- Unknown Task (${id})`;
-      }).join("\n");
+    const formattedBlocks = agenda.workBlocks.map((wb) => {
+      const taskTitles = wb.tasks
+        .map((id) => {
+          const t = taskMap.get(id);
+          return t ? `- ${t.title} (${t.status})` : `- Unknown Task (${id})`;
+        })
+        .join("\n");
 
       return `Block: ${wb.title} (${wb.startTime} - ${wb.endTime})\nTasks:\n${
         taskTitles || "No tasks scheduled"
@@ -490,7 +706,7 @@ You are aware that the user is currently working on the following roadmap. Do NO
       `- Address the user's execution query by explaining what is on their agenda today.`,
       `- Reference their focus theme, workload, work blocks, and task priorities.`,
       `- Do NOT talk about long-term roadmaps. Keep attention on "Today's Agenda".`,
-      `- Speak naturally. Do NOT say "according to the execution agent" or "your daily agenda".`
+      `- Speak naturally. Do NOT say "according to the execution agent" or "your daily agenda".`,
     ].join("\n");
   }
 }

@@ -10,6 +10,16 @@ export interface ContextMetadata {
   diagnostics: {
     totalTokens: number;
     tokensPerLayer: Record<string, number>;
+    currentIntent?: string;
+    contextProfileUsed?: string;
+    budgetLimit?: number;
+    remainingBudget?: number;
+    ignoredMemoriesCount?: number;
+    droppedElements?: {
+      type: "memory" | "reflection" | "trait" | "section";
+      idOrName: string;
+      reason: string;
+    }[];
   };
 }
 

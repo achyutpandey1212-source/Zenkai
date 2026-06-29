@@ -3,6 +3,7 @@ import type { GraphState } from "@/orchestration/graph/state";
 import { ContextOrchestrator } from "@/services/context-orchestrator.service";
 import { PlanSyncService } from "@/services/plan-sync.service";
 import type { PlanningContext, NormalizedUserContext } from "@/types/context.types";
+import { PlanningFormatter } from "@/formatters/prompt-formatters";
 
 // Re-exported so chat route can import them
 export type LifeEvent = {
@@ -699,31 +700,12 @@ ${lifeEventsContext}
 ## PRIORITY 2 — CONVERSATION CONTEXT
 (The recent message history provides follow-up and confirmation signals. "yes" or "go ahead" confirms the last proposed plan.)
 
-## PRIORITY 3 — ONBOARDING INFORMATION (fills gaps only, never overrides Priority 1)
-- Profession: ${context.profile?.profession || "None"}
-- Long-term goal: ${context.profile?.longTermGoal || "None"}
-- Current Focus: ${context.profile?.currentFocus || "None"}
-
-## PRIORITY 4 — LONG-TERM MEMORY (personalizes approach, does not determine what to plan)
-${JSON.stringify(context.memories.map((m) => m.summary), null, 2)}
-
-Active Traits:
-${JSON.stringify(context.identity.activeTraits.map((t) => ({ trait: t.trait, description: t.description })), null, 2)}
-
-Active Reflections:
-${JSON.stringify(context.reflections.map((r) => ({ title: r.title, summary: r.summary })), null, 2)}
-
-## PRIORITY 5 — PROFILE FIELDS (scheduling realism only)
-- Peak focus availability: ${context.profile?.dailyAvailability || "None"}
-- Working Style: ${context.profile?.workStyle || "None"}
+${PlanningFormatter.format(context)}
 
 ## CURRENT DATE/TIME CONTEXT
 - Current Timestamp: ${new Date().toString()}
 - Current Date: ${new Date().toLocaleDateString("en-US", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 - Current Local Time: ${new Date().toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit' })}
-
-## EXISTING PLANS TREE (for evolution/merging)
-${JSON.stringify(plansList, null, 2)}
 `;
 
       const prompt = `
@@ -1004,18 +986,6 @@ Remember:
     startDateStr: string,
     timezone: string
   ): Promise<any> {
-    const profileContext = context.profile ? `
-- Profession: ${context.profile.profession || "None"}
-- Long-term goal: ${context.profile.longTermGoal || "None"}
-- Current Focus: ${context.profile.currentFocus || "None"}
-- Peak focus availability: ${context.profile.dailyAvailability || "None"}
-- Working Style: ${context.profile.workStyle || "None"}
-` : "None";
-
-    const memoriesContext = context.memories.map(m => `- ${m.summary} (${m.category})`).join("\n") || "None";
-    const traitsContext = context.identity.activeTraits.map(t => `- ${t.trait}: ${t.description}`).join("\n") || "None";
-    const reflectionsContext = context.reflections.map(r => `- ${r.title}: ${r.summary}`).join("\n") || "None";
-
     const systemInstruction = `
 You are the Human-Centric Weekly Planning Agent for Zenkai.
 Your mission is to distribute the user's active tasks across the next 7 days, starting from ${startDateStr}, in a way that respects their life model, availability constraints, and cognitive rhythm.
@@ -1051,17 +1021,7 @@ Your output must follow the requested JSON schema.
 Create a realistic, human-centric 7-day schedule. Start Date: ${startDateStr}. Timezone: ${timezone}.
 
 ## USER LIFE MODEL INPUTS
-### Profile Settings:
-${profileContext}
-
-### Admitted Long-term Memories:
-${memoriesContext}
-
-### Active Identity Traits:
-${traitsContext}
-
-### Behavioral Reflections:
-${reflectionsContext}
+${PlanningFormatter.format(context)}
 
 ## TASKS TO SCHEDULE
 ${JSON.stringify(activeTasks.map(t => ({ id: t.id, title: t.title, durationMinutes: t.estimatedMinutes || 30, priority: t.priority })), null, 2)}
