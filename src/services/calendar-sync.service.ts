@@ -143,8 +143,17 @@ export class CalendarSyncService {
       }
 
       // Save schedule with updated event IDs and hashes
-      schedule.markModified("days");
-      await schedule.save();
+      if (typeof (schedule as any).markModified === "function") {
+        (schedule as any).markModified("days");
+        await (schedule as any).save();
+      } else {
+        const doc = await WeeklyExecutionSchedule.findById((schedule as any)._id || (schedule as any).scheduleId);
+        if (doc) {
+          doc.days = (schedule as any).days;
+          doc.markModified("days");
+          await doc.save();
+        }
+      }
 
       // ── Cleanup legacy task-level events ──
       const legacyTasks = await Task.find({
@@ -230,7 +239,14 @@ export class CalendarSyncService {
     });
     await log.save();
 
-    return { eventsCreated, eventsUpdated, eventsDeleted, eventsSkipped };
+    return {
+      success: status === "success",
+      eventsCreated,
+      eventsUpdated,
+      eventsDeleted,
+      eventsSkipped,
+      error
+    };
   }
 
   static async cleanObsoleteEvents(uid: string, planId: string): Promise<void> {

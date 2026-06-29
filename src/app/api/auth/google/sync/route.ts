@@ -32,7 +32,7 @@ export async function POST() {
     const localDateStr = new Date().toLocaleDateString("en-CA", { timeZone: timezone }); // returns YYYY-MM-DD format
 
     // Find the active weekly schedule
-    const schedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: user.firebaseUid, status: "ACTIVE" }).lean();
+    const schedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: user.firebaseUid, status: "ACTIVE" });
     if (!schedule) {
       return NextResponse.json({ success: false, error: `No active schedule exists for today to sync.` }, { status: 404 });
     }

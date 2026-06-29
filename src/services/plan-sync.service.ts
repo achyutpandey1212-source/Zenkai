@@ -460,9 +460,9 @@ export class PlanSyncService {
     await dbConnect();
     const planObjectId = new Types.ObjectId(planId);
 
-    // Archive old active schedules
+    // Archive ALL active schedules for this user (including from prior plans)
     await WeeklyExecutionSchedule.updateMany(
-      { firebaseUid: uid, planId: planObjectId, status: "ACTIVE" },
+      { firebaseUid: uid, status: "ACTIVE" },
       { $set: { status: "ARCHIVED" } }
     );
 
@@ -487,7 +487,11 @@ export class PlanSyncService {
         endTime: wb.endTime,
         duration: wb.duration,
         priority: wb.priority,
-        tasks: wb.taskIds ? wb.taskIds.map((id: string) => new Types.ObjectId(id)) : [],
+        tasks: wb.taskIds
+          ? wb.taskIds
+              .filter((id: string) => typeof id === "string" && /^[a-f\d]{24}$/i.test(id))
+              .map((id: string) => new Types.ObjectId(id))
+          : [],
       })),
     }));
 

@@ -19,18 +19,17 @@ interface ShellProps {
     name: string;
     email: string;
     firebaseUid: string;
+    onboardingCompleted: boolean;
   } | null;
 }
 
 export default function Shell({ initialUser }: ShellProps) {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>("home");
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      return window.document.documentElement.classList.contains("dark");
-    }
-    return false;
-  });
-  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [themeInitialized, setThemeInitialized] = useState<boolean>(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(
+    initialUser ? initialUser.onboardingCompleted : null
+  );
 
   // Lifted User info states
   const [userName, setUserName] = useState(initialUser?.name || "");
@@ -63,8 +62,10 @@ export default function Shell({ initialUser }: ShellProps) {
   });
 
   // On mount: read onboardingCompleted from MongoDB (via /api/auth/me)
+  // On mount: read onboardingCompleted and initialize theme settings
   useEffect(() => {
     async function checkOnboardingStatus() {
+      if (onboardingCompleted !== null) return;
       try {
         const res = await fetch("/api/auth/me");
         if (res.ok) {
@@ -73,10 +74,10 @@ export default function Shell({ initialUser }: ShellProps) {
           if (data.user?.name) setUserName(data.user.name);
           if (data.user?.email) setUserEmail(data.user.email);
         } else {
-          setOnboardingCompleted(false);
+          window.location.href = "/login";
         }
       } catch {
-        setOnboardingCompleted(false);
+        window.location.href = "/login";
       }
     }
 
@@ -84,6 +85,10 @@ export default function Shell({ initialUser }: ShellProps) {
 
     if (typeof window !== "undefined") {
       const root = window.document.documentElement;
+      const isDark = root.classList.contains("dark") || localStorage.getItem("theme") === "dark";
+      setIsDarkMode(isDark);
+      setThemeInitialized(true);
+
       const handleThemeChange = () => {
         setIsDarkMode(root.classList.contains("dark"));
       };
@@ -220,72 +225,77 @@ export default function Shell({ initialUser }: ShellProps) {
         // Parse null-byte delimited control events out of buffer
         // Protocol: \0{json}\0 = control event; everything else = chat text
         let processedText = "";
-        let remaining = rawBuffer;
-
-        while (remaining.includes("\0")) {
-          const nullIdx = remaining.indexOf("\0");
-          // Text before the first null byte is chat content
-          processedText += remaining.slice(0, nullIdx);
-          remaining = remaining.slice(nullIdx + 1);
-
-          // Check if we have a complete control event (ends at next null byte)
-          const endNullIdx = remaining.indexOf("\0");
-          if (endNullIdx !== -1) {
-            const jsonStr = remaining.slice(0, endNullIdx);
-            remaining = remaining.slice(endNullIdx + 1);
-            try {
-              const event = JSON.parse(jsonStr);
-              if (event.__type === "status") {
-                setStatusMessage(event.message || "");
-                // Dynamically adjust orb State and Workflow Status based on active backend agent
-                if (event.agent) {
-                  setWorkflow((prev) => ({
-                    ...prev,
-                    [event.agent]: {
-                      status: event.status,
-                      message: event.message || "",
-                    },
-                  }));
-
-                  // Map active running agent to orbState
-                  if (event.status === "running") {
-                    const agentToOrbState: Record<string, OrbState> = {
-                      memory: "memory_retrieval",
-                      planning: "planning",
-                      execution: "execution",
-                      identity: "identity_update",
-                      reflection: "reflection",
-                    };
-                    if (agentToOrbState[event.agent]) {
-                      setOrbState(agentToOrbState[event.agent]);
-                    }
-                  }
-                }
-              } else if (event.__type === "planning_complete") {
-                setPlanningCardStats(event.stats);
-              } else if (event.__type === "plan_version") {
-                // Only re-fetch if version actually increased
-                const incomingVersion = typeof event.version === "number" ? event.version : 0;
-                if (incomingVersion > lastKnownPlanVersion) {
-                  setLastKnownPlanVersion(incomingVersion);
-                  setPlanDataVersion(incomingVersion); // triggers useEffect in Plans screen
-                  console.log(`[Shell] Plan version updated: ${lastKnownPlanVersion} → ${incomingVersion}. Triggering re-fetch.`);
-                }
-              }
-            } catch {
-              // Not valid JSON; treat as text
-              processedText += `\0${jsonStr}\0`;
-            }
-          } else {
-            // Incomplete event — put back and wait for more data
-            remaining = remaining.slice(0, nullIdx);
+        
+        while (true) {
+          const firstNull = rawBuffer.indexOf("\0");
+          if (firstNull === -1) {
+            // No control event starts here, the whole buffer is normal text
+            processedText += rawBuffer;
+            rawBuffer = "";
             break;
           }
-        }
+          
+          // There is a null byte. Text before it is normal text
+          if (firstNull > 0) {
+            processedText += rawBuffer.slice(0, firstNull);
+            rawBuffer = rawBuffer.slice(firstNull);
+          }
+          
+          // Now rawBuffer starts with \0. Look for the next \0
+          const secondNull = rawBuffer.indexOf("\0", 1);
+          if (secondNull === -1) {
+            // The control event is incomplete. Leave it in rawBuffer and wait for more data.
+            break;
+          }
+          
+          // Complete control event found between index 0 and secondNull
+          const jsonStr = rawBuffer.slice(1, secondNull);
+          rawBuffer = rawBuffer.slice(secondNull + 1); // consume the event
+          
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.__type === "status") {
+              setStatusMessage(event.message || "");
+              // Dynamically adjust orb State and Workflow Status based on active backend agent
+              if (event.agent) {
+                setWorkflow((prev) => ({
+                  ...prev,
+                  [event.agent]: {
+                    status: event.status,
+                    message: event.message || "",
+                  },
+                }));
 
-        // Whatever remains after control event parsing is chat text
-        processedText += remaining;
-        rawBuffer = ""; // Buffer consumed for this chunk
+                // Map active running agent to orbState
+                if (event.status === "running") {
+                  const agentToOrbState: Record<string, OrbState> = {
+                    memory: "memory_retrieval",
+                    planning: "planning",
+                    execution: "execution",
+                    identity: "identity_update",
+                    reflection: "reflection",
+                  };
+                  if (agentToOrbState[event.agent]) {
+                    setOrbState(agentToOrbState[event.agent]);
+                  }
+                }
+              }
+            } else if (event.__type === "planning_complete") {
+              setPlanningCardStats(event.stats);
+            } else if (event.__type === "plan_version") {
+              // Only re-fetch if version actually increased
+              const incomingVersion = typeof event.version === "number" ? event.version : 0;
+              if (incomingVersion > lastKnownPlanVersion) {
+                setLastKnownPlanVersion(incomingVersion);
+                setPlanDataVersion(incomingVersion); // triggers useEffect in Plans screen
+                console.log(`[Shell] Plan version updated: ${lastKnownPlanVersion} → ${incomingVersion}. Triggering re-fetch.`);
+              }
+            }
+          } catch {
+            // Not valid JSON; treat as text
+            processedText += `\0${jsonStr}\0`;
+          }
+        }
 
         if (processedText) {
           accumulatedText += processedText;
@@ -328,6 +338,7 @@ export default function Shell({ initialUser }: ShellProps) {
 
   // Sync theme with DOM and localStorage
   useEffect(() => {
+    if (!themeInitialized) return;
     if (typeof window !== "undefined") {
       const root = window.document.documentElement;
       if (isDarkMode) {
@@ -338,7 +349,7 @@ export default function Shell({ initialUser }: ShellProps) {
         localStorage.setItem("theme", "light");
       }
     }
-  }, [isDarkMode]);
+  }, [isDarkMode, themeInitialized]);
 
   const toggleTheme = () => {
     setIsDarkMode(prev => !prev);

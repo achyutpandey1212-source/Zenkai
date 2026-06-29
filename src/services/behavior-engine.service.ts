@@ -255,7 +255,7 @@ export class BehaviorEngine {
         }
         const dayTasks = allTasks.filter(t => taskIds.includes(t._id.toString()));
         const comp = dayTasks.filter(t => t.status === "completed").length;
-        const completionPercentage = (comp / dayTasks.length) * 100;
+        const completionPercentage = dayTasks.length > 0 ? (comp / dayTasks.length) * 100 : 100;
         totalScheduleCompletionsSum += completionPercentage;
 
         if (comp === dayTasks.length) {

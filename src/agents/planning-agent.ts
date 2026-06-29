@@ -1024,7 +1024,7 @@ Create a realistic, human-centric 7-day schedule. Start Date: ${startDateStr}. T
 ${PlanningFormatter.format(context)}
 
 ## TASKS TO SCHEDULE
-${JSON.stringify(activeTasks.map(t => ({ id: t.id, title: t.title, durationMinutes: t.estimatedMinutes || 30, priority: t.priority })), null, 2)}
+${JSON.stringify(activeTasks.map(t => ({ id: (t._id || t.id)?.toString(), title: t.title, durationMinutes: t.estimatedMinutes || 30, priority: t.priority })), null, 2)}
 `;
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });

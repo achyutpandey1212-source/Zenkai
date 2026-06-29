@@ -66,7 +66,11 @@ export async function POST(request: Request) {
 
     // Force regeneration of weekly schedule
     const schedule = await PlanningAgent.generateWeeklySchedule(user.firebaseUid, activePlan._id.toString());
-    
+
+    if (!schedule || !schedule._id) {
+      return NextResponse.json({ success: false, error: "Weekly schedule generation failed. Check server logs." }, { status: 500 });
+    }
+
     // We need to fetch it again with tasks populated
     const populatedSchedule = await WeeklyExecutionSchedule.findById(schedule._id)
       .populate("days.workBlocks.tasks").lean();
