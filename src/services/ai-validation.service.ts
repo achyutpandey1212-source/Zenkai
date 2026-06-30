@@ -391,13 +391,13 @@ export class AIValidationService {
           }
         }
 
-        // If still exceeding, drop lowest priority blocks
+        // If still exceeding, drop lowest priority blocks (priority 5 is lowest, priority 1 is highest)
         totalWorkMinutes = compactedBlocks.reduce((sum: number, b: any) => sum + b.duration, 0);
         while (totalWorkMinutes > maxDailyWorkloadMinutes && compactedBlocks.length > 0) {
-          // Find lowest priority index
+          // Find lowest priority index (highest numeric value = lowest priority)
           let lowestPriorityIdx = 0;
           for (let i = 1; i < compactedBlocks.length; i++) {
-            if (compactedBlocks[i].priority < compactedBlocks[lowestPriorityIdx].priority) {
+            if (compactedBlocks[i].priority > compactedBlocks[lowestPriorityIdx].priority) {
               lowestPriorityIdx = i;
             }
           }
