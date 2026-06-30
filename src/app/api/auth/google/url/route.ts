@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { getPublicAppOrigin } from "@/lib/public-url";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const origin = request.headers.get("origin") || new URL(request.url).origin;
+    const origin = getPublicAppOrigin(request);
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const isMock = !clientId;

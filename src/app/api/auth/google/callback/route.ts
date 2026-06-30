@@ -4,6 +4,7 @@ import { verifySession } from "@/lib/auth-service";
 import { User } from "@/models/User";
 import { encrypt } from "@/lib/encryption";
 import { dbConnect } from "@/lib/mongodb";
+import { getPublicAppOrigin } from "@/lib/public-url";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
     } else {
       // Exchange OAuth code for tokens
       const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
-      const origin = new URL(request.url).origin;
+      const origin = getPublicAppOrigin(request);
       const redirectUri = `${origin}/api/auth/google/callback`;
 
       console.log(`Exchanging Google OAuth code for user ${user.firebaseUid}`);
@@ -112,11 +113,11 @@ export async function GET(request: Request) {
     await User.updateOne({ firebaseUid: user.firebaseUid }, { $set: updateQuery });
 
     // Redirect user back to settings screen
-    const origin = new URL(request.url).origin;
+    const origin = getPublicAppOrigin(request);
     return NextResponse.redirect(`${origin}/app?screen=settings`);
   } catch (error: any) {
     console.error("GET /api/auth/google/callback error:", error);
-    const origin = new URL(request.url).origin;
+    const origin = getPublicAppOrigin(request);
     return NextResponse.redirect(`${origin}/app?screen=settings&error=${encodeURIComponent(error.message)}`);
   }
 }
