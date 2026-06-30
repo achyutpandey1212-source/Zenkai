@@ -29,6 +29,7 @@ export type PlanningIntent = {
   planType?: "career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal";
   goalTitle?: string;
   details?: string;
+  isOnboarding?: boolean;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -928,7 +929,7 @@ Please fix this issue, ensure all required fields are present with correct types
     userMessage: string,
     lifeEvents?: LifeEventExtraction,
     state?: GraphState
-  ): Promise<{ success: boolean; milestonesCreated: number; tasksCreated: number; planVersion?: number; ignored?: boolean } | null> {
+  ): Promise<{ success: boolean; milestonesCreated: number; tasksCreated: number; planVersion?: number; ignored?: boolean; planId?: string } | null> {
     const startTime = Date.now();
     try {
       console.log(`[PlanningAgent] Executing planning workflow shell for user ${uid}`);
@@ -944,7 +945,8 @@ Please fix this issue, ensure all required fields are present with correct types
           uid,
           workflowId,
           "Fallback planning shell execution",
-          userMessage
+          userMessage,
+          intent.isOnboarding ? "onboarding" : undefined
         );
       }
 
@@ -961,23 +963,51 @@ Please fix this issue, ensure all required fields are present with correct types
       };
 
       // 2. Execute Pure AI Logic
-      const aiResult = await this.generateOrEvolvePlanLogic(
+      let aiResult = await this.generateOrEvolvePlanLogic(
         planningContext,
         intent,
         userMessage,
         lifeEvents
       );
 
-      if (!aiResult) {
-        return null;
+      const isForOnboarding = !!(intent.isOnboarding || (state?.workflowId && state.workflowId.toLowerCase().includes("onboarding")) || (workflowId && workflowId.toLowerCase().includes("onboarding")));
+
+      if (isForOnboarding) {
+        let confidence = aiResult?.planningConfidence ?? 0;
+        let planningAction = aiResult?.planningAction ?? "ignore";
+
+        if (!aiResult || planningAction === "ignore" || confidence < 0.50) {
+          console.warn(`[PlanningAgent] Onboarding planning confidence low (${confidence}) or ignore action. Retrying once...`);
+          aiResult = await this.generateOrEvolvePlanLogic(
+            planningContext,
+            intent,
+            userMessage,
+            lifeEvents
+          );
+          confidence = aiResult?.planningConfidence ?? 0;
+          planningAction = aiResult?.planningAction ?? "ignore";
+        }
+
+        if (!aiResult || planningAction === "ignore" || confidence < 0.50) {
+          console.warn(`[PlanningAgent] Onboarding plan still low confidence/ignore after retry. Creating minimal starter roadmap directly from onboarding inputs.`);
+          aiResult = this.createMinimalStarterRoadmap(uid, planningContext, intent);
+        }
+      } else {
+        if (!aiResult) {
+          return null;
+        }
+
+        const confidence = aiResult.planningConfidence ?? 0;
+        const planningAction = aiResult.planningAction ?? "ignore";
+
+        if (planningAction === "ignore" || confidence < 0.50) {
+          console.log(`[PlanningAgent] Shell: Confidence ${confidence} too low or ignore action. Skipping persistence.`);
+          return { success: false, milestonesCreated: 0, tasksCreated: 0, ignored: true };
+        }
       }
 
-      const confidence = aiResult.planningConfidence ?? 0;
-      const planningAction = aiResult.planningAction ?? "ignore";
-
-      if (planningAction === "ignore" || confidence < 0.50) {
-        console.log(`[PlanningAgent] Shell: Confidence ${confidence} too low or ignore action. Skipping persistence.`);
-        return { success: false, milestonesCreated: 0, tasksCreated: 0, ignored: true };
+      if (!aiResult) {
+        return null;
       }
 
       // 3. Write plan tree updates using PlanSyncService (decoupled DB writes)
@@ -990,8 +1020,6 @@ Please fix this issue, ensure all required fields are present with correct types
         executionTimeMs
       );
 
-      // 4. Generate Weekly schedule automatically for the active plan (REMOVED - now handled by route handler to avoid duplicates)
-
       // Invalidate fallback cache if we instantiated it ourselves
       if (!state || !state.contextVersion) {
         ContextOrchestrator.invalidateCache(workflowId);
@@ -1002,6 +1030,7 @@ Please fix this issue, ensure all required fields are present with correct types
         milestonesCreated: syncResult.milestonesCreated,
         tasksCreated: syncResult.tasksCreated,
         planVersion: syncResult.planVersion,
+        planId: syncResult.planId,
       };
     } catch (error) {
       console.error("[PlanningAgent] Evolve plan shell failed:", error);
@@ -1187,6 +1216,186 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
     }
 
     return result;
+  }
+
+  /**
+   * Creates a minimal starter roadmap directly from onboarding inputs.
+   * Guarantees activePlanId, milestones, tasks, and schedule data exist.
+   */
+  static createMinimalStarterRoadmap(
+    uid: string,
+    context: PlanningContext,
+    intent: PlanningIntent
+  ): any {
+    const profile = context.profile;
+    const primaryGoal = intent.goalTitle || profile?.longTermGoal || "Core Growth and Success";
+    const profession = profile?.profession || "Professional";
+    const timezone = profile?.timezone || "UTC";
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+
+    const plusDays = (days: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      return d.toLocaleDateString("en-CA", { timeZone: timezone });
+    };
+
+    const wakeTime = profile?.wakeUpTime || "07:00";
+    const sleepTime = profile?.sleepTime || "23:00";
+    const focusDuration = profile?.focusDuration || 45;
+    const deepWorkTime = profile?.deepWorkTime || "Morning";
+
+    const fallbackPlan = {
+      title: `Roadmap: ${primaryGoal}`,
+      description: `Starter roadmap for ${profession} to pursue: ${primaryGoal}`,
+      status: "active",
+      priority: 1,
+      estimatedDuration: "4 weeks",
+      type: "personal" as const,
+      milestones: [
+        {
+          title: `Milestone 1: Initiation and Routines`,
+          description: "Establish wake-sleep boundaries and set up daily deep work blocks.",
+          status: "in_progress" as const,
+          priority: 1,
+          estimatedDuration: "1 week",
+          startDate: todayStr,
+          endDate: plusDays(7),
+          category: "Personal" as const,
+          importance: 9,
+          flexibility: 2,
+          goals: [
+            {
+              title: "Establish consistent daily wake and sleep boundaries",
+              description: "Maintain sleep schedules to support peak cognitive performance.",
+              status: "active" as const,
+              priority: 1,
+              estimatedDuration: "daily",
+              tasks: [
+                {
+                  title: `Align sleep routines (${wakeTime} - ${sleepTime})`,
+                  description: `Go to sleep at ${sleepTime} and wake up at ${wakeTime}.`,
+                  status: "todo" as const,
+                  priority: 1,
+                  estimatedDuration: "30m",
+                  suggestedDate: todayStr,
+                  timeBlock: "morning",
+                  dependencies: [],
+                },
+                {
+                  title: "Review daily availability and commitments",
+                  description: "Align your daily agenda with commitments and availability settings.",
+                  status: "todo" as const,
+                  priority: 2,
+                  estimatedDuration: "15m",
+                  suggestedDate: todayStr,
+                  timeBlock: "evening",
+                  dependencies: [],
+                }
+              ]
+            }
+          ]
+        },
+        {
+          title: `Milestone 2: Deep Work Acceleration`,
+          description: `Dedicate focused time blocks directly targeting ${primaryGoal}.`,
+          status: "todo" as const,
+          priority: 2,
+          estimatedDuration: "2 weeks",
+          startDate: plusDays(8),
+          endDate: plusDays(21),
+          category: "Study" as const,
+          importance: 8,
+          flexibility: 3,
+          goals: [
+            {
+              title: "Dedicate regular deep focus blocks to main objectives",
+              description: "Execute focused work blocks targeting primary goal.",
+              status: "active" as const,
+              priority: 2,
+              estimatedDuration: "daily",
+              tasks: [
+                {
+                  title: `Execute deep focus block (${focusDuration} mins)`,
+                  description: `Perform dedicated work on ${primaryGoal} during preferred time: ${deepWorkTime}.`,
+                  status: "todo" as const,
+                  priority: 1,
+                  estimatedDuration: `${focusDuration}m`,
+                  suggestedDate: plusDays(8),
+                  timeBlock: deepWorkTime.toLowerCase(),
+                  dependencies: [],
+                },
+                {
+                  title: "Minimize study/work session distractions",
+                  description: "Remove digital friction and environmental alerts for the block.",
+                  status: "todo" as const,
+                  priority: 2,
+                  estimatedDuration: "10m",
+                  suggestedDate: plusDays(9),
+                  timeBlock: deepWorkTime.toLowerCase(),
+                  dependencies: [],
+                }
+              ]
+            }
+          ]
+        },
+        {
+          title: `Milestone 3: Tracking & Consistency`,
+          description: "Review progress metrics weekly and optimize scheduling style.",
+          status: "todo" as const,
+          priority: 3,
+          estimatedDuration: "1 week",
+          startDate: plusDays(22),
+          endDate: plusDays(28),
+          category: "Personal" as const,
+          importance: 7,
+          flexibility: 4,
+          goals: [
+            {
+              title: "Review roadmap milestones and update weekly backlog",
+              description: "Maintain long-term roadmap alignment and tasks status checks.",
+              status: "active" as const,
+              priority: 3,
+              estimatedDuration: "weekly",
+              tasks: [
+                {
+                  title: "Review weekly roadmap goals",
+                  description: "Assess milestones achievements and backlog priorities.",
+                  status: "todo" as const,
+                  priority: 1,
+                  estimatedDuration: "15m",
+                  suggestedDate: plusDays(22),
+                  timeBlock: "evening",
+                  dependencies: [],
+                },
+                {
+                  title: "Optimize scheduling preferences",
+                  description: "Adjust focus duration and deep work time based on weekly results.",
+                  status: "todo" as const,
+                  priority: 2,
+                  estimatedDuration: "15m",
+                  suggestedDate: plusDays(23),
+                  timeBlock: "evening",
+                  dependencies: [],
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    return {
+      planningConfidence: 1.0,
+      planningAction: "create" as const,
+      plannerReasoning: "Fallback minimal starter roadmap created deterministically from onboarding inputs.",
+      changeSummary: "Deterministic minimal starter plan initialized.",
+      detectedConstraints: "Commitments and sleep boundaries applied.",
+      mergeStrategy: "overwrite",
+      timelineRecalculation: "none",
+      plan: fallbackPlan,
+      promptText: "Deterministic Fallback Roadmap Execution",
+      rawGeminiOutput: JSON.stringify(fallbackPlan),
+    };
   }
 
   /**

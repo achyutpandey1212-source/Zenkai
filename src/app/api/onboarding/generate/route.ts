@@ -21,6 +21,7 @@ import { Plan } from "@/models/Plan";
 import { PlanRepository } from "@/repositories/plan.repository";
 import { Milestone } from "@/models/Milestone";
 import { CalendarSyncService } from "@/services/calendar-sync.service";
+import { PlanSyncService } from "@/services/plan-sync.service";
 export const dynamic = "force-dynamic";
 
 function parseDaysFromText(dateStr: string): string[] {
@@ -247,6 +248,7 @@ export async function POST(request: Request) {
               type: "create_or_modify",
               planType: "personal",
               goalTitle: primaryGoal,
+              isOnboarding: true,
             };
             try {
               const planResult = await PlanningAgent.generateOrEvolvePlan(
@@ -254,19 +256,57 @@ export async function POST(request: Request) {
                 planIntent,
                 `Generate initial plan roadmap for: ${primaryGoal}`
               );
-              if (planResult?.ignored) {
-                plannerRequestedNoOp = true;
-                send({ stage: "roadmap", status: "success", message: "Roadmap generation intentionally skipped." });
-              } else {
-                activePlan = await Plan.findOne({ firebaseUid: uid, status: "active" });
-                if (activePlan) {
-                  activePlanId = activePlan._id.toString();
-                }
-                send({ stage: "roadmap", status: "success", message: "Roadmap generated." });
+              activePlan = await Plan.findOne({ firebaseUid: uid, status: "active" });
+              if (activePlan) {
+                activePlanId = activePlan._id.toString();
+              } else if (planResult?.planId) {
+                activePlanId = planResult.planId;
               }
+
+              if (!activePlanId) {
+                throw new Error("activePlanId is null/undefined after planning completes");
+              }
+
+              send({ stage: "roadmap", status: "success", message: "Roadmap generated." });
             } catch (e) {
-              console.error("Failed to generate plan during onboarding:", e);
-              send({ stage: "roadmap", status: "success", message: "Roadmap seeding placeholder." });
+              console.error("Failed to generate plan during onboarding, trying direct minimal fallback:", e);
+              try {
+                const planningContext = {
+                  metadata: {
+                    version: 1,
+                    createdAt: new Date().toISOString(),
+                    generatedFrom: "onboarding",
+                    diagnostics: {
+                      totalTokens: 0,
+                      tokensPerLayer: {},
+                      currentIntent: "planning" as const,
+                      contextProfileUsed: "planning" as const,
+                      budgetLimit: 4000,
+                      remainingBudget: 4000,
+                      ignoredMemoriesCount: 0,
+                      droppedElements: [],
+                    }
+                  },
+                  identity: { activeTraits: [] },
+                  activePlan: null,
+                  memories: [],
+                  reflections: [],
+                  profile: profile,
+                };
+                const aiResult = PlanningAgent.createMinimalStarterRoadmap(uid, planningContext, planIntent);
+                const syncResult = await PlanSyncService.persistPlanChanges(
+                  uid,
+                  aiResult,
+                  aiResult.promptText,
+                  aiResult.rawGeminiOutput,
+                  0
+                );
+                activePlanId = syncResult.planId;
+                send({ stage: "roadmap", status: "success", message: "Roadmap generated via direct fallback." });
+              } catch (fallbackErr) {
+                console.error("Critical direct fallback failed:", fallbackErr);
+                send({ stage: "roadmap", status: "success", message: "Roadmap seeding placeholder." });
+              }
             }
           } else {
             send({ stage: "roadmap", status: "success", message: "Roadmap loaded." });
@@ -323,12 +363,9 @@ export async function POST(request: Request) {
                   type: "create_or_modify",
                   planType: "personal",
                   goalTitle: primaryGoal,
+                  isOnboarding: true,
                 };
-                const retryPlanResult = await PlanningAgent.generateOrEvolvePlan(uid, planIntent, `Generate initial plan roadmap for: ${primaryGoal}`);
-                if (retryPlanResult?.ignored) {
-                  plannerRequestedNoOp = true;
-                  break;
-                }
+                await PlanningAgent.generateOrEvolvePlan(uid, planIntent, `Generate initial plan roadmap for: ${primaryGoal}`);
                 activePlan = await Plan.findOne({ firebaseUid: uid, status: "active" });
               }
 

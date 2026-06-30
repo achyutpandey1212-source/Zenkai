@@ -131,7 +131,10 @@ export class ContextOrchestrator {
     }
 
     // 2. Classify intent and profile
-    const currentIntent = ContextRouterService.classifyIntent(userMessage || "", parentIntent || trigger);
+    let currentIntent = ContextRouterService.classifyIntent(userMessage || "", parentIntent || trigger);
+    if (parentIntent === "onboarding" || trigger === "onboarding" || (userDoc && !userDoc.onboardingCompleted)) {
+      currentIntent = "planning";
+    }
     const contextProfileUsed = ContextRouterService.getIntentProfile(currentIntent);
 
     // Load budget config limits based on tier

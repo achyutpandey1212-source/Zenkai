@@ -35,6 +35,11 @@ export class ContextRouterService {
   ): ContextIntent {
     const msg = userMessage.toLowerCase().trim();
 
+    // Onboarding bypass: explicitly request planning context
+    if (parentIntent === "onboarding") {
+      return "planning";
+    }
+
     // 1. If parent is create_or_modify (Roadmap planning triggers)
     if (parentIntent === "create_or_modify") {
       if (
