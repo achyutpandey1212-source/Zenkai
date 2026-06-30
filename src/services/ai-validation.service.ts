@@ -95,9 +95,11 @@ export class AIValidationService {
         this.triggerGuardrail(`Repaired empty milestone title at index ${mIdx}`);
       }
 
-      m.status = ["pending", "active", "completed", "skipped"].includes(String(m.status).toLowerCase())
+      m.status = ["todo", "in_progress", "completed", "cancelled"].includes(String(m.status).toLowerCase())
         ? String(m.status).toLowerCase()
-        : "pending";
+        : String(m.status).toLowerCase() === "pending"
+          ? "todo"
+          : "todo";
 
       m.category = ["Career", "Academics", "Health", "Finance", "Social", "Personal", "Other"].includes(m.category)
         ? m.category
@@ -123,9 +125,11 @@ export class AIValidationService {
         if (!g.title || typeof g.title !== "string" || !g.title.trim()) {
           g.title = `Goal ${gIdx + 1}`;
         }
-        g.status = ["pending", "active", "completed"].includes(String(g.status).toLowerCase())
+        g.status = ["active", "completed", "paused", "cancelled"].includes(String(g.status).toLowerCase())
           ? String(g.status).toLowerCase()
-          : "pending";
+          : String(g.status).toLowerCase() === "pending"
+            ? "active"
+            : "active";
 
         if (!Array.isArray(g.tasks)) {
           g.tasks = [];
@@ -138,9 +142,11 @@ export class AIValidationService {
           if (!t.title || typeof t.title !== "string" || !t.title.trim()) {
             t.title = `Task ${tIdx + 1}`;
           }
-          t.status = ["pending", "in_progress", "completed", "skipped"].includes(String(t.status).toLowerCase())
+          t.status = ["todo", "in_progress", "completed", "missed"].includes(String(t.status).toLowerCase())
             ? String(t.status).toLowerCase()
-            : "pending";
+            : String(t.status).toLowerCase() === "pending"
+              ? "todo"
+              : "todo";
 
           if (t.suggestedDate && !dateRegex.test(t.suggestedDate)) {
             t.suggestedDate = this.tryNormalizeDate(t.suggestedDate);
@@ -155,7 +161,7 @@ export class AIValidationService {
       return m;
     });
 
-    return { plan };
+    return { ...data, plan };
   }
 
   /**
