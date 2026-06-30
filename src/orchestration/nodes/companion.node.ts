@@ -140,6 +140,7 @@ export async function companionNode(
       reflectionPromptText,
       todayStr,
       workflowId,
+      profile,
     } = state;
 
     let planPromptText = "";
@@ -159,9 +160,12 @@ export async function companionNode(
         makeStatusEvent("planning", "running", "Designing your roadmap...")
       );
 
+      const profileGoal = profile?.longTermGoal || profile?.currentFocus || "";
+      const goalToPlan = intent?.goalTitle || profileGoal || "your goals";
+
       planPromptText = buildProactivePlanningPrompt(
         lifeEvents?.extractionReason ?? "",
-        intent?.goalTitle,
+        goalToPlan,
         lifeEvents?.detectedEvents
       );
     }

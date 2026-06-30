@@ -1163,7 +1163,20 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                         <button
                           onClick={async () => {
                             try {
-                              await fetch("/api/onboarding/complete", { method: "POST" });
+                              await fetch("/api/onboarding/complete", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  name,
+                                  profession,
+                                  longTermGoal: goals.length > 0 ? goals[0].title : "Success",
+                                  currentFocus: goals.length > 0 ? goals[0].title : "Success",
+                                  motivation: "",
+                                  dailyAvailability: "",
+                                  workStyle: "",
+                                  biggestChallenge: "",
+                                }),
+                              });
                             } catch (e) {
                               console.error("Bypass failed:", e);
                             }

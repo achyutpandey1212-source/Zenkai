@@ -73,7 +73,9 @@ Classifications:
 3. "execution_inquiry" — User is asking what to do TODAY specifically. Examples: "What should I do today?", "What should I study?", "Plan my day", "What's on my agenda?".
 4. "none" — Standard conversation with no planning, task, or execution relevance.
 
-For "create_or_modify": identify planType ("career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal") and a descriptive goalTitle.
+For "create_or_modify": identify planType ("career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal") and a descriptive goalTitle. 
+CRITICAL RULE: If the request is generic (e.g. "Plan My Week", "Plan my schedule", "Create a roadmap") without specifying a topic/domain/skill/technology, do NOT guess or hallucinate a goal. Leave both goalTitle and planType empty, null, or omit them from the response.
+
 For "task_update": extract the EXACT taskTitle and taskStatus ("completed" | "in_progress" | "todo"). Leave taskTitle empty string if no specific task name is mentioned.
 
 Return a JSON object matching the requested schema.
@@ -94,6 +96,8 @@ Classifications:
 4. "none" — Standard conversation with no planning, task, or execution relevance.
 
 For "create_or_modify": identify planType ("career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal") and a goalTitle (short, descriptive goal).
+CRITICAL RULE: If the request is generic (e.g. "Plan My Week", "Plan my schedule", "Create a roadmap") without specifying a topic/domain/skill/technology, do NOT guess or hallucinate a goal. Leave both goalTitle and planType empty, null, or omit them from the response.
+
 For "task_update": extract the EXACT taskTitle and taskStatus ("completed" | "in_progress" | "todo"). Leave taskTitle empty string if no specific task name is mentioned.
 
 PART 2: LIFE EVENT EXTRACTION
@@ -715,7 +719,7 @@ ${contextPrompt}
 
 Based on the PRIORITY 1 user request above, decide your planningConfidence and planningAction, then generate the plan.
 Remember:
-- The user's explicit request in PRIORITY 1 determines the subject. NEVER infer from profile.
+- The user's explicit request in PRIORITY 1 determines the subject. If the user request is generic (e.g. "Plan My Week", "Plan my schedule", "Create a roadmap") and does not name a topic/domain/skill/technology, use the primary goal from their onboarding profile/goals (Priority 1 goal) as the subject of the plan, rather than rejecting it or hallucinating a new goal.
 - If evolving an existing plan, PRESERVE the exact database "id" for existing Plans, Milestones, Goals, and Tasks.
 - Break the plan down into Milestones. Each Milestone must have Goals. Each Goal must have actionable Tasks.
 - Every milestone MUST have startDate, endDate, category, importance, flexibility.

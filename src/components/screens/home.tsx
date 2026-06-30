@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import CompanionOrb, { OrbState } from "../ui/companion-orb";
-import { Sparkles, ArrowRight, BookOpen, CheckSquare, Compass, Calendar as CalendarIcon } from "lucide-react";
+import { Sparkles, ArrowRight, BookOpen, CheckSquare, Compass, Calendar as CalendarIcon, Check } from "lucide-react";
 
 interface HomeProps {
   sendMessage: (text: string) => Promise<void>;
@@ -41,6 +41,7 @@ export default function Home({
   const [loadingAgenda, setLoadingAgenda] = useState(true);
   const [greeting, setGreeting] = useState("Good Morning,");
   const [showFirstDraft, setShowFirstDraft] = useState(false);
+  const [showPricing, setShowPricing] = useState(false);
 
   const dismissFirstDraft = () => {
     setShowFirstDraft(false);
@@ -283,6 +284,15 @@ export default function Home({
       </div>
 
       <div className="relative z-10 w-full max-w-5xl flex flex-col items-center min-h-screen px-4 md:px-6">
+        <div className="w-full flex justify-end pt-4 shrink-0">
+          <button
+            onClick={() => setShowPricing(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-accent/30 bg-accent/5 hover:bg-accent/15 text-[10px] text-accent tracking-widest uppercase font-semibold transition-all duration-200 cursor-pointer shadow-sm hover:shadow"
+          >
+            <Sparkles size={11} className="text-accent" />
+            Pricing & Plans
+          </button>
+        </div>
         <div
           className="shrink-0 transition-all duration-700 ease-in-out"
           style={{ height: "clamp(20px, 4vh, 36px)" }}
@@ -586,6 +596,166 @@ export default function Home({
         </div>
 
       </div>
+
+      {showPricing && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-card border border-border/50 max-w-4xl w-full max-h-[90vh] overflow-y-auto rounded-3xl p-6 md:p-8 flex flex-col gap-6 relative shadow-2xl animate-in zoom-in-95 duration-300 scrollbar-none">
+            <button
+              onClick={() => setShowPricing(false)}
+              className="absolute top-5 right-5 text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors cursor-pointer"
+              title="Close"
+            >
+              ✕
+            </button>
+            <div className="text-center max-w-md mx-auto mt-2">
+              <span className="font-sans text-[9px] tracking-[0.3em] font-bold text-accent uppercase">Premium Zenkai</span>
+              <h2 className="font-heading text-3xl font-light text-foreground mt-2 leading-tight">Elevate Your Growth Journey</h2>
+              <p className="font-sans text-xs text-muted-foreground mt-2 leading-relaxed">
+                Choose the level of guidance, cognitive depth, and scheduling intelligence that aligns with your ambitions.
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-4">
+              {/* Free Plan */}
+              <div className="flex flex-col justify-between p-5 border border-border/30 rounded-2xl bg-secondary/10 hover:bg-secondary/20 transition-all duration-300">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <span className="font-sans text-[10px] tracking-wider text-muted-foreground font-bold uppercase">Basic</span>
+                    <h3 className="font-heading text-lg font-light text-foreground">Zenkai Flow</h3>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-heading text-2xl font-light text-foreground">$0</span>
+                    <span className="font-sans text-[10px] text-muted-foreground">/ month</span>
+                  </div>
+                  <p className="font-sans text-[11px] text-muted-foreground leading-relaxed">
+                    Essential tools to organize your days and reflect on consistency.
+                  </p>
+                  <hr className="border-border/10" />
+                  <ul className="space-y-2.5">
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span>1 Active Roadmap Goal</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span>Standard Companion Chat</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span>Daily Availability Slots</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span>Basic Memory Storage</span>
+                    </li>
+                  </ul>
+                </div>
+                <button
+                  onClick={() => setShowPricing(false)}
+                  className="w-full mt-6 py-2.5 rounded-xl border border-border bg-card hover:bg-secondary/40 text-foreground font-sans font-semibold text-[11px] tracking-wider uppercase transition-all cursor-pointer"
+                >
+                  Current Plan
+                </button>
+              </div>
+
+              {/* Pro Plan */}
+              <div className="flex flex-col justify-between p-5 border-2 border-accent rounded-2xl bg-secondary/20 relative transform md:-translate-y-2 shadow-lg">
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-accent text-primary-foreground text-[8px] font-bold tracking-widest uppercase shadow">
+                  Most Popular
+                </span>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <span className="font-sans text-[10px] tracking-wider text-accent font-bold uppercase">Pro</span>
+                    <h3 className="font-heading text-lg font-light text-foreground">Zenkai Ascent</h3>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-heading text-2xl font-light text-foreground">$12</span>
+                    <span className="font-sans text-[10px] text-muted-foreground">/ month</span>
+                  </div>
+                  <p className="font-sans text-[11px] text-muted-foreground leading-relaxed">
+                    Advanced re-balancing, calendar syncing, and cognitive depth.
+                  </p>
+                  <hr className="border-border/10" />
+                  <ul className="space-y-2.5">
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span className="text-foreground/95">Unlimited Roadmap Goals</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span className="text-foreground/95">Deep-Logic Companion</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span className="text-foreground/95">Automated Re-balancing</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span className="text-foreground/95">Google Calendar Sync</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span className="text-foreground/95">Evolving Cognitive Profiling</span>
+                    </li>
+                  </ul>
+                </div>
+                <button
+                  onClick={() => alert("Ascent upgrade initiated! (Mock integration)")}
+                  className="w-full mt-6 py-2.5 rounded-xl bg-accent hover:bg-accent/90 text-primary-foreground font-sans font-semibold text-[11px] tracking-wider uppercase transition-all shadow cursor-pointer"
+                >
+                  Upgrade to Pro
+                </button>
+              </div>
+
+              {/* Elite Plan */}
+              <div className="flex flex-col justify-between p-5 border border-border/30 rounded-2xl bg-secondary/10 hover:bg-secondary/20 transition-all duration-300">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <span className="font-sans text-[10px] tracking-wider text-muted-foreground font-bold uppercase">Elite</span>
+                    <h3 className="font-heading text-lg font-light text-foreground">Zenkai Apex</h3>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-heading text-2xl font-light text-foreground">$29</span>
+                    <span className="font-sans text-[10px] text-muted-foreground">/ month</span>
+                  </div>
+                  <p className="font-sans text-[11px] text-muted-foreground leading-relaxed">
+                    Custom cognitive parameters, executive briefs, and priority support.
+                  </p>
+                  <hr className="border-border/10" />
+                  <ul className="space-y-2.5">
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span>Everything in Ascent Pro</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span>Custom Cognitive Tuning</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span>Proactive SMS Check-ins</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-[11px] text-muted-foreground leading-tight">
+                      <Check size={12} className="text-accent shrink-0 mt-0.5" />
+                      <span>Weekly Executive Briefs</span>
+                    </li>
+                  </ul>
+                </div>
+                <button
+                  onClick={() => alert("Apex upgrade initiated! (Mock integration)")}
+                  className="w-full mt-6 py-2.5 rounded-xl border border-border bg-card hover:bg-secondary/40 text-foreground font-sans font-semibold text-[11px] tracking-wider uppercase transition-all cursor-pointer"
+                >
+                  Go Elite
+                </button>
+              </div>
+            </div>
+            
+            <span className="text-center font-sans text-[9px] text-muted-foreground/50 select-none tracking-wide pt-2">
+              All plans include secure data encryption. Cancel or modify subscription anytime.
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

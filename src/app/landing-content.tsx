@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Sparkles, Eye, Brain, Compass, Shield, ArrowRight } from "lucide-react";
+import { Sparkles, Eye, Brain, Compass, Shield, ArrowRight, Check } from "lucide-react";
 import ThemeToggle from "@/components/theme-toggle";
 
 export default function LandingContent() {
@@ -398,6 +398,164 @@ export default function LandingContent() {
                 <span>Quietly absorbs and organizes your mental load in background.</span>
               </li>
             </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing Section */}
+      <section className="py-24 md:py-36 px-8 md:px-16 bg-secondary/10 border-t border-border/20">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <span className="font-sans text-[10px] tracking-[0.2em] text-accent font-semibold uppercase mb-4 block">
+              Pricing
+            </span>
+            <h2 className="font-heading text-3xl md:text-5xl font-light">
+              Elevate Your Growth Space
+            </h2>
+            <p className="font-sans text-sm text-muted-foreground mt-4 leading-relaxed">
+              Choose the tier of scheduling intelligence and cognitive profiling that aligns with your life goals.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
+            {/* Free Tier */}
+            <div className="flex flex-col justify-between p-8 border border-border/30 rounded-2xl bg-background/50 hover:bg-background/80 transition-all duration-300">
+              <div className="space-y-6">
+                <div>
+                  <span className="font-sans text-[10px] tracking-wider text-muted-foreground font-bold uppercase">Basic</span>
+                  <h3 className="font-heading text-2xl font-light mt-1">Zenkai Flow</h3>
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <span className="font-heading text-3xl font-light">$0</span>
+                  <span className="font-sans text-xs text-muted-foreground">/ month</span>
+                </div>
+                <p className="font-sans text-xs text-muted-foreground leading-relaxed">
+                  Essential tools to organize your days and reflect on consistency.
+                </p>
+                <hr className="border-border/10" />
+                <ul className="space-y-3 font-sans text-xs text-muted-foreground">
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span>1 Active Roadmap Goal</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span>Standard Companion Chat</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span>Daily Availability Slots</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span>Basic Memory Storage</span>
+                  </li>
+                </ul>
+              </div>
+              <div className="pt-8">
+                <Link
+                  href="/signup"
+                  className="block w-full py-3 rounded-xl border border-border bg-card hover:bg-secondary/40 text-foreground font-sans font-semibold text-xs tracking-wider uppercase text-center transition-all"
+                >
+                  Start Free
+                </Link>
+              </div>
+            </div>
+
+            {/* Pro Tier */}
+            <div className="flex flex-col justify-between p-8 border-2 border-accent rounded-2xl bg-card relative transform md:-translate-y-4 shadow-xl">
+              <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-accent text-primary-foreground text-[9px] font-bold tracking-widest uppercase shadow">
+                Most Popular
+              </span>
+              <div className="space-y-6">
+                <div>
+                  <span className="font-sans text-[10px] tracking-wider text-accent font-bold uppercase">Pro</span>
+                  <h3 className="font-heading text-2xl font-light mt-1">Zenkai Ascent</h3>
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <span className="font-heading text-3xl font-light">$12</span>
+                  <span className="font-sans text-xs text-muted-foreground">/ month</span>
+                </div>
+                <p className="font-sans text-xs text-muted-foreground leading-relaxed">
+                  Advanced re-balancing, calendar syncing, and cognitive depth.
+                </p>
+                <hr className="border-border/10" />
+                <ul className="space-y-3 font-sans text-xs text-foreground">
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span className="font-medium">Unlimited Roadmap Goals</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span className="font-medium">Deep-Logic Companion</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span className="font-medium">Automated Re-balancing</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span className="font-medium">Google Calendar Sync</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span className="font-medium">Evolving Cognitive Profiling</span>
+                  </li>
+                </ul>
+              </div>
+              <div className="pt-8">
+                <Link
+                  href="/signup"
+                  className="block w-full py-3 rounded-xl bg-accent hover:bg-accent/90 text-primary-foreground font-sans font-semibold text-xs tracking-wider uppercase text-center transition-all shadow"
+                >
+                  Go Pro
+                </Link>
+              </div>
+            </div>
+
+            {/* Elite Tier */}
+            <div className="flex flex-col justify-between p-8 border border-border/30 rounded-2xl bg-background/50 hover:bg-background/80 transition-all duration-300">
+              <div className="space-y-6">
+                <div>
+                  <span className="font-sans text-[10px] tracking-wider text-muted-foreground font-bold uppercase">Elite</span>
+                  <h3 className="font-heading text-2xl font-light mt-1">Zenkai Apex</h3>
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <span className="font-heading text-3xl font-light">$29</span>
+                  <span className="font-sans text-xs text-muted-foreground">/ month</span>
+                </div>
+                <p className="font-sans text-xs text-muted-foreground leading-relaxed">
+                  Custom cognitive parameters, SMS checks, and executive reports.
+                </p>
+                <hr className="border-border/10" />
+                <ul className="space-y-3 font-sans text-xs text-muted-foreground">
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span>Everything in Ascent Pro</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span>Custom Cognitive Tuning</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span>Proactive SMS Check-ins</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={14} className="text-accent shrink-0 mt-0.5" />
+                    <span>Weekly Executive Briefs</span>
+                  </li>
+                </ul>
+              </div>
+              <div className="pt-8">
+                <Link
+                  href="/signup"
+                  className="block w-full py-3 rounded-xl border border-border bg-card hover:bg-secondary/40 text-foreground font-sans font-semibold text-xs tracking-wider uppercase text-center transition-all"
+                >
+                  Contact Elite
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       </section>
