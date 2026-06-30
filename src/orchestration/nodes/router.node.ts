@@ -50,6 +50,23 @@ function buildRoutingDecision(
         reasoning: "User asked what to do today. Loading agenda in foreground.",
       };
 
+    case "general_companion":
+      if (lifeEventsSuggestPlanning) {
+        return {
+          foreground: ["companion", "planning", "execution"],
+          background: ["memory", "identity", "reflection"],
+          subGraph: "mixed",
+          reasoning: "General conversation with embedded life signals. Running planning in foreground.",
+        };
+      }
+
+      return {
+        foreground: ["companion"],
+        background: ["memory"],
+        subGraph: "conversation",
+        reasoning: "General conversation. Companion foreground, memory-only background.",
+      };
+
     case "none":
     default:
       if (lifeEventsSuggestPlanning) {

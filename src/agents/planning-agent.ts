@@ -990,8 +990,7 @@ Please fix this issue, ensure all required fields are present with correct types
         executionTimeMs
       );
 
-      // 4. Generate Weekly schedule automatically for the active plan
-      await this.generateWeeklySchedule(uid, syncResult.planId, state);
+      // 4. Generate Weekly schedule automatically for the active plan (REMOVED - now handled by route handler to avoid duplicates)
 
       // Invalidate fallback cache if we instantiated it ourselves
       if (!state || !state.contextVersion) {

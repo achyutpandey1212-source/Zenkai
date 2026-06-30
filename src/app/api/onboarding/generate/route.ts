@@ -20,7 +20,7 @@ import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { Plan } from "@/models/Plan";
 import { PlanRepository } from "@/repositories/plan.repository";
 import { Milestone } from "@/models/Milestone";
-
+import { CalendarSyncService } from "@/services/calendar-sync.service";
 export const dynamic = "force-dynamic";
 
 function parseDaysFromText(dateStr: string): string[] {
@@ -65,6 +65,7 @@ export async function POST(request: Request) {
     const uid = user.firebaseUid;
     const body = await request.json();
     const { profile, commitments, goals, mode, importedItems, name } = body;
+    let plannerRequestedNoOp = false;
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -230,38 +231,9 @@ export async function POST(request: Request) {
           send({ stage: "learning", status: "success", message: "Life model and initial profile mapped." });
 
           // ==========================================
-          // STEP 2: IDENTITY BLUEPRINT
+          // IDENTITY & REFLECTIONS MOVED TO BACKGROUND
           // ==========================================
-          const existingTraitsCount = await IdentityTrait.countDocuments({ firebaseUid: uid });
-          if (existingTraitsCount === 0) {
-            send({ stage: "identity", status: "running", message: "Building your identity..." });
-            try {
-              await IdentityAgent.evaluateAndEvolve(uid);
-              send({ stage: "identity", status: "success", message: "Identity blueprint constructed." });
-            } catch (e) {
-              console.error("Failed to evolve identity during onboarding:", e);
-              send({ stage: "identity", status: "success", message: "Identity blueprint bypassed (using default traits)." });
-            }
-          } else {
-            send({ stage: "identity", status: "success", message: "Identity blueprint loaded." });
-          }
 
-          // ==========================================
-          // STEP 3: REFLECTIONS & ROUTINES
-          // ==========================================
-          const existingReflectionsCount = await Reflection.countDocuments({ firebaseUid: uid });
-          if (existingReflectionsCount === 0) {
-            send({ stage: "routines", status: "running", message: "Understanding your routines..." });
-            try {
-              await ReflectionAgent.evaluateAndEvolve(uid);
-              send({ stage: "routines", status: "success", message: "Routine boundaries recognized." });
-            } catch (e) {
-              console.error("Failed to evolve reflection during onboarding:", e);
-              send({ stage: "routines", status: "success", message: "Routine boundaries mapped from profile." });
-            }
-          } else {
-            send({ stage: "routines", status: "success", message: "Routine boundaries loaded." });
-          }
 
           // ==========================================
           // STEP 4: DESIGNING ROADMAP
@@ -277,16 +249,21 @@ export async function POST(request: Request) {
               goalTitle: primaryGoal,
             };
             try {
-              await PlanningAgent.generateOrEvolvePlan(
+              const planResult = await PlanningAgent.generateOrEvolvePlan(
                 uid,
                 planIntent,
                 `Generate initial plan roadmap for: ${primaryGoal}`
               );
-              activePlan = await Plan.findOne({ firebaseUid: uid, status: "active" });
-              if (activePlan) {
-                activePlanId = activePlan._id.toString();
+              if (planResult?.ignored) {
+                plannerRequestedNoOp = true;
+                send({ stage: "roadmap", status: "success", message: "Roadmap generation intentionally skipped." });
+              } else {
+                activePlan = await Plan.findOne({ firebaseUid: uid, status: "active" });
+                if (activePlan) {
+                  activePlanId = activePlan._id.toString();
+                }
+                send({ stage: "roadmap", status: "success", message: "Roadmap generated." });
               }
-              send({ stage: "roadmap", status: "success", message: "Roadmap generated." });
             } catch (e) {
               console.error("Failed to generate plan during onboarding:", e);
               send({ stage: "roadmap", status: "success", message: "Roadmap seeding placeholder." });
@@ -323,122 +300,131 @@ export async function POST(request: Request) {
           // ==========================================
           send({ stage: "workspace", status: "running", message: "Preparing your workspace..." });
 
-          let isValid = false;
-          let validationAttempts = 0;
-          const maxValidationAttempts = 2;
-
           let milestonesCount = 0;
           let goalsCount = 0;
           let scheduleDays = 0;
           let todayBlocksCount = 0;
 
-          while (!isValid && validationAttempts < maxValidationAttempts) {
-            validationAttempts++;
-            console.log(`Running Workspace Validation - Attempt ${validationAttempts}/${maxValidationAttempts}`);
+          if (plannerRequestedNoOp) {
+            send({ stage: "workspace", status: "success", message: "Planner returned no-op; continuing with a partial workspace." });
+          } else {
+            let isValid = false;
+            let validationAttempts = 0;
+            const maxValidationAttempts = 2;
 
-            activePlan = await Plan.findOne({ firebaseUid: uid, status: "active" });
-            if (!activePlan) {
-              const primaryGoal = profile.longTermGoal || (goals && goals.length > 0 ? goals[0].title : "Success");
-              const planIntent: any = {
-                type: "create_or_modify",
-                planType: "personal",
-                goalTitle: primaryGoal,
-              };
-              await PlanningAgent.generateOrEvolvePlan(uid, planIntent, `Generate initial plan roadmap for: ${primaryGoal}`);
+            while (!isValid && validationAttempts < maxValidationAttempts) {
+              validationAttempts++;
+              console.log(`Running Workspace Validation - Attempt ${validationAttempts}/${maxValidationAttempts}`);
+
               activePlan = await Plan.findOne({ firebaseUid: uid, status: "active" });
-            }
-
-            if (activePlan) {
-              activePlanId = activePlan._id.toString();
-              milestonesCount = await Milestone.countDocuments({ planId: activePlan._id });
-              
-              if (milestonesCount === 0) {
+              if (!activePlan) {
                 const primaryGoal = profile.longTermGoal || (goals && goals.length > 0 ? goals[0].title : "Success");
-                await Milestone.create({
-                  planId: activePlan._id,
-                  firebaseUid: uid,
-                  title: `Initiation: Aligning with ${primaryGoal}`,
-                  description: "Initial alignment, routine setup, and focus foundation.",
-                  status: "in_progress",
-                  priority: 1,
-                  startDate: new Date().toLocaleDateString("en-CA", { timeZone: timezone }),
-                  endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString("en-CA", { timeZone: timezone }),
-                  category: "Personal",
-                  importance: 8,
-                });
-                milestonesCount = await Milestone.countDocuments({ planId: activePlan._id });
+                const planIntent: any = {
+                  type: "create_or_modify",
+                  planType: "personal",
+                  goalTitle: primaryGoal,
+                };
+                const retryPlanResult = await PlanningAgent.generateOrEvolvePlan(uid, planIntent, `Generate initial plan roadmap for: ${primaryGoal}`);
+                if (retryPlanResult?.ignored) {
+                  plannerRequestedNoOp = true;
+                  break;
+                }
+                activePlan = await Plan.findOne({ firebaseUid: uid, status: "active" });
               }
 
-              goalsCount = await Goal.countDocuments({ planId: activePlan._id });
-              if (goalsCount < 3) {
-                const goalTitles = [
-                  "Establish consistent daily wake and sleep boundaries",
-                  "Dedicate regular deep focus blocks to main objectives",
-                  "Review roadmap milestones and update weekly backlog"
-                ];
-                let priorityVal = 1;
-                const activeMilestone = await Milestone.findOne({ planId: activePlan._id });
-                
-                while (goalsCount < 3) {
-                  const title = goalTitles[goalsCount] || `Focus Objective ${goalsCount + 1}`;
-                  await Goal.create({
-                    firebaseUid: uid,
+              if (activePlan) {
+                activePlanId = activePlan._id.toString();
+                milestonesCount = await Milestone.countDocuments({ planId: activePlan._id });
+
+                if (milestonesCount === 0) {
+                  const primaryGoal = profile.longTermGoal || (goals && goals.length > 0 ? goals[0].title : "Success");
+                  await Milestone.create({
                     planId: activePlan._id,
-                    milestoneId: activeMilestone?._id,
-                    title,
-                    status: "active",
-                    priority: priorityVal++,
+                    firebaseUid: uid,
+                    title: `Initiation: Aligning with ${primaryGoal}`,
+                    description: "Initial alignment, routine setup, and focus foundation.",
+                    status: "in_progress",
+                    priority: 1,
+                    startDate: new Date().toLocaleDateString("en-CA", { timeZone: timezone }),
+                    endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString("en-CA", { timeZone: timezone }),
+                    category: "Personal",
+                    importance: 8,
                   });
-                  goalsCount = await Goal.countDocuments({ planId: activePlan._id });
+                  milestonesCount = await Milestone.countDocuments({ planId: activePlan._id });
+                }
+
+                goalsCount = await Goal.countDocuments({ planId: activePlan._id });
+                if (goalsCount < 3) {
+                  const goalTitles = [
+                    "Establish consistent daily wake and sleep boundaries",
+                    "Dedicate regular deep focus blocks to main objectives",
+                    "Review roadmap milestones and update weekly backlog"
+                  ];
+                  let priorityVal = 1;
+                  const activeMilestone = await Milestone.findOne({ planId: activePlan._id });
+
+                  while (goalsCount < 3) {
+                    const title = goalTitles[goalsCount] || `Focus Objective ${goalsCount + 1}`;
+                    await Goal.create({
+                      firebaseUid: uid,
+                      planId: activePlan._id,
+                      milestoneId: activeMilestone?._id,
+                      title,
+                      status: "active",
+                      priority: priorityVal++,
+                    });
+                    goalsCount = await Goal.countDocuments({ planId: activePlan._id });
+                  }
                 }
               }
-            }
 
-            activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
-            if (!activeSchedule && activePlanId) {
-              await PlanningAgent.generateWeeklySchedule(uid, activePlanId);
               activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
-            }
-
-            if (activeSchedule) {
-              scheduleDays = activeSchedule.days?.length || 0;
-              
-              if (scheduleDays < 7 && activePlanId) {
-                await WeeklyExecutionSchedule.deleteOne({ _id: activeSchedule._id });
+              if (!activeSchedule && activePlanId) {
                 await PlanningAgent.generateWeeklySchedule(uid, activePlanId);
                 activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
-                scheduleDays = activeSchedule?.days?.length || 0;
               }
 
               if (activeSchedule) {
-                const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
-                const todayDay = activeSchedule.days.find((d: any) => d.date === todayStr) || activeSchedule.days[0];
-                todayBlocksCount = todayDay?.workBlocks?.length || 0;
+                scheduleDays = activeSchedule.days?.length || 0;
 
-                if (todayBlocksCount === 0 && activePlanId) {
+                if (scheduleDays < 7 && activePlanId) {
                   await WeeklyExecutionSchedule.deleteOne({ _id: activeSchedule._id });
                   await PlanningAgent.generateWeeklySchedule(uid, activePlanId);
                   activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
-                  const updatedTodayDay = activeSchedule?.days.find((d: any) => d.date === todayStr) || activeSchedule?.days[0];
-                  todayBlocksCount = updatedTodayDay?.workBlocks?.length || 0;
                   scheduleDays = activeSchedule?.days?.length || 0;
                 }
+
+                if (activeSchedule) {
+                  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+                  const todayDay = activeSchedule.days.find((d: any) => d.date === todayStr) || activeSchedule.days[0];
+                  todayBlocksCount = todayDay?.workBlocks?.length || 0;
+
+                  if (todayBlocksCount === 0 && activePlanId) {
+                    await WeeklyExecutionSchedule.deleteOne({ _id: activeSchedule._id });
+                    await PlanningAgent.generateWeeklySchedule(uid, activePlanId);
+                    activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
+                    const updatedTodayDay = activeSchedule?.days.find((d: any) => d.date === todayStr) || activeSchedule?.days[0];
+                    todayBlocksCount = updatedTodayDay?.workBlocks?.length || 0;
+                    scheduleDays = activeSchedule?.days?.length || 0;
+                  }
+                }
               }
+
+              isValid = !!activePlan &&
+                        milestonesCount >= 1 &&
+                        goalsCount >= 3 &&
+                        !!activeSchedule &&
+                        scheduleDays >= 7 &&
+                        todayBlocksCount >= 1;
             }
 
-            isValid = !!activePlan &&
-                      milestonesCount >= 1 &&
-                      goalsCount >= 3 &&
-                      !!activeSchedule &&
-                      scheduleDays >= 7 &&
-                      todayBlocksCount >= 1;
+            if (!isValid) {
+              console.warn("[Onboarding] Workspace validation did not reach minimum viable content. Continuing with partial workspace.");
+              send({ stage: "workspace", status: "success", message: "Workspace completed with partial content." });
+            } else {
+              send({ stage: "workspace", status: "success", message: "Workspace validation completed." });
+            }
           }
-
-          if (!isValid) {
-            throw new Error("Workspace validation failed: Minimum viable content could not be generated automatically. Click below to continue with partial workspace or retry.");
-          }
-
-          send({ stage: "workspace", status: "success", message: "Workspace validation completed." });
 
           // ==========================================
           // STEP 8: CALENDAR SYNC
@@ -449,18 +435,28 @@ export async function POST(request: Request) {
 
           if (userDoc?.googleCalendarSettings?.connected && activePlanId) {
             try {
-              const origin = new URL(request.url).origin;
-              await fetch(`${origin}/api/auth/google/sync`, {
-                method: "POST",
-                headers: {
-                  Cookie: `session=${sessionToken}`
+              let syncResult = null;
+              let retryCount = 0;
+              while (retryCount < 2) {
+                if (activeSchedule) {
+                  syncResult = await CalendarSyncService.syncWeeklySchedule(uid, activeSchedule);
+                  if (syncResult.success) break;
                 }
-              });
-              calendarSynced = true;
-              send({ stage: "calendar", status: "success", message: "Google Calendar synced." });
+                retryCount++;
+                if (retryCount < 2) {
+                  await new Promise(r => setTimeout(r, 1000));
+                }
+              }
+
+              if (syncResult?.success) {
+                calendarSynced = true;
+                send({ stage: "calendar", status: "success", message: "Calendar synced." });
+              } else {
+                send({ stage: "calendar", status: "error", message: "Calendar couldn't be synced right now. We'll retry automatically." });
+              }
             } catch (e) {
               console.error("Calendar sync trigger failed during onboarding:", e);
-              send({ stage: "calendar", status: "success", message: "Calendar sync scheduled in background." });
+              send({ stage: "calendar", status: "error", message: "Calendar couldn't be synced right now. We'll retry automatically." });
             }
           } else {
             send({ stage: "calendar", status: "success", message: "Calendar can be connected later." });
@@ -487,6 +483,12 @@ export async function POST(request: Request) {
             }
           });
           controller.close();
+          
+          // ==========================================
+          // BACKGROUND PROCESSES (Non-blocking)
+          // ==========================================
+          IdentityAgent.evaluateAndEvolve(uid).catch(e => console.error("Background Identity Error:", e));
+          ReflectionAgent.evaluateAndEvolve(uid).catch(e => console.error("Background Reflection Error:", e));
         } catch (err: any) {
           console.error("Error during streaming generation:", err);
           send({ stage: "error", status: "error", message: err.message || "An unexpected error occurred during workspace setup." });

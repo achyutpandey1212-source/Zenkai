@@ -19,6 +19,8 @@ function estimateCost(model: string, promptTokens: number, completionTokens: num
   return (promptTokens * rate.input) + (completionTokens * rate.output);
 }
 
+let geminiQuotaExhausted = false;
+
 function formatContents(contents: any): string {
   if (!contents) return "";
   if (typeof contents === "string") return contents;
@@ -112,6 +114,10 @@ async function* wrapStream(originalStream: any, params: any, startTime: number) 
 }
 
 async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3, initialDelayMs = 2500): Promise<T> {
+  if (geminiQuotaExhausted) {
+    throw new Error("Gemini quota exhausted for this process. Skipping further Gemini calls.");
+  }
+
   let attempt = 0;
   while (true) {
     try {
@@ -120,13 +126,32 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3, initial
       attempt++;
       const errorMessage = error.message || "";
       const status = error.status || error.statusCode || 0;
+      const isQuotaExhausted =
+        status === 429 && (
+          errorMessage.includes("RESOURCE_EXHAUSTED") ||
+          errorMessage.includes("quota") ||
+          errorMessage.includes("limit") ||
+          errorMessage.includes("generate_content_free_tier_requests") ||
+          errorMessage.includes("GenerateRequestsPerDayPerProjectPerModel-FreeTier")
+        );
+
+      if (isQuotaExhausted) {
+        geminiQuotaExhausted = true;
+        const store = telemetryStorage.getStore();
+        const state = store?.stateRef as any;
+        if (state) {
+          if (!state.retries) state.retries = [];
+          state.retries.push({ action: "geminiCall", attempt, error: errorMessage });
+        }
+
+        console.warn(`[Gemini Telemetry] Hard quota exhausted. Skipping retries and marking Gemini unavailable for this process. Reason: ${errorMessage}`);
+        throw error;
+      }
+
       const isTransient = status === 429 ||
                           status === 403 ||
                           status >= 500 ||
                           errorMessage.includes("429") ||
-                          errorMessage.includes("RESOURCE_EXHAUSTED") ||
-                          errorMessage.includes("quota") ||
-                          errorMessage.includes("limit") ||
                           errorMessage.includes("timeout") ||
                           errorMessage.includes("ETIMEDOUT") ||
                           errorMessage.includes("fetch failed") ||

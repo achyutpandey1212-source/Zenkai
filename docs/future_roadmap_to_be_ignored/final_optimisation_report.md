@@ -114,3 +114,47 @@ To target the Indian market effectively, we offer micro-subscription pricing tie
 2. **Context Gating**: Keeping background memory and evolution locked behind confidence scores and strict AI budgeting limits ensures power users do not abuse API loops.
 3. **Change-Detection Briefs**: Bypassing AI generation on proactive briefings when no planner parameters changed keeps cost-per-briefing negligible.
 4. **Indexed Checkpoints**: Pruned snapshot items reduce Mongo data storage fees.
+
+---
+
+## 6. Incident Analysis: Identity / Planning Shell Misfire
+
+The latest logs show a workflow-level gating problem rather than a model quality issue or a frontend bug. The system is launching background identity and reflection evolution during `general_companion` traffic, then attempting planning validation even when the planner has explicitly returned a zero-confidence ignore decision.
+
+### What the logs show
+1. **Identity evolution is running on general companion traffic**
+  - The trace begins with `Intent: general_companion | Profile: companion`.
+  - Despite that, the system starts `IdentityAgent` and `ReflectionAgent` shells and creates new candidate traits/reflections such as `College Student`, `Driven by Personal Growth`, `Evening Deep Worker`, and `Primary Identity as a College Student`.
+  - These updates are low-confidence and are being derived from conversational context that is not clearly enduring identity evidence.
+
+2. **Planning shell is being invoked without a valid persistence signal**
+  - The planner logs `Confidence 0 too low or ignore action. Skipping persistence.`
+  - The same validation attempt is retried twice and then fails with `Workspace validation failed: Minimum viable content could not be generated automatically.`
+  - This means the generation path expects a persisted workspace even when the planner has intentionally declined to create one.
+
+3. **The route returns HTTP 200 with an internal error state**
+  - `/api/onboarding/generate` completes with a streamed error and then `/api/onboarding/complete` still runs.
+  - That creates a partial state mismatch: the UI can continue, but the backend has already reported that workspace generation did not produce a valid minimum viable result.
+
+### Root cause
+The issue is a missing or overly permissive gate between **intent classification**, **background evolution**, and **workspace validation**.
+
+In the observed path:
+- `general_companion` intent should not trigger identity/reflection evolution unless a stronger life-signal or confidence threshold is met.
+- Planning should not be revalidated as a hard requirement when the planner has explicitly returned `confidence 0` / `ignore action`.
+- The onboarding generator should accept a partial workspace fallback when persistence is skipped, instead of failing the entire stream after retries.
+
+### Why this matters
+This is a budget and correctness problem at the same time:
+- It spends identity/reflection budget on casual conversations where no durable user trait was actually established.
+- It creates noisy traits and reflections that can pollute the user profile.
+- It converts an intentional planner no-op into an exception, which makes onboarding brittle.
+
+### Recommended fix direction
+1. **Tighten identity/reflection gating** so background evolution only runs when the router or context node emits a strong enough life-event signal, not for generic companion intent.
+2. **Respect planner ignore decisions** by treating `confidence 0` as a valid terminal outcome rather than a validation failure.
+3. **Allow partial workspace completion** when planner persistence is skipped, so onboarding can continue without throwing if the minimum viable content cannot be generated automatically.
+4. **Separate user-facing success from internal persistence state** so the stream can finish cleanly even when evolution is intentionally skipped.
+
+### Operational conclusion
+The observed failure is not caused by Cloud Run, Docker, or build-time configuration. It is caused by the application’s own evolution and validation workflow allowing background identity/planning work to run in contexts where it should have been suppressed.
