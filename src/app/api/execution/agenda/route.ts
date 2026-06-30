@@ -24,11 +24,34 @@ export async function GET(request: Request) {
 
     await dbConnect();
 
+    // STEP 0: Raw check - does schedule have tasks?
+    console.log("[RAW] User firebaseUid:", user.firebaseUid);
+    const checkRaw = await WeeklyExecutionSchedule.findOne({
+      firebaseUid: user.firebaseUid,
+      status: "ACTIVE"
+    }).select("days.workBlocks.tasks").lean();
+    
+    console.log("[RAW] Raw document found:", !!checkRaw);
+    console.log("[RAW] days exists:", !!checkRaw?.days);
+    console.log("[RAW] days[0].workBlocks exists:", !!checkRaw?.days?.[0]?.workBlocks);
+    if (checkRaw?.days?.[0]?.workBlocks?.[0]) {
+      console.log("[RAW] days[0].workBlocks[0].tasks:", checkRaw.days[0].workBlocks[0].tasks);
+    }
+
     // Fetch active WeeklyExecutionSchedule
     const schedule = await WeeklyExecutionSchedule.findOne({
       firebaseUid: user.firebaseUid,
       status: "ACTIVE"
-    }).populate("days.workBlocks.tasks").lean();
+    }).populate("days.workBlocks.tasks");
+
+    // EXPERIMENT: Check if populate works without lean()
+    console.log("[EXPERIMENT] After populate (without lean):");
+    if (schedule?.days?.[0]?.workBlocks?.[0]) {
+      const wb = schedule.days[0].workBlocks[0];
+      console.log("[EXPERIMENT] workBlocks[0].tasks type:", typeof wb.tasks);
+      console.log("[EXPERIMENT] workBlocks[0].tasks is array:", Array.isArray(wb.tasks));
+      console.log("[EXPERIMENT] workBlocks[0].tasks:", JSON.stringify(wb.tasks, null, 2));
+    }
 
     return NextResponse.json({
       success: true,

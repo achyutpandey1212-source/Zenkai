@@ -217,28 +217,30 @@ export class AIValidationService {
         });
       }
 
-      // Repair blocks (negative durations, defaults, clamping to wake/sleep window)
-      let repairedBlocks = blocks.map((b: any, idx: number) => {
-        const title = b.title || `Study block ${idx + 1}`;
-        let startM = timeToMinutes(b.startTime || wakeUpTime);
-        let duration = parseInt(b.duration, 10) || 60;
-        if (duration <= 0) duration = 60;
+// Repair blocks (negative durations, defaults, clamping to wake/sleep window)
+       let repairedBlocks = blocks.map((b: any, idx: number) => {
+         const title = b.title || `Study block ${idx + 1}`;
+         let startM = timeToMinutes(b.startTime || wakeUpTime);
+         let duration = parseInt(b.duration, 10) || 60;
+         if (duration <= 0) duration = 60;
 
-        let endM = timeToMinutes(b.endTime);
-        if (!b.endTime || endM <= startM) {
-          endM = startM + duration;
-        } else {
-          duration = endM - startM;
-        }
+         let endM = timeToMinutes(b.endTime);
+         if (!b.endTime || endM <= startM) {
+           endM = startM + duration;
+         } else {
+           duration = endM - startM;
+         }
 
-        const priority = Math.min(Math.max(parseInt(b.priority, 10) || 3, 1), 5);
-        const taskIds = Array.isArray(b.taskIds)
-          ? b.taskIds
-          : Array.isArray(b.tasks)
-            ? b.tasks
-            : [];
+         const priority = Math.min(Math.max(parseInt(b.priority, 10) || 3, 1), 5);
+         const taskIds = Array.isArray(b.taskIds)
+           ? b.taskIds
+           : Array.isArray(b.tasks)
+             ? b.tasks
+             : [];
+         
+         console.log("[DEBUG-VALIDATION] block", title, "taskIds from AI:", taskIds, "valid IDs filtered:", taskIds.filter((id: string) => typeof id === "string" && /^[a-f\d]{24}$/i.test(id)));
 
-        // Clamp block to wake/sleep window
+         // Clamp block to wake/sleep window
         if (startM < wakeMin) {
           this.logConflict(dayDate, `Shifting block "${title}" from ${b.startTime} to wake time ${wakeUpTime}`);
           this.triggerGuardrail("Clamped block to wake window");

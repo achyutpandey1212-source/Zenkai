@@ -36,7 +36,7 @@ export class ContextRouterService {
     const msg = userMessage.toLowerCase().trim();
 
     // Onboarding bypass: explicitly request planning context
-    if (parentIntent === "onboarding") {
+    if (parentIntent === "onboarding" || parentIntent === "planning") {
       return "planning";
     }
 

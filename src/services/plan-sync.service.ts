@@ -475,24 +475,31 @@ export class PlanSyncService {
 
     const nextVersion = (lastSchedule?.version || 0) + 1;
 
+    console.log("[DEBUG-STORE] scheduleData received. Day 0 workBlocks count:", scheduleData.days?.[0]?.workBlocks?.length);
+    console.log("[DEBUG-STORE] First workBlock taskIds:", scheduleData.days?.[0]?.workBlocks?.[0]?.taskIds);
+    
     const days = scheduleData.days.map((d: any) => ({
       date: d.date,
       dayNumber: d.dayNumber,
       focusTheme: d.focusTheme,
       estimatedWorkload: d.estimatedWorkload,
       plannedFocusHours: d.plannedFocusHours,
-      workBlocks: d.workBlocks.map((wb: any) => ({
-        title: wb.title,
-        startTime: wb.startTime,
-        endTime: wb.endTime,
-        duration: wb.duration,
-        priority: wb.priority,
-        tasks: wb.taskIds
-          ? wb.taskIds
-              .filter((id: string) => typeof id === "string" && /^[a-f\d]{24}$/i.test(id))
-              .map((id: string) => new Types.ObjectId(id))
-          : [],
-      })),
+workBlocks: d.workBlocks.map((wb: any) => {
+         console.log("[DEBUG-PERSIST] workBlock:", wb.title, "incoming taskIds:", wb.taskIds);
+         const rawIds = wb.taskIds || [];
+         const validIds = rawIds.filter((id: string) => typeof id === "string" && /^[a-f\d]{24}$/i.test(id));
+         console.log("[DEBUG-PERSIST] workBlock:", wb.title, "valid IDs after filter:", validIds, "count:", validIds.length);
+         const finalTasks = validIds.map((id: string) => new Types.ObjectId(id));
+         console.log("[DEBUG-PERSIST] workBlock:", wb.title, "final tasks written to Mongo:", finalTasks);
+         return {
+           title: wb.title,
+           startTime: wb.startTime,
+           endTime: wb.endTime,
+           duration: wb.duration,
+           priority: wb.priority,
+           tasks: finalTasks,
+         };
+       }),
     }));
 
     const newSchedule = new WeeklyExecutionSchedule({

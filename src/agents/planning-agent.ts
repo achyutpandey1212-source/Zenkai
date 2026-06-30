@@ -1178,7 +1178,14 @@ Each block must have a clear startTime and endTime, non-overlapping, and must fe
     let result: any;
     try {
       result = JSON.parse(content);
+      
+      // DEBUG: Log raw AI response taskIds before validation
+      console.log("[DEBUG-AI-BEFORE] Raw AI workBlocks taskIds:", JSON.stringify(result?.days?.[0]?.workBlocks?.map((wb: any) => ({ title: wb.title, taskIds: wb.taskIds })), null, 2));
+      
       result = AIValidationService.validateAndRepairSchedule(result, context.profile);
+      
+      // DEBUG: Log validated result taskIds
+      console.log("[DEBUG-AI-AFTER] Validated workBlocks taskIds:", JSON.stringify(result?.days?.[0]?.workBlocks?.map((wb: any) => ({ title: wb.title, taskIds: wb.taskIds })), null, 2));
     } catch (validationErr: any) {
       console.warn(`[AI Validation] Initial schedule validation failed: ${validationErr.message}. Retrying once...`);
       const store = telemetryStorage.getStore();
@@ -1458,15 +1465,21 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
         profile: normalizedContext.profile,
       };
 
-      // 3. Call Pure AI Weekly Schedule reasoning logic
-      const scheduleData = await this.generateWeeklyScheduleLogic(
-        planningContext,
-        activeTasks,
-        startDateStr,
-        timezone
-      );
+// 3. Call Pure AI Weekly Schedule reasoning logic
+       const scheduleData = await this.generateWeeklyScheduleLogic(
+         planningContext,
+         activeTasks,
+         startDateStr,
+         timezone
+       );
 
-      // 4. Save schedule using PlanSyncService (database layer)
+       console.log("[DEBUG-AI] AI scheduleData days:", scheduleData?.days?.length);
+       console.log("[DEBUG-AI] AI activeTasks passed to scheduler:", activeTasks?.length);
+       if (scheduleData?.days?.[0]?.workBlocks?.[0]) {
+         console.log("[DEBUG-AI] First workBlock taskIds:", scheduleData.days[0].workBlocks[0].taskIds);
+       }
+
+       // 4. Save schedule using PlanSyncService (database layer)
       const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + 6);
       const endDateStr = endDate.toLocaleDateString("en-CA", { timeZone: timezone });
