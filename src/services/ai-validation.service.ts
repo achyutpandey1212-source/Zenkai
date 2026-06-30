@@ -1,9 +1,17 @@
 import { telemetryStorage } from "@/lib/telemetry-context";
 
-// Helper to convert "HH:mm" time string to minutes from midnight
+// Helper to convert "HH:mm" or ISO 8601 datetime string to minutes from midnight
 export function timeToMinutes(timeStr: string): number {
   if (!timeStr) return 0;
-  const parts = timeStr.split(":");
+  // Handle ISO 8601 format like "2026-06-30T07:30:00Z" or "2026-06-30T07:30:00+05:30"
+  // Extract the time portion after "T" and strip the timezone suffix
+  let normalized = timeStr;
+  if (timeStr.includes("T")) {
+    const timePart = timeStr.split("T")[1] || "00:00";
+    // Strip timezone suffix (Z, +HH:MM, -HH:MM)
+    normalized = timePart.replace(/([+-]\d{2}:\d{2}|Z)$/, "").substring(0, 5);
+  }
+  const parts = normalized.split(":");
   const hours = parseInt(parts[0], 10) || 0;
   const minutes = parseInt(parts[1], 10) || 0;
   return hours * 60 + minutes;
@@ -177,8 +185,10 @@ export class AIValidationService {
     const sleepMin = timeToMinutes(sleepTime);
     const wakeSleepSpan = sleepMin > wakeMin ? sleepMin - wakeMin : (24 * 60 - wakeMin) + sleepMin;
 
-    const rebalancedDays = days.map((dayObj: any) => {
+    const rebalancedDays = days.map((dayObj: any, dayIdx: number) => {
       const dayDate = dayObj.date || new Date().toISOString().split("T")[0];
+      // Preserve dayNumber exactly as returned by the LLM; fall back to loop index if absent
+      const dayNumber = typeof dayObj.dayNumber === "number" ? dayObj.dayNumber : dayIdx;
       const theme = dayObj.focusTheme || "Focus Day";
       const blocks = Array.isArray(dayObj.workBlocks) ? dayObj.workBlocks : [];
 
@@ -216,7 +226,11 @@ export class AIValidationService {
         }
 
         const priority = Math.min(Math.max(parseInt(b.priority, 10) || 3, 1), 5);
-        const tasks = Array.isArray(b.tasks) ? b.tasks : [];
+        const taskIds = Array.isArray(b.taskIds)
+          ? b.taskIds
+          : Array.isArray(b.tasks)
+            ? b.tasks
+            : [];
 
         // Clamp block to wake/sleep window
         if (startM < wakeMin) {
@@ -238,7 +252,7 @@ export class AIValidationService {
           endM,
           duration,
           priority,
-          tasks,
+          taskIds,
         };
       });
 
@@ -416,18 +430,21 @@ export class AIValidationService {
       }
 
       // Map back to output format (startTime, endTime strings)
+      // NOTE: All structural fields from the LLM output must be forwarded here.
+      // dayNumber is required by the Mongoose DayScheduleSchema (required: true).
       return {
         date: dayDate,
+        dayNumber,
         focusTheme: theme,
         plannedFocusHours: parseFloat((totalWorkMinutes / 60).toFixed(1)),
-        estimatedWorkload: totalWorkMinutes > 360 ? "heavy" : totalWorkMinutes > 180 ? "medium" : "light",
+        estimatedWorkload: totalWorkMinutes > 360 ? "Heavy" : totalWorkMinutes > 180 ? "Medium" : "Light",
         workBlocks: finalBlocks.map((b: any) => ({
           title: b.title,
           startTime: minutesToTime(b.startM),
           endTime: minutesToTime(b.endM),
           duration: b.duration,
           priority: b.priority,
-          tasks: b.tasks,
+          taskIds: b.taskIds,
         })),
       };
     });

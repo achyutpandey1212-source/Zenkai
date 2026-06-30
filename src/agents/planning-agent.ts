@@ -1411,11 +1411,16 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
       if (state && state.contextVersion) {
         normalizedContext = ContextOrchestrator.getContext(workflowId);
       } else {
-        // Fallback loading
+        // Fallback loading — must pass "planning" as parentIntent so the orchestrator
+        // forces the planning context profile and loads activePlan with full task tree.
+        // Without this the companion profile is selected, activePlan is stripped, and
+        // the scheduler receives an empty task list producing zero task references.
         normalizedContext = await ContextOrchestrator.loadContext(
           uid,
           workflowId,
-          "Fallback weekly schedule shell execution"
+          "Fallback weekly schedule shell execution",
+          undefined,
+          "planning"
         );
       }
 
