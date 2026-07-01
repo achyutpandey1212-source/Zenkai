@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth-service";
-import { GoogleGenAI } from "@google/genai";
+import { provider } from "@/services/llm/provider";
 
 export const dynamic = "force-dynamic";
 
@@ -32,14 +32,7 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(arrayBuffer);
     const mimeType = file.type;
 
-    // 3. Initialize Gemini
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ success: false, error: "GEMINI_API_KEY is not configured" }, { status: 500 });
-    }
-    const ai = new GoogleGenAI({ apiKey });
-
-    // 4. Run multimodal Gemini model to parse the file
+    // 3. Initialize file parser
     const prompt = `
 Extract any schedule events, academic/career calendar items, syllabus topics, assignment deadlines, exam dates, or recurring commitments from this document.
 Classify each item as one of these categories:
@@ -62,8 +55,8 @@ Return a JSON array of objects with the following schema:
 CRITICAL: Return ONLY valid JSON, do not wrap it in markdown code blocks or add explanatory text.
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+    // 4. Run provider to parse the file
+    const response = await provider.generate({
       contents: [
         {
           inlineData: {
@@ -75,14 +68,12 @@ CRITICAL: Return ONLY valid JSON, do not wrap it in markdown code blocks or add 
           text: prompt,
         },
       ],
-      config: {
-        responseMimeType: "application/json",
-      },
+      responseMimeType: "application/json",
     });
 
     const textOutput = response.text;
     if (!textOutput) {
-      return NextResponse.json({ success: false, error: "Empty response from Gemini parser" }, { status: 500 });
+      return NextResponse.json({ success: false, error: "Empty response from parser" }, { status: 500 });
     }
 
     // Try parsing output
@@ -90,7 +81,7 @@ CRITICAL: Return ONLY valid JSON, do not wrap it in markdown code blocks or add 
     try {
       parsedItems = JSON.parse(textOutput.trim());
     } catch (parseError) {
-      console.error("Failed to parse Gemini output as JSON:", textOutput);
+      console.error("Failed to parse provider output as JSON:", textOutput);
       return NextResponse.json({ success: false, error: "Failed to parse extracted data" }, { status: 500 });
     }
 

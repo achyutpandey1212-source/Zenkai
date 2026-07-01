@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { provider } from "@/services/llm/provider";
 import type { GraphState } from "@/orchestration/graph/state";
 import { AIValidationService, timeToMinutes } from "@/services/ai-validation.service";
 import { telemetryStorage } from "@/lib/telemetry-context";
@@ -254,18 +254,6 @@ Return a JSON object containing the plan tree, confidence fields, and these diag
 `;
 
 export class PlanningAgent {
-  private static client: GoogleGenAI | null = null;
-
-  private static getClient(): GoogleGenAI {
-    if (!this.client) {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("Missing GEMINI_API_KEY environment variable.");
-      }
-      this.client = new GoogleGenAI({ apiKey });
-    }
-    return this.client;
-  }
 
   /**
    * Deterministically classifies common casual messages (greetings, thanks, acknowledgements)
@@ -377,13 +365,13 @@ export class PlanningAgent {
     history: { role: "user" | "model"; content: string }[]
   ): Promise<{ intent: PlanningIntent; lifeEvents: LifeEventExtraction; budget: number }> {
     try {
-      const ai = this.getClient();
+      
       const chatHistoryText = history
         .slice(-10) // increased from 6 for better confirmation and context tracking
         .map((h) => `${h.role === "user" ? "User" : "Zenkai"}: ${h.content}`)
         .join("\n");
 
-      const prompt = `
+const prompt = `
 Conversation History:
 \${chatHistoryText}
 
@@ -393,57 +381,54 @@ User: \${message}
 Determine the intent and extract any life events:
 `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: MERGED_ROUTER_SYSTEM_PROMPT.trim(),
-          temperature: 0.1,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              intentType: {
-                type: "STRING",
-                enum: ["create_or_modify", "task_update", "execution_inquiry", "none"],
-              },
-              taskTitle: { type: "STRING" },
-              taskStatus: { type: "STRING" },
-              planType: { type: "STRING" },
-              goalTitle: { type: "STRING" },
-              details: { type: "STRING" },
-              lifeEvents: {
-                type: "OBJECT",
-                properties: {
-                  hasActionableContent: { type: "BOOLEAN" },
-                  suggestsPlanning: { type: "BOOLEAN" },
-                  extractionReason: { type: "STRING" },
-                  detectedEvents: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        type: {
-                          type: "STRING",
-                          enum: ["exam", "deadline", "project", "goal", "event", "constraint", "career", "habit"],
-                        },
-                        title: { type: "STRING" },
-                        date: { type: "STRING" },
-                        description: { type: "STRING" },
-                      },
-                      required: ["type", "title", "description"],
-                    },
-                  },
-                },
-                required: ["hasActionableContent", "suggestsPlanning", "extractionReason", "detectedEvents"],
-              },
-            },
-            required: ["intentType", "lifeEvents"],
-          },
-        },
-      });
+       const response = await provider.generate({
+         prompt,
+         systemInstruction: MERGED_ROUTER_SYSTEM_PROMPT.trim(),
+         temperature: 0.1,
+         responseMimeType: "application/json",
+         responseSchema: {
+           type: "OBJECT",
+           properties: {
+             intentType: {
+               type: "STRING",
+               enum: ["create_or_modify", "task_update", "execution_inquiry", "none"],
+             },
+             taskTitle: { type: "STRING" },
+             taskStatus: { type: "STRING" },
+             planType: { type: "STRING" },
+             goalTitle: { type: "STRING" },
+             details: { type: "STRING" },
+             lifeEvents: {
+               type: "OBJECT",
+               properties: {
+                 hasActionableContent: { type: "BOOLEAN" },
+                 suggestsPlanning: { type: "BOOLEAN" },
+                 extractionReason: { type: "STRING" },
+                 detectedEvents: {
+                   type: "ARRAY",
+                   items: {
+                     type: "OBJECT",
+                     properties: {
+                       type: {
+                         type: "STRING",
+                         enum: ["exam", "deadline", "project", "goal", "event", "constraint", "career", "habit"],
+                       },
+                       title: { type: "STRING" },
+                       date: { type: "STRING" },
+                       description: { type: "STRING" },
+                     },
+                     required: ["type", "title", "description"],
+                   },
+                 },
+               },
+               required: ["hasActionableContent", "suggestsPlanning", "extractionReason", "detectedEvents"],
+             },
+           },
+           required: ["intentType", "lifeEvents"],
+         },
+       });
 
-      const text = response.text;
+       const text = response.text;
       if (!text) {
         return {
           intent: { type: "none" },
@@ -522,45 +507,42 @@ Determine the intent and extract any life events:
    * deadlines, constraints) and whether Zenkai should autonomously trigger planning.
    * Every user message is an opportunity for autonomous work.
    */
-  static async extractLifeEvents(message: string): Promise<LifeEventExtraction> {
-    try {
-      const ai = this.getClient();
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: `Analyse this message:\n"${message}"` }] }],
-        config: {
-          systemInstruction: LIFE_EVENT_EXTRACTION_PROMPT.trim(),
-          temperature: 0,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              hasActionableContent: { type: "BOOLEAN" },
-              suggestsPlanning: { type: "BOOLEAN" },
-              extractionReason: { type: "STRING" },
-              detectedEvents: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    type: {
-                      type: "STRING",
-                      enum: ["exam", "deadline", "project", "goal", "event", "constraint", "career", "habit"],
-                    },
-                    title: { type: "STRING" },
-                    date: { type: "STRING" },
-                    description: { type: "STRING" },
-                  },
-                  required: ["type", "title", "description"],
-                },
-              },
-            },
-            required: ["hasActionableContent", "suggestsPlanning", "extractionReason", "detectedEvents"],
-          },
-        },
-      });
+static async extractLifeEvents(message: string): Promise<LifeEventExtraction> {
+     try {
 
-      const text = response.text;
+       const response = await provider.generate({
+         prompt: `Analyse this message:\n"${message}"`,
+         systemInstruction: LIFE_EVENT_EXTRACTION_PROMPT.trim(),
+         temperature: 0,
+         responseMimeType: "application/json",
+         responseSchema: {
+           type: "OBJECT",
+           properties: {
+             hasActionableContent: { type: "BOOLEAN" },
+             suggestsPlanning: { type: "BOOLEAN" },
+             extractionReason: { type: "STRING" },
+             detectedEvents: {
+               type: "ARRAY",
+               items: {
+                 type: "OBJECT",
+                 properties: {
+                   type: {
+                     type: "STRING",
+                     enum: ["exam", "deadline", "project", "goal", "event", "constraint", "career", "habit"],
+                   },
+                   title: { type: "STRING" },
+                   date: { type: "STRING" },
+                   description: { type: "STRING" },
+                 },
+                 required: ["type", "title", "description"],
+               },
+             },
+           },
+           required: ["hasActionableContent", "suggestsPlanning", "extractionReason", "detectedEvents"],
+         },
+       });
+
+       const text = response.text;
       if (!text) {
         return { hasActionableContent: false, suggestsPlanning: false, extractionReason: "No response", detectedEvents: [] };
       }
@@ -592,13 +574,13 @@ Determine the intent and extract any life events:
         return { type: "create_or_modify", details: lifeEvents.extractionReason };
       }
 
-      const ai = this.getClient();
+      
       const chatHistoryText = history
         .slice(-6)
         .map((h) => `${h.role === "user" ? "User" : "Zenkai"}: ${h.content}`)
         .join("\n");
 
-      const prompt = `
+const prompt = `
 Conversation History:
 ${chatHistoryText}
 
@@ -608,32 +590,29 @@ User: ${message}
 Determine the intent:
 `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: INTENT_DETECTION_SYSTEM_PROMPT.trim(),
-          temperature: 0.1,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              intentType: {
-                type: "STRING",
-                enum: ["create_or_modify", "task_update", "execution_inquiry", "none"],
-              },
-              taskTitle: { type: "STRING" },
-              taskStatus: { type: "STRING" },
-              planType: { type: "STRING" },
-              goalTitle: { type: "STRING" },
-              details: { type: "STRING" },
-            },
-            required: ["intentType"],
-          },
-        },
-      });
+       const response = await provider.generate({
+         prompt,
+         systemInstruction: INTENT_DETECTION_SYSTEM_PROMPT.trim(),
+         temperature: 0.1,
+         responseMimeType: "application/json",
+         responseSchema: {
+           type: "OBJECT",
+           properties: {
+             intentType: {
+               type: "STRING",
+               enum: ["create_or_modify", "task_update", "execution_inquiry", "none"],
+             },
+             taskTitle: { type: "STRING" },
+             taskStatus: { type: "STRING" },
+             planType: { type: "STRING" },
+             goalTitle: { type: "STRING" },
+             details: { type: "STRING" },
+           },
+           required: ["intentType"],
+         },
+       });
 
-      const text = response.text;
+       const text = response.text;
       if (!text) return { type: "none" };
 
       const parsed = JSON.parse(text) as {
@@ -852,17 +831,15 @@ Remember:
         ],
       };
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: PLANNER_SYSTEM_PROMPT.trim(),
-          temperature: 0.2,
-          responseMimeType: "application/json",
-          responseSchema: planResponseSchema,
-        },
-      });
+      
+const response = await provider.generate({
+
+         prompt,
+         systemInstruction: PLANNER_SYSTEM_PROMPT.trim(),
+         temperature: 0.2,
+         responseMimeType: "application/json",
+         responseSchema: planResponseSchema,
+       });
 
       let responseText = response.text;
       if (!responseText) return null;
@@ -889,16 +866,13 @@ IMPORTANT: Your previous response failed structural validation with the followin
 
 Please fix this issue, ensure all required fields are present with correct types, and respond again in the exact requested schema.
 `;
-        const retryResponse = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
-          config: {
-            systemInstruction: PLANNER_SYSTEM_PROMPT.trim(),
-            temperature: 0.1,
-            responseMimeType: "application/json",
-            responseSchema: planResponseSchema,
-          },
-        });
+const retryResponse = await provider.generate({
+           prompt: retryPrompt,
+           systemInstruction: PLANNER_SYSTEM_PROMPT.trim(),
+           temperature: 0.1,
+           responseMimeType: "application/json",
+           responseSchema: planResponseSchema,
+         });
 
         const retryResponseText = retryResponse.text;
         if (!retryResponseText) throw new Error("Retry plan response was empty");
@@ -1168,17 +1142,14 @@ Each block must have a clear startTime and endTime, non-overlapping, and must fe
       required: ["lifeModelAnalysis", "availabilityMap", "weeklyRhythmReasoning", "days"]
     };
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        systemInstruction: systemInstruction.trim(),
-        temperature: 0.15,
-        responseMimeType: "application/json",
-        responseSchema: scheduleResponseSchema,
-      }
-    });
+    
+const response = await provider.generate({
+         prompt,
+         systemInstruction: systemInstruction.trim(),
+         temperature: 0.15,
+         responseMimeType: "application/json",
+         responseSchema: scheduleResponseSchema,
+       });
 
     const content = response.text;
     if (!content) throw new Error("Empty response from Weekly Planner LLM");
@@ -1212,16 +1183,13 @@ IMPORTANT: Your previous response failed structural validation with the followin
 
 Please fix this issue, ensure all days have exactly 1 date and a workBlocks array, and respond again in the exact requested schema.
 `;
-      const retryResponse = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
-        config: {
-          systemInstruction: systemInstruction.trim(),
-          temperature: 0.1,
-          responseMimeType: "application/json",
-          responseSchema: scheduleResponseSchema,
-        }
-      });
+const retryResponse = await provider.generate({
+         prompt: retryPrompt,
+         systemInstruction: systemInstruction.trim(),
+         temperature: 0.1,
+         responseMimeType: "application/json",
+         responseSchema: scheduleResponseSchema,
+       });
 
       const retryContent = retryResponse.text;
       if (!retryContent) throw new Error("Retry schedule response was empty");

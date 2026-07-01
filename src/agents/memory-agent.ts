@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { provider } from "@/services/llm/provider";
 import { IMemory } from "@/models/Memory";
 import { MemoryRepository } from "@/repositories/memory.repository";
 import { AdmissionPolicy } from "@/memory/admission-policy";
@@ -17,19 +17,6 @@ You must return a JSON response matching the requested schema.
 `;
 
 export class MemoryAgent {
-  private static client: GoogleGenAI | null = null;
-
-  private static getClient(): GoogleGenAI {
-    if (!this.client) {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("Missing GEMINI_API_KEY environment variable.");
-      }
-      this.client = new GoogleGenAI({ apiKey });
-    }
-    return this.client;
-  }
-
   /**
    * Evaluates the latest conversation exchange, checks for duplicates/conflicts with existing memories,
    * and creates or updates user memory appropriately. Runs asynchronously post-chat.
@@ -129,8 +116,6 @@ export class MemoryAgent {
     consolidatedContent: string | null;
     consolidatedSummary: string | null;
   }> {
-    const ai = this.getClient();
-
     const existingFormatted = existingList
       .map((m) => `ID: ${m._id} | Content: "${m.content}"`)
       .join("\n");
@@ -146,26 +131,23 @@ If there is a conflict/update/refinement, provide the target memory ID and sugge
 `;
 
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: CONSOLIDATION_SYSTEM_PROMPT.trim(),
-          temperature: 0.1,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              relationship: {
-                type: "STRING",
-                enum: ["contradicts_or_updates", "supports_or_refines", "none"],
-              },
-              targetMemoryId: { type: "STRING" },
-              consolidatedContent: { type: "STRING" },
-              consolidatedSummary: { type: "STRING" },
+      const response = await provider.generate({
+        prompt,
+        systemInstruction: CONSOLIDATION_SYSTEM_PROMPT.trim(),
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            relationship: {
+              type: "STRING",
+              enum: ["contradicts_or_updates", "supports_or_refines", "none"],
             },
-            required: ["relationship"],
+            targetMemoryId: { type: "STRING" },
+            consolidatedContent: { type: "STRING" },
+            consolidatedSummary: { type: "STRING" },
           },
+          required: ["relationship"],
         },
       });
 

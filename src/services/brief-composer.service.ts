@@ -9,7 +9,7 @@ import { Conversation } from "@/models/Conversation";
 import { Message } from "@/models/Message";
 import { BriefingLog } from "@/models/BriefingLog";
 import { telemetryStorage } from "@/lib/telemetry-context";
-import { GoogleGenAI } from "@google/genai";
+import { provider } from "@/services/llm/provider";
 import crypto from "crypto";
 
 export class BriefComposerService {
@@ -160,17 +160,11 @@ ${agendaPrompt}
 
       try {
         insight = await telemetryStorage.run({ workflowId, aiCalls, stateRef }, async () => {
-          const apiKey = process.env.GEMINI_API_KEY;
-          if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
-          const ai = new GoogleGenAI({ apiKey });
-          const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: userPrompt,
-            config: {
-              systemInstruction: systemPrompt,
-              temperature: 0.7,
-              maxOutputTokens: 100,
-            },
+          const response = await provider.generate({
+            prompt: userPrompt,
+            systemInstruction: systemPrompt,
+            temperature: 0.7,
+            maxOutputTokens: 100,
           });
           return response.text?.trim() || insight;
         });
@@ -320,18 +314,12 @@ ${pendingPrompt}
 
       try {
         const jsonText = await telemetryStorage.run({ workflowId, aiCalls, stateRef }, async () => {
-          const apiKey = process.env.GEMINI_API_KEY;
-          if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
-          const ai = new GoogleGenAI({ apiKey });
-          const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: userPrompt,
-            config: {
-              systemInstruction: systemPrompt,
-              temperature: 0.7,
-              responseMimeType: "application/json",
-              maxOutputTokens: 200,
-            },
+          const response = await provider.generate({
+            prompt: userPrompt,
+            systemInstruction: systemPrompt,
+            temperature: 0.7,
+            responseMimeType: "application/json",
+            maxOutputTokens: 200,
           });
           return response.text?.trim() || "";
         });

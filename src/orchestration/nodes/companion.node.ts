@@ -16,7 +16,8 @@
 
 import type { NodeResult } from "../graph/types";
 import type { GraphState } from "../graph/state";
-import { GeminiService } from "@/services/gemini.service";
+import { provider } from "@/services/llm/provider";
+import { COMPANION_SYSTEM_PROMPT } from "@/services/gemini.service";
 import { Task } from "@/models/Task";
 import { Goal } from "@/models/Goal";
 import { Milestone } from "@/models/Milestone";
@@ -285,20 +286,46 @@ export async function companionNode(
     const activePlanOverviewText = ContextOrchestrator.formatActivePlanOverviewPrompt(workflowId);
     const finalPlanPromptText = [activePlanOverviewText, planPromptText].filter(Boolean).join("\n\n");
 
-    // ── 2. Call Gemini streaming ───────────────────────────────────────────────
-    const geminiStream = await GeminiService.generateCompanionStreamWithMemory(
-      userMessage,
-      history,
-      memoryPromptText,
-      identityPromptText,
-      profilePromptText,
-      reflectionPromptText,
-      finalPlanPromptText
-    );
+    // ── 2. Call LLM streaming ───────────────────────────────────────────────────
+    const systemPromptWithMemory = `
+${COMPANION_SYSTEM_PROMPT.trim()}
+
+${profilePromptText}
+
+${memoryPromptText}
+
+${identityPromptText}
+
+${reflectionPromptText}
+
+${finalPlanPromptText}
+
+IMPORTANT MEMORY & REFLECTION USAGE DIRECTIVES:
+- Never say "I searched my memory", "According to my database", "I recall from our past conversations", "My records say", or "My reflections indicate".
+- Never quote memories or reflections in a robotic, dry, or formal way.
+- Instead, speak naturally. Weave the context into your responses as if you simply remember the user and understand their traits/patterns, just like a close human friend or mentor would.
+- Keep the user's goals, preferences, and recurring behavioral patterns in mind when formulating suggestions and feedback.
+- STRICT ANTI-HALLUCINATION GUARDRAILS: Do NOT invent or guess user memories, preferences, plans, tasks, or reflections. If details are not explicitly present in the provided context (profile, memories, identity, reflections, plan, or conversation history), do not assume or invent them. If information is unknown, say it is unknown and never guess.
+`.trim();
+
+    const contents = history.map((msg) => ({
+      role: msg.role,
+      parts: [{ text: msg.content }],
+    }));
+    contents.push({
+      role: "user",
+      parts: [{ text: userMessage }],
+    });
+
+    const companionStream = await provider.generateStream({
+      contents,
+      systemInstruction: systemPromptWithMemory,
+      temperature: 0.7,
+    });
 
     let accumulatedText = "";
 
-    for await (const chunk of geminiStream) {
+    for await (const chunk of companionStream) {
       let chunkText = "";
 
       if (typeof chunk.text === "function") {

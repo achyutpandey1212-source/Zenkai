@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { provider } from "@/services/llm/provider";
 import { MemoryCategory } from "@/models/Memory";
 
 export interface AdmissionDecision {
@@ -40,19 +40,6 @@ You must return a JSON response matching the requested schema.
 `;
 
 export class AdmissionPolicy {
-  private static client: GoogleGenAI | null = null;
-
-  private static getClient(): GoogleGenAI {
-    if (!this.client) {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("Missing GEMINI_API_KEY environment variable.");
-      }
-      this.client = new GoogleGenAI({ apiKey });
-    }
-    return this.client;
-  }
-
   /**
    * Deterministically evaluates message to filter out obvious non-memories.
    * Returns false if message is definitely not a memory candidate.
@@ -115,9 +102,7 @@ export class AdmissionPolicy {
       return { shouldStore: false, reason: check.reason };
     }
 
-    // 2. Call Gemini only if deterministic checks are uncertain
-    const ai = this.getClient();
-
+    // 2. Call provider only if deterministic checks are uncertain
     const userPrompt = `
 Analyze this conversation exchange:
 User Message: "${userMessage.replace(/"/g, '\\"')}"
@@ -127,54 +112,49 @@ Determine if any long-term memory should be stored. Return JSON only.
 `;
 
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          { role: "user", parts: [{ text: userPrompt }] }
-        ],
-        config: {
-          systemInstruction: ADMISSION_SYSTEM_PROMPT.trim(),
-          temperature: 0.1,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              shouldStore: { type: "BOOLEAN" },
-              reason: { type: "STRING" },
-              category: {
-                type: "STRING",
-                enum: [
-                  "Goal",
-                  "Preference",
-                  "Habit",
-                  "Constraint",
-                  "Identity",
-                  "Project",
-                  "Achievement",
-                  "Relationship",
-                  "Behavior",
-                  "Motivation",
-                  "Knowledge"
-                ]
-              },
-              content: { type: "STRING" },
-              summary: { type: "STRING" },
-              confidence: { type: "NUMBER" },
-              importance: { type: "NUMBER" },
-              importanceReason: { type: "STRING" },
-              keywords: {
-                type: "ARRAY",
-                items: { type: "STRING" }
-              }
+      const response = await provider.generate({
+        prompt: userPrompt,
+        systemInstruction: ADMISSION_SYSTEM_PROMPT.trim(),
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            shouldStore: { type: "BOOLEAN" },
+            reason: { type: "STRING" },
+            category: {
+              type: "STRING",
+              enum: [
+                "Goal",
+                "Preference",
+                "Habit",
+                "Constraint",
+                "Identity",
+                "Project",
+                "Achievement",
+                "Relationship",
+                "Behavior",
+                "Motivation",
+                "Knowledge"
+              ]
             },
-            required: ["shouldStore", "reason"]
-          }
+            content: { type: "STRING" },
+            summary: { type: "STRING" },
+            confidence: { type: "NUMBER" },
+            importance: { type: "NUMBER" },
+            importanceReason: { type: "STRING" },
+            keywords: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            }
+          },
+          required: ["shouldStore", "reason"]
         }
       });
 
       const responseText = response.text;
       if (!responseText) {
-        return { shouldStore: false, reason: "No response from Gemini API" };
+        return { shouldStore: false, reason: "No response from provider" };
       }
 
       const decision = JSON.parse(responseText) as AdmissionDecision;

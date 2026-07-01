@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+﻿import { provider } from "@/services/llm/provider";
 import { ContextOrchestrator } from "@/services/context-orchestrator.service";
 import { ReflectionSyncService } from "@/services/reflection-sync.service";
 import type { GraphState } from "@/orchestration/graph/state";
@@ -39,19 +39,6 @@ You must return a JSON response matching the requested schema.
 `;
 
 export class ReflectionAgent {
-  private static client: GoogleGenAI | null = null;
-
-  private static getClient(): GoogleGenAI {
-    if (!this.client) {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("Missing GEMINI_API_KEY environment variable.");
-      }
-      this.client = new GoogleGenAI({ apiKey });
-    }
-    return this.client;
-  }
-
   /**
    * PURE AI Reasoning function for reflection patterns detection.
    */
@@ -65,7 +52,6 @@ export class ReflectionAgent {
     newReflections: any[];
   } | null> {
     try {
-      const ai = this.getClient();
       const prompt = `
 User Memories (Approved Facts):
 ${JSON.stringify(memories, null, 2)}
@@ -114,8 +100,8 @@ Ensure that:
                 llmReasoning: { type: "STRING" }
               },
               required: [
-                "reflectionId", "title", "category", "content", "summary", 
-                "confidence", "stability", "importance", "supportingMemoryIds", 
+                "reflectionId", "title", "category", "content", "summary",
+                "confidence", "stability", "importance", "supportingMemoryIds",
                 "supportingIdentityTraitIds", "status", "evolutionReason", "llmReasoning"
               ]
             }
@@ -137,8 +123,8 @@ Ensure that:
                 llmReasoning: { type: "STRING" }
               },
               required: [
-                "title", "category", "content", "summary", 
-                "confidence", "stability", "importance", "supportingMemoryIds", 
+                "title", "category", "content", "summary",
+                "confidence", "stability", "importance", "supportingMemoryIds",
                 "supportingIdentityTraitIds", "llmReasoning"
               ]
             }
@@ -147,15 +133,12 @@ Ensure that:
         required: ["reflectionsToUpdate", "newReflections"]
       };
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: REFLECTION_AGENT_SYSTEM_PROMPT.trim(),
-          temperature: 0.2,
-          responseMimeType: "application/json",
-          responseSchema: reflectionSchema,
-        }
+      const response = await provider.generate({
+        prompt,
+        systemInstruction: REFLECTION_AGENT_SYSTEM_PROMPT.trim(),
+        temperature: 0.2,
+        responseMimeType: "application/json",
+        responseSchema: reflectionSchema,
       });
 
       let responseText = response.text;
@@ -186,15 +169,12 @@ IMPORTANT: Your previous response failed structural validation with the followin
 
 Please fix this issue, ensure all fields match their schema requirements, and respond again in the exact requested schema.
 `;
-        const retryResponse = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
-          config: {
-            systemInstruction: REFLECTION_AGENT_SYSTEM_PROMPT.trim(),
-            temperature: 0.1,
-            responseMimeType: "application/json",
-            responseSchema: reflectionSchema,
-          },
+        const retryResponse = await provider.generate({
+          prompt: retryPrompt,
+          systemInstruction: REFLECTION_AGENT_SYSTEM_PROMPT.trim(),
+          temperature: 0.1,
+          responseMimeType: "application/json",
+          responseSchema: reflectionSchema,
         });
 
         const retryResponseText = retryResponse.text;

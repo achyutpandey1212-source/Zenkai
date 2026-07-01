@@ -1,4 +1,3 @@
-import "@/lib/gemini-telemetry";
 import mongoose from "mongoose";
 
 interface MongooseCache {
