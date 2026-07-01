@@ -30,6 +30,7 @@ export type PlanningIntent = {
   goalTitle?: string;
   details?: string;
   isOnboarding?: boolean;
+  reasoning?: string;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -444,7 +445,7 @@ Determine the intent and extract any life events:
         planType?: string;
         goalTitle?: string;
         details?: string;
-        lifeEvents: {
+        lifeEvents?: {
           hasActionableContent: boolean;
           suggestsPlanning: boolean;
           extractionReason: string;
@@ -454,9 +455,14 @@ Determine the intent and extract any life events:
 
       const validTaskStatuses = ["completed", "in_progress", "todo"];
       const validPlanTypes = ["career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"];
+      const validIntentTypes = ["create_or_modify", "task_update", "execution_inquiry", "none"] as const;
+
+      const intentType = validIntentTypes.includes(parsed.intentType)
+        ? parsed.intentType
+        : "none";
 
       const intent: PlanningIntent = {
-        type: parsed.intentType,
+        type: intentType,
         taskTitle: parsed.taskTitle,
         taskStatus: validTaskStatuses.includes(parsed.taskStatus || "")
           ? (parsed.taskStatus as "completed" | "in_progress" | "todo")
@@ -466,6 +472,9 @@ Determine the intent and extract any life events:
           : undefined,
         goalTitle: parsed.goalTitle,
         details: parsed.details,
+        reasoning: intentType === "none" && !parsed.intentType
+          ? "Missing intent in LLM response"
+          : undefined,
       };
 
       // Safety guard: task_update requires a non-empty taskTitle
@@ -473,19 +482,26 @@ Determine the intent and extract any life events:
         intent.type = "none";
       }
 
+      const lifeEvents = parsed.lifeEvents || {
+        hasActionableContent: false,
+        suggestsPlanning: false,
+        extractionReason: "Missing lifeEvents in LLM response",
+        detectedEvents: [],
+      };
+
       // Make the AI budget configurable per workflow type rather than hardcoded. For example:
       // Greeting: 2
       // General chat: 3
       // Planning: 5
       // Future premium workflows can increase this budget without changing orchestration logic.
       let budget = 3;
-      if (intent.type === "create_or_modify" || parsed.lifeEvents.suggestsPlanning) {
+      if (intent.type === "create_or_modify" || lifeEvents.suggestsPlanning) {
         budget = 5;
       }
 
       return {
         intent,
-        lifeEvents: parsed.lifeEvents,
+        lifeEvents,
         budget
       };
     } catch (error) {

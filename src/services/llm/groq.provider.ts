@@ -2,6 +2,7 @@
 import OpenAI from "openai";
 import { telemetryStorage, GlobalTelemetryTracker } from "@/lib/telemetry-context";
 import type { LLMResponse, LLMStreamChunk } from "./types";
+import { buildOpenAIMessages } from "./openai-utils";
 
 async function* streamChatCompletion(
   stream: any,
@@ -102,18 +103,6 @@ function recordAICall(params: any, result: any, duration: number, error: any) {
   }
 }
 
-function buildContents(request: any): any[] {
-  if (request.contents) return request.contents;
-  const messages: any[] = [];
-  if (request.systemInstruction) {
-    messages.push({ role: "system", content: request.systemInstruction });
-  }
-  if (request.prompt) {
-    messages.push({ role: "user", content: request.prompt });
-  }
-  return messages;
-}
-
 export class GroqProvider {
   private client: OpenAI;
   private model: string;
@@ -133,7 +122,7 @@ export class GroqProvider {
   async generate(request: any): Promise<LLMResponse> {
     const { temperature = 0.1, maxOutputTokens, responseMimeType, responseSchema } = request;
     const model = request.model || this.model;
-    const messages = buildContents(request);
+    const messages = buildOpenAIMessages(request);
 
     GlobalTelemetryTracker.recordCall();
     const startTime = Date.now();
@@ -212,7 +201,7 @@ export class GroqProvider {
   async generateStream(request: any): Promise<AsyncIterable<LLMStreamChunk>> {
     const { temperature = 0.7, maxOutputTokens } = request;
     const model = request.model || this.model;
-    const messages = buildContents(request);
+    const messages = buildOpenAIMessages(request);
 
     GlobalTelemetryTracker.recordCall();
     const startTime = Date.now();

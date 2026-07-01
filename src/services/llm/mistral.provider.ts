@@ -2,6 +2,7 @@
 import OpenAI from "openai";
 import { telemetryStorage, GlobalTelemetryTracker } from "@/lib/telemetry-context";
 import type { LLMResponse, LLMStreamChunk } from "./types";
+import { buildOpenAIMessages } from "./openai-utils";
 
 async function* streamChatCompletion(
   stream: any,
@@ -101,18 +102,6 @@ function recordAICall(params: any, result: any, duration: number, error: any) {
   }
 }
 
-function buildContents(request: any): any[] {
-  if (request.contents) return request.contents;
-  const messages: any[] = [];
-  if (request.systemInstruction) {
-    messages.push({ role: "system", content: request.systemInstruction });
-  }
-  if (request.prompt) {
-    messages.push({ role: "user", content: request.prompt });
-  }
-  return messages;
-}
-
 export class MistralProvider {
   private client: OpenAI;
   private model: string;
@@ -132,7 +121,7 @@ export class MistralProvider {
   async generate(request: any): Promise<LLMResponse> {
     const { temperature = 0.1, maxOutputTokens, responseMimeType, responseSchema } = request;
     const model = request.model || this.model;
-    const messages = buildContents(request);
+    const messages = buildOpenAIMessages(request);
 
     GlobalTelemetryTracker.recordCall();
     const startTime = Date.now();
@@ -207,27 +196,64 @@ export class MistralProvider {
   }
 
   async generateStream(request: any): Promise<AsyncIterable<LLMStreamChunk>> {
-    const { temperature = 0.7, maxOutputTokens } = request;
+    const { temperature = 0.7, maxOutputTokens, responseMimeType, responseSchema } = request;
     const model = request.model || this.model;
-    const messages = buildContents(request);
+    let messages = buildOpenAIMessages(request);
 
     GlobalTelemetryTracker.recordCall();
     const startTime = Date.now();
 
-    const stream = await this.client.chat.completions.create({
+    const hasJsonMode = responseMimeType === "application/json" || !!responseSchema;
+    if (hasJsonMode) {
+      messages = [
+        { role: "system", content: "You must respond with valid JSON only. No markdown, no explanations, just raw JSON." },
+        ...messages.filter((m: any) => m.role !== "system"),
+      ];
+    }
+
+    const requestParams: any = {
       model,
       messages,
       temperature,
       max_tokens: maxOutputTokens || 8192,
       stream: true,
-    });
-
-    const params = {
-      model,
-      prompt: JSON.stringify(messages),
-      systemInstruction: request.systemInstruction,
+      ...(hasJsonMode ? { response_format: { type: "json_object" } } : {}),
     };
 
-    return streamChatCompletion(stream, params, startTime);
+    console.log("[Mistral-INSTRUMENT] model:", model);
+    console.log("[Mistral-INSTRUMENT] temperature:", temperature);
+    console.log("[Mistral-INSTRUMENT] stream:", true);
+    console.log("[Mistral-INSTRUMENT] max_tokens:", maxOutputTokens || 8192);
+    console.log("[Mistral-INSTRUMENT] response_format:", hasJsonMode ? JSON.stringify({ type: "json_object" }) : "undefined");
+    console.log("[Mistral-INSTRUMENT] top-level keys:", Object.keys(requestParams));
+    console.log("[Mistral-INSTRUMENT] messageCount:", messages.length);
+    messages.forEach((m: any, idx: number) => {
+      console.log(`[Mistral-INSTRUMENT] message[${idx}] role:`, m.role);
+      if (Array.isArray(m.content)) {
+        console.log(`[Mistral-INSTRUMENT] message[${idx}] content: array with ${m.content.length} items`);
+        m.content.forEach((item: any, itemIdx: number) => {
+          console.log(`[Mistral-INSTRUMENT] message[${idx}] content[${itemIdx}] type:`, item.type || "unknown");
+        });
+      } else {
+        console.log(`[Mistral-INSTRUMENT] message[${idx}] content: string (len=${typeof m.content === "string" ? m.content.length : 0})`);
+      }
+    });
+
+    try {
+      const stream = await this.client.chat.completions.create(requestParams);
+
+      const params = {
+        model,
+        prompt: JSON.stringify(messages),
+        systemInstruction: request.systemInstruction,
+      };
+
+      return streamChatCompletion(stream, params, startTime);
+    } catch (error: any) {
+      const status = error.status || error.statusCode || 0;
+      const errorBody = error.response?.body || error.response?.data || error.message;
+      console.error("[Mistral-INSTRUMENT] 422 error body:", JSON.stringify(errorBody).slice(0, 2000));
+      throw error;
+    }
   }
 }
