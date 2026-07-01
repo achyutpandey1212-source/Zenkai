@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export interface LLMRequest {
   prompt?: string;
   systemInstruction?: string;
   model?: string;
   temperature?: number;
+  topP?: number;
   maxOutputTokens?: number;
   responseMimeType?: string;
   responseSchema?: any;
