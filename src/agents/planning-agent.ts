@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import type { GraphState } from "@/orchestration/graph/state";
-import { AIValidationService } from "@/services/ai-validation.service";
+import { AIValidationService, timeToMinutes } from "@/services/ai-validation.service";
 import { telemetryStorage } from "@/lib/telemetry-context";
 import { ContextOrchestrator } from "@/services/context-orchestrator.service";
 import { PlanSyncService } from "@/services/plan-sync.service";
@@ -1060,7 +1060,8 @@ Please fix this issue, ensure all required fields are present with correct types
     context: PlanningContext,
     activeTasks: any[],
     startDateStr: string,
-    timezone: string
+    timezone: string,
+    dailyCapacities: { day: string; date: string; minutes: number }[]
   ): Promise<any> {
     const systemInstruction = `
 You are the Human-Centric Weekly Planning Agent for Zenkai.
@@ -1073,6 +1074,7 @@ Your mission is to distribute the user's active tasks across the next 7 days, st
 4. **Protect Deep Work**: Schedule uninterrupted blocks of time (e.g. 1.5 - 3 hours) for creative or complex tasks (e.g. coding, content creation, writing).
 5. **Deadline Awareness**: As deadlines approach, naturally allocate more time in the future schedule without completely rewriting the long-term roadmap.
 6. **Preserve Buffers**: Do not schedule every free hour. Leave realistic breathing room and transition buffers between blocks.
+7. **Daily Work Limits**: Never schedule more work/study time on any given day than the available minutes calculated for that day.
 
 ─── 5-STAGE REASONING STEPS ───
 You must follow these 5 steps to design the weekly schedule:
@@ -1093,8 +1095,14 @@ You must follow these 5 steps to design the weekly schedule:
 Your output must follow the requested JSON schema.
 `;
 
+    const capacitiesStr = dailyCapacities.map(c => `- ${c.day} (${c.date}): maximum ${c.minutes} work/study minutes`).join("\n");
+
     const prompt = `
 Create a realistic, human-centric 7-day schedule. Start Date: ${startDateStr}. Timezone: ${timezone}.
+
+## DAILY WORK/STUDY CAPACITY CONSTRAINTS
+CRITICAL: You MUST respect these daily work/study capacity limits. Under no circumstances should the combined duration of work/study blocks (excluding sleep, meals, and recurring commitments) on any given day exceed these available minutes:
+${capacitiesStr}
 
 ## USER LIFE MODEL INPUTS
 ${PlanningFormatter.format(context)}
@@ -1465,21 +1473,29 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
         profile: normalizedContext.profile,
       };
 
-// 3. Call Pure AI Weekly Schedule reasoning logic
-       const scheduleData = await this.generateWeeklyScheduleLogic(
-         planningContext,
-         activeTasks,
-         startDateStr,
-         timezone
-       );
+      // 3. Compute capacities and select subset of tasks
+      const dailyCapacities = this.calculateDailyCapacities(normalizedContext.profile, startDate, timezone);
+      const totalCapacityMinutes = dailyCapacities.reduce((sum, d) => sum + d.minutes, 0);
+      const selectedTasks = this.selectTasksForCapacity(activeTasks, totalCapacityMinutes);
 
-       console.log("[DEBUG-AI] AI scheduleData days:", scheduleData?.days?.length);
-       console.log("[DEBUG-AI] AI activeTasks passed to scheduler:", activeTasks?.length);
-       if (scheduleData?.days?.[0]?.workBlocks?.[0]) {
-         console.log("[DEBUG-AI] First workBlock taskIds:", scheduleData.days[0].workBlocks[0].taskIds);
-       }
+      console.log(`[PlanningAgent] Capacity computed: ${totalCapacityMinutes} mins. Active tasks: ${activeTasks.length}. Selected tasks fitting capacity: ${selectedTasks.length}`);
 
-       // 4. Save schedule using PlanSyncService (database layer)
+      // 4. Call Pure AI Weekly Schedule reasoning logic
+      const scheduleData = await this.generateWeeklyScheduleLogic(
+        planningContext,
+        selectedTasks,
+        startDateStr,
+        timezone,
+        dailyCapacities
+      );
+
+      console.log("[DEBUG-AI] AI scheduleData days:", scheduleData?.days?.length);
+      console.log("[DEBUG-AI] AI activeTasks passed to scheduler:", selectedTasks?.length);
+      if (scheduleData?.days?.[0]?.workBlocks?.[0]) {
+        console.log("[DEBUG-AI] First workBlock taskIds:", scheduleData.days[0].workBlocks[0].taskIds);
+      }
+
+      // 5. Save schedule using PlanSyncService (database layer)
       const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + 6);
       const endDateStr = endDate.toLocaleDateString("en-CA", { timeZone: timezone });
@@ -1503,5 +1519,134 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
       console.error("[PlanningAgent] Weekly Schedule shell failed:", err);
       return null;
     }
+  }
+
+  /**
+   * Computes available work/study capacity in minutes for each of the next 7 days.
+   */
+  private static calculateDailyCapacities(
+    profile: any,
+    startDate: Date,
+    timezone: string
+  ): { day: string; date: string; minutes: number }[] {
+    const dailyCapacities: { day: string; date: string; minutes: number }[] = [];
+    const wakeUpTime = profile?.wakeUpTime || "07:00";
+    const sleepTime = profile?.sleepTime || "23:00";
+    const dailyAvailHrs = parseFloat(profile?.dailyAvailability) || 8.0;
+    const dailyBudgetMinutes = dailyAvailHrs * 60;
+
+    const wakeMin = timeToMinutes(wakeUpTime);
+    const sleepMin = timeToMinutes(sleepTime);
+    const wakingSpan = sleepMin > wakeMin ? sleepMin - wakeMin : (24 * 60 - wakeMin) + sleepMin;
+
+    for (let i = 0; i < 7; i++) {
+      const current = new Date(startDate);
+      current.setDate(startDate.getDate() + i);
+      const dateStr = current.toLocaleDateString("en-CA", { timeZone: timezone });
+      const dayOfWeek = current.toLocaleDateString("en-US", { weekday: "long", timeZone: timezone });
+
+      // Calculate commitments active on this day of the week
+      let commitmentsMin = 0;
+      if (Array.isArray(profile?.commitments)) {
+        profile.commitments.forEach((c: any) => {
+          const repeatDays = Array.isArray(c.days) ? c.days : [];
+          if (repeatDays.includes(dayOfWeek) && c.startTime && c.endTime) {
+            const startC = timeToMinutes(c.startTime);
+            const endC = timeToMinutes(c.endTime);
+            const duration = endC > startC ? endC - startC : (24 * 60 - startC) + endC;
+            commitmentsMin += duration;
+          }
+        });
+      }
+
+      const availableWakingMinutes = Math.max(0, wakingSpan - commitmentsMin);
+      const dayCapacity = Math.min(availableWakingMinutes, dailyBudgetMinutes);
+
+      dailyCapacities.push({
+        day: dayOfWeek,
+        date: dateStr,
+        minutes: dayCapacity
+      });
+    }
+
+    return dailyCapacities;
+  }
+
+  /**
+   * Sorts tasks by priority and dependency state, filtering down to the subset that fits capacity.
+   */
+  private static selectTasksForCapacity(
+    activeTasks: any[],
+    totalCapacityMinutes: number
+  ): any[] {
+    const getTaskMinutes = (t: any): number => {
+      if (t.estimatedMinutes && t.estimatedMinutes > 0) {
+        return t.estimatedMinutes;
+      }
+      const dur = t.estimatedDuration;
+      if (dur) {
+        const clean = dur.toLowerCase().trim();
+        if (clean.includes("h")) {
+          const hours = parseFloat(clean.replace(/[^\d.]/g, ""));
+          if (!isNaN(hours)) return Math.round(hours * 60);
+        }
+        if (clean.includes("m")) {
+          const mins = parseFloat(clean.replace(/[^\d.]/g, ""));
+          if (!isNaN(mins)) return Math.round(mins);
+        }
+        const rawNum = parseFloat(clean);
+        if (!isNaN(rawNum)) return Math.round(rawNum);
+      }
+      return 30; // fallback
+    };
+
+    const tasksWithMetadata = activeTasks.map(t => ({
+      task: t,
+      duration: getTaskMinutes(t),
+      priority: typeof t.priority === "number" ? t.priority : 3,
+      id: (t._id || t.id)?.toString()
+    }));
+
+    // Sort by priority (1 is highest)
+    tasksWithMetadata.sort((a, b) => a.priority - b.priority);
+
+    const selectedTasks: any[] = [];
+    const selectedTaskIds = new Set<string>();
+    let scheduledMinutes = 0;
+
+    const activeTaskIds = new Set(tasksWithMetadata.map(t => t.id));
+
+    let addedInPass = true;
+    while (addedInPass && scheduledMinutes < totalCapacityMinutes) {
+      addedInPass = false;
+
+      for (const item of tasksWithMetadata) {
+        if (selectedTaskIds.has(item.id)) {
+          continue;
+        }
+
+        // Check if dependencies are already met (not active or already selected)
+        let dependenciesMet = true;
+        if (Array.isArray(item.task.dependencies)) {
+          for (const dep of item.task.dependencies) {
+            if (activeTaskIds.has(dep) && !selectedTaskIds.has(dep)) {
+              dependenciesMet = false;
+              break;
+            }
+          }
+        }
+
+        if (dependenciesMet) {
+          if (scheduledMinutes + item.duration <= totalCapacityMinutes) {
+            selectedTasks.push(item.task);
+            selectedTaskIds.add(item.id);
+            scheduledMinutes += item.duration;
+            addedInPass = true;
+          }
+        }
+      }
+    }
+
+    return selectedTasks;
   }
 }
