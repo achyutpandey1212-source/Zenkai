@@ -41,7 +41,7 @@ export interface RoutingDecision {
   /** Background nodes run after the response is streamed */
   background: NodeName[];
   /** Which sub-graph to invoke */
-  subGraph: "conversation" | "planning" | "mixed";
+  subGraph: "conversation" | "planning" | "schedule" | "mixed";
   /** Human-readable explanation logged for observability */
   reasoning: string;
 }

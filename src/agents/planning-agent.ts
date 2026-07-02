@@ -24,7 +24,7 @@ export type LifeEventExtraction = {
 };
 
 export type PlanningIntent = {
-  type: "create_or_modify" | "task_update" | "execution_inquiry" | "none";
+  type: "create_or_modify" | "task_update" | "schedule_modification" | "execution_inquiry" | "none";
   taskTitle?: string;
   taskStatus?: "completed" | "in_progress" | "todo";
   planType?: "career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal";
@@ -32,6 +32,8 @@ export type PlanningIntent = {
   details?: string;
   isOnboarding?: boolean;
   reasoning?: string;
+  operation?: "add_recurring_habit" | "move_task" | "delete_task" | "reschedule_task";
+  scheduleDetails?: string;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,13 +75,16 @@ Your job is to analyse the user's latest message and recent conversation history
 Classifications:
 1. "create_or_modify" — User wants to create a new plan or evolve an existing roadmap/study plan/project/career goal. Examples: "I want to become an SDE", "Plan my semester", "Help me prepare for placements", "I no longer want to build a startup", sharing exam dates/schedules, describing academic or career goals.
 2. "task_update" — User is updating the status of a specific, named task. Examples: "I've completed Arrays", "I finished my revision task", "I am working on Linked Lists now". IMPORTANT: Only classify as task_update if a SPECIFIC named task is mentioned.
-3. "execution_inquiry" — User is asking what to do TODAY specifically. Examples: "What should I do today?", "What should I study?", "Plan my day", "What's on my agenda?".
-4. "none" — Standard conversation with no planning, task, or execution relevance.
+3. "schedule_modification" — User wants to directly modify their existing schedule without creating a new plan. Examples: "From tomorrow I want to run every morning", "Add gym from 6–7 PM", "Don't schedule work after 8 PM", "My exams start Monday". These are direct schedule changes that should update capacity and work block placement.
+4. "execution_inquiry" — User is asking what to do TODAY specifically. Examples: "What should I do today?", "What should I study?", "Plan my day", "What's on my agenda?".
+5. "none" — Standard conversation with no planning, task, or execution relevance.
 
 For "create_or_modify": identify planType ("career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal") and a descriptive goalTitle. 
 CRITICAL RULE: If the request is generic (e.g. "Plan My Week", "Plan my schedule", "Create a roadmap") without specifying a topic/domain/skill/technology, do NOT guess or hallucinate a goal. Leave both goalTitle and planType empty, null, or omit them from the response.
 
 For "task_update": extract the EXACT taskTitle and taskStatus ("completed" | "in_progress" | "todo"). Leave taskTitle empty string if no specific task name is mentioned.
+
+For "schedule_modification": extract operation type ("add_recurring_habit") and details (title, days, startTime, endTime, duration) from the natural language request. Do NOT implement natural language parsing — just indicate the operation type.
 
 Return a JSON object matching the requested schema.
 `;
@@ -95,13 +100,16 @@ PART 1: INTENT CLASSIFICATION
 Classifications:
 1. "create_or_modify" — User wants to create a new plan or evolve an existing roadmap/study plan/project/career goal. Examples: "I want to become an SDE", "Plan my semester", "Help me prepare for placements", "I no longer want to build a startup", sharing exam dates/schedules, describing academic or career goals.
 2. "task_update" — User is updating the status of a specific, named task. Examples: "I've completed Arrays", "I finished my revision task", "I am working on Linked Lists now". IMPORTANT: Only classify as task_update if a SPECIFIC named task is mentioned.
-3. "execution_inquiry" — User is asking what to do TODAY specifically. Examples: "What should I do today?", "What should I study?", "Plan my day", "What's on my agenda?".
-4. "none" — Standard conversation with no planning, task, or execution relevance.
+3. "schedule_modification" — User wants to directly modify their existing schedule without creating a new plan. Examples: "From tomorrow I want to run every morning", "Add gym from 6–7 PM", "Don't schedule work after 8 PM", "My exams start Monday". These are direct schedule changes that should update capacity and work block placement.
+4. "execution_inquiry" — User is asking what to do TODAY specifically. Examples: "What should I do today?", "What should I study?", "Plan my day", "What's on my agenda?".
+5. "none" — Standard conversation with no planning, task, or execution relevance.
 
 For "create_or_modify": identify planType ("career" | "learning" | "exams" | "projects" | "fitness" | "habits" | "business" | "personal") and a goalTitle (short, descriptive goal).
 CRITICAL RULE: If the request is generic (e.g. "Plan My Week", "Plan my schedule", "Create a roadmap") without specifying a topic/domain/skill/technology, do NOT guess or hallucinate a goal. Leave both goalTitle and planType empty, null, or omit them from the response.
 
 For "task_update": extract the EXACT taskTitle and taskStatus ("completed" | "in_progress" | "todo"). Leave taskTitle empty string if no specific task name is mentioned.
+
+For "schedule_modification": extract operation type ("add_recurring_habit") and details (title, days, startTime, endTime, duration) from the natural language request. Do NOT implement natural language parsing — just indicate the operation type.
 
 PART 2: LIFE EVENT EXTRACTION
 Silently determine whether the message contains structured, actionable life information that Zenkai should autonomously act on — WITHOUT the user explicitly asking for a plan.
@@ -356,6 +364,35 @@ export class PlanningAgent {
       }
     }
 
+    // Deterministic schedule modifications
+    const scheduleModPatterns = [
+      /^(?:from\s+(tomorrow|now)|i want to run every (morning|evening))$/i,
+      /^(?:add|schedule)\s+(?:gym|exercise|workout|run|jog)\s+from\s+\d/i,
+      /^(?:don't|do\s+not)\s+schedule\s+(?:work|tasks|study)/i,
+      /^my\s+(?:exam|exams|tests|assessments)\s+start/i,
+    ];
+
+    for (const pat of scheduleModPatterns) {
+      const match = text.match(pat);
+      if (match) {
+        return {
+          intent: {
+            type: "schedule_modification",
+            operation: "add_recurring_habit",
+            scheduleDetails: match[0],
+            details: "Deterministic schedule modification bypass"
+          },
+          lifeEvents: {
+            hasActionableContent: false,
+            suggestsPlanning: false,
+            extractionReason: "Deterministic schedule modification bypass",
+            detectedEvents: []
+          },
+          budget: 3 // Schedule modifications are general chat level budget
+        };
+      }
+    }
+
     return null;
   }
 
@@ -383,52 +420,54 @@ User: \${message}
 Determine the intent and extract any life events:
 `;
 
-       const response = await provider.generate({
-         prompt,
-         systemInstruction: MERGED_ROUTER_SYSTEM_PROMPT.trim(),
-         temperature: 0.1,
-         responseMimeType: "application/json",
-         responseSchema: {
-           type: "OBJECT",
-           properties: {
-             intentType: {
-               type: "STRING",
-               enum: ["create_or_modify", "task_update", "execution_inquiry", "none"],
-             },
-             taskTitle: { type: "STRING" },
-             taskStatus: { type: "STRING" },
-             planType: { type: "STRING" },
-             goalTitle: { type: "STRING" },
-             details: { type: "STRING" },
-             lifeEvents: {
-               type: "OBJECT",
-               properties: {
-                 hasActionableContent: { type: "BOOLEAN" },
-                 suggestsPlanning: { type: "BOOLEAN" },
-                 extractionReason: { type: "STRING" },
-                 detectedEvents: {
-                   type: "ARRAY",
-                   items: {
-                     type: "OBJECT",
-                     properties: {
-                       type: {
-                         type: "STRING",
-                         enum: ["exam", "deadline", "project", "goal", "event", "constraint", "career", "habit"],
-                       },
-                       title: { type: "STRING" },
-                       date: { type: "STRING" },
-                       description: { type: "STRING" },
-                     },
-                     required: ["type", "title", "description"],
-                   },
-                 },
-               },
-               required: ["hasActionableContent", "suggestsPlanning", "extractionReason", "detectedEvents"],
-             },
-           },
-           required: ["intentType", "lifeEvents"],
-         },
-       });
+const response = await provider.generate({
+          prompt,
+          systemInstruction: MERGED_ROUTER_SYSTEM_PROMPT.trim(),
+          temperature: 0.1,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              intentType: {
+                type: "STRING",
+                enum: ["create_or_modify", "task_update", "schedule_modification", "execution_inquiry", "none"],
+              },
+              taskTitle: { type: "STRING" },
+              taskStatus: { type: "STRING" },
+              planType: { type: "STRING" },
+              goalTitle: { type: "STRING" },
+              details: { type: "STRING" },
+              operation: { type: "STRING" },
+              scheduleDetails: { type: "STRING" },
+              lifeEvents: {
+                type: "OBJECT",
+                properties: {
+                  hasActionableContent: { type: "BOOLEAN" },
+                  suggestsPlanning: { type: "BOOLEAN" },
+                  extractionReason: { type: "STRING" },
+                  detectedEvents: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        type: {
+                          type: "STRING",
+                          enum: ["exam", "deadline", "project", "goal", "event", "constraint", "career", "habit"],
+                        },
+                        title: { type: "STRING" },
+                        date: { type: "STRING" },
+                        description: { type: "STRING" },
+                      },
+                      required: ["type", "title", "description"],
+                    },
+                  },
+                },
+                required: ["hasActionableContent", "suggestsPlanning", "extractionReason", "detectedEvents"],
+              },
+            },
+            required: ["intentType", "lifeEvents"],
+          },
+        });
 
        const text = response.text;
       if (!text) {
@@ -440,12 +479,14 @@ Determine the intent and extract any life events:
       }
 
       const parsed = JSON.parse(text) as {
-        intentType: "create_or_modify" | "task_update" | "execution_inquiry" | "none";
+        intentType: "create_or_modify" | "task_update" | "schedule_modification" | "execution_inquiry" | "none";
         taskTitle?: string;
         taskStatus?: string;
         planType?: string;
         goalTitle?: string;
         details?: string;
+        operation?: "add_recurring_habit" | "move_task" | "delete_task" | "reschedule_task";
+        scheduleDetails?: string;
         lifeEvents?: {
           hasActionableContent: boolean;
           suggestsPlanning: boolean;
@@ -456,7 +497,7 @@ Determine the intent and extract any life events:
 
       const validTaskStatuses = ["completed", "in_progress", "todo"];
       const validPlanTypes = ["career", "learning", "exams", "projects", "fitness", "habits", "business", "personal"];
-      const validIntentTypes = ["create_or_modify", "task_update", "execution_inquiry", "none"] as const;
+      const validIntentTypes = ["create_or_modify", "task_update", "schedule_modification", "execution_inquiry", "none"] as const;
 
       const intentType = validIntentTypes.includes(parsed.intentType)
         ? parsed.intentType
@@ -477,6 +518,11 @@ Determine the intent and extract any life events:
           ? "Missing intent in LLM response"
           : undefined,
       };
+
+      if (intentType === "schedule_modification" && parsed.operation) {
+        intent.operation = parsed.operation;
+        intent.scheduleDetails = parsed.scheduleDetails;
+      }
 
       // Safety guard: task_update requires a non-empty taskTitle
       if (intent.type === "task_update" && !intent.taskTitle?.trim()) {
@@ -1232,6 +1278,7 @@ const retryResponse = await provider.generate({
       { type: "create_workspace", userId: uid, planId },
       state
     );
-    return result.scheduleDoc ?? null;
+    const schedulingResult = result as { scheduleDoc: any };
+    return schedulingResult.scheduleDoc ?? null;
   }
 }

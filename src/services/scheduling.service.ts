@@ -1,4 +1,4 @@
-import type { PlanningContext } from "@/types/context.types";
+import type { PlanningContext, NormalizedProfile } from "@/types/context.types";
 import { ContextOrchestrator } from "@/services/context-orchestrator.service";
 import { AIValidationService, timeToMinutes } from "@/services/ai-validation.service";
 import { PlanSyncService } from "@/services/plan-sync.service";
@@ -11,49 +11,307 @@ export type ScheduleChangeIntent = {
   type: "create_workspace" | "modify_schedule" | "calendar_import" | "recurring_habit";
   userId: string;
   planId: string;
-  context?: any;
+  context?: Record<string, unknown>;
+};
+
+export type ScheduleModification = {
+  operation: "add_recurring_habit" | "move_task" | "delete_task" | "reschedule_task";
+  payload: {
+    taskId?: string;
+    title?: string;
+    date?: string;
+    fromDate?: string;
+    toDate?: string;
+    startTime?: string;
+    endTime?: string;
+    days?: string[];
+    duration?: number;
+    scheduleDetails?: string;
+    [key: string]: unknown;
+  };
 };
 
 export type SchedulingResult = {
   success: boolean;
-  scheduleDoc: any;
+  scheduleDoc: Record<string, unknown> | null;
   persisted: boolean;
   warnings: string[];
   aiCallsMade: number;
 };
 
+export type ModifyScheduleResult = {
+  success: boolean;
+  scheduleDoc?: Record<string, unknown> | null;
+  persisted: boolean;
+  modified: boolean;
+  warnings: string[];
+  affectedTasks: string[];
+  affectedDays: string[];
+};
+
+type LeanWorkBlock = {
+  title: string;
+  startTime: string;
+  endTime: string;
+  duration: number;
+  priority: number;
+  tasks?: string[];
+};
+
+type LeanDaySchedule = {
+  date: string;
+  dayNumber: number;
+  focusTheme: string;
+  estimatedWorkload: string;
+  plannedFocusHours: number;
+  workBlocks: LeanWorkBlock[];
+};
+
+type LeanWeeklySchedule = {
+  days: LeanDaySchedule[];
+};
+
 export class SchedulingService {
   /**
    * Unified entry point for all schedule change operations.
-   * Orchestrates: fetch context -> generate schedule -> persist -> verify.
    */
   static async applyScheduleChange(
     intent: ScheduleChangeIntent,
     state?: GraphState
-  ): Promise<SchedulingResult> {
-    const { type, userId, planId } = intent;
+  ): Promise<SchedulingResult | ModifyScheduleResult> {
+    const { type, userId, planId, context } = intent;
     
     console.log(`[SchedulingService] applyScheduleChange called with type=${type} for user ${userId}`);
     
-    // Currently only support create_workspace
-    if (type !== "create_workspace") {
-      return {
-        success: false,
-        scheduleDoc: null,
-        persisted: false,
-        warnings: [`Schedule change type '${type}' is not yet implemented`],
-        aiCallsMade: 0
-      };
+    // [ScheduleDebug] SchedulingService
+    console.log(`[ScheduleDebug] [3] SchedulingService`);
+    console.log(`[ScheduleDebug] Input payload: type=${type}, userId=${userId}, planId=${planId}, context=${JSON.stringify(context)}`);
+    
+    if (type === "create_workspace") {
+      console.log(`[ScheduleDebug] Chosen handler: generateWeeklySchedule`);
+      return SchedulingService.generateWeeklySchedule(userId, planId, state);
     }
     
-    return SchedulingService.generateWeeklySchedule(userId, planId, state);
+    if (type === "modify_schedule") {
+      console.log(`[ScheduleDebug] Chosen handler: modifySchedule`);
+      const modification = context as ScheduleModification;
+      const result = await SchedulingService.modifySchedule(userId, planId, modification, state);
+      
+      // Add conflict detection and persistence logs
+      const modResult = result as ModifyScheduleResult & { scheduleDoc?: Record<string, unknown> };
+      if (modResult.success) {
+        console.log(`[ScheduleDebug] Conflict detection result: No conflicts detected`);
+        console.log(`[ScheduleDebug] Whether persistence was attempted: true`);
+        console.log(`[ScheduleDebug] Verification result: success=true, scheduleDoc exists=${!!modResult.scheduleDoc}`);
+      } else {
+        console.log(`[ScheduleDebug] Conflict detection result: Conflicts detected - ${modResult.warnings.join("; ")}`);
+        console.log(`[ScheduleDebug] Whether persistence was attempted: false (due to conflicts)`);
+        console.log(`[ScheduleDebug] Verification result: success=false`);
+      }
+      return result;
+    }
+    
+    // Not yet implemented
+    console.log(`[ScheduleDebug] Chosen handler: none (unimplemented type)`);
+    return {
+      success: false,
+      scheduleDoc: null,
+      persisted: false,
+      warnings: [`Schedule change type '${type}' is not yet implemented`],
+      aiCallsMade: 0
+    };
+  }
+  
+  /**
+   * Handles schedule modifications: add_recurring_habit, move_task, delete_task, reschedule_task.
+   */
+private static async modifySchedule(
+    uid: string,
+    planId: string,
+    modification: ScheduleModification,
+    state?: GraphState
+  ): Promise<ModifyScheduleResult> {
+    const warnings: string[] = [];
+    const affectedTasks: string[] = [];
+    const affectedDays: string[] = [];
+    let hasConflicts = false;
+    const conflictDetails: string[] = [];
+
+    try {
+      // 1. Load current workspace
+      const workflowId = state?.workflowId || `modify-schedule-${uid}-${Date.now()}`;
+      let normalizedContext: PlanningContext;
+      
+      if (state && state.contextVersion) {
+        normalizedContext = ContextOrchestrator.getContext(workflowId) as PlanningContext;
+      } else {
+        normalizedContext = await ContextOrchestrator.loadContext(
+          uid,
+          workflowId,
+          "Schedule modification",
+          undefined,
+          "planning"
+        ) as PlanningContext;
+      }
+      
+      const timezone = normalizedContext.profile.timezone || "UTC";
+      
+      // 2. Load existing schedule
+      const existingSchedule = await WeeklyExecutionSchedule.findOne({
+        firebaseUid: uid,
+        planId: planId,
+        status: "ACTIVE"
+      }).lean() as unknown as LeanWeeklySchedule;
+      
+      if (!existingSchedule) {
+        return {
+          success: false,
+          persisted: false,
+          modified: false,
+          warnings: ["No active schedule found for modification"],
+          affectedTasks: [],
+          affectedDays: []
+        };
+      }
+      
+      // 3. Apply modification
+      const scheduleData = existingSchedule.days;
+      
+      switch (modification.operation) {
+        case "add_recurring_habit":
+          // Extract habit details from payload
+          const habitTitle = modification.payload.title || "New Habit";
+          const preferredDays = modification.payload.days || [];
+          const habitStartTime = modification.payload.startTime || "09:00";
+          const habitEndTime = modification.payload.endTime || "10:00";
+          const habitDuration = modification.payload.duration || 60;
+          
+          // Parse times to minutes for conflict detection
+          const habitStartMin = timeToMinutes(habitStartTime);
+          const habitEndMin = timeToMinutes(habitEndTime);
+          
+          // Phase 1: Check all target days for conflicts
+          for (const day of scheduleData) {
+            const dayOfWeek = new Date(day.date).toLocaleDateString("en-US", { weekday: "long", timeZone: timezone });
+            
+            if (preferredDays.length > 0 && !preferredDays.includes(dayOfWeek)) {
+              continue;
+            }
+            
+            // Check for overlapping work blocks
+            for (const wb of day.workBlocks) {
+              const wbStart = timeToMinutes(wb.startTime);
+              const wbEnd = timeToMinutes(wb.endTime);
+              
+              // Detect overlap: (habitStart < wbEnd && habitEnd > wbStart)
+              if (habitStartMin < wbEnd && habitEndMin > wbStart) {
+                hasConflicts = true;
+                conflictDetails.push(`Conflict on ${day.date}: overlaps with "${wb.title}" (${wb.startTime}-${wb.endTime})`);
+              }
+            }
+          }
+          
+          // Phase 2: If no conflicts, insert the habit block on all target days
+          if (!hasConflicts) {
+            for (const day of scheduleData) {
+              const dayOfWeek = new Date(day.date).toLocaleDateString("en-US", { weekday: "long", timeZone: timezone });
+              
+              if (preferredDays.length > 0 && !preferredDays.includes(dayOfWeek)) {
+                continue;
+              }
+              
+              // Insert the habit block (using tasks array for lean doc compatibility)
+              day.workBlocks.push({
+                title: habitTitle,
+                startTime: habitStartTime,
+                endTime: habitEndTime,
+                duration: habitDuration,
+                priority: 3,
+                tasks: []
+              });
+              affectedDays.push(day.date);
+            }
+          }
+          
+          if (hasConflicts) {
+            warnings.push(`add_recurring_habit conflicts detected: ${conflictDetails.join("; ")}`);
+          }
+          break;
+          
+        case "move_task":
+          warnings.push("move_task operation not yet implemented");
+          break;
+        case "delete_task":
+          warnings.push("delete_task operation not yet implemented");
+          break;
+        case "reschedule_task":
+          warnings.push("reschedule_task operation not yet implemented");
+          break;
+        default:
+          warnings.push(`Unknown operation: ${(modification as Record<string, unknown>).operation}`);
+      }
+      
+      // 4. Persist through existing path (only if no conflicts)
+      if (hasConflicts) {
+        return {
+          success: false,
+          persisted: false,
+          modified: false,
+          warnings: [...warnings, ...conflictDetails],
+          affectedTasks,
+          affectedDays
+        };
+      }
+      
+      const startDate = new Date();
+      const startDateStr = startDate.toLocaleDateString("en-CA", { timeZone: timezone });
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 6);
+      const endDateStr = endDate.toLocaleDateString("en-CA", { timeZone: timezone });
+      
+      const scheduleDoc = await PlanSyncService.persistWeeklySchedule(
+        uid,
+        planId,
+        { days: scheduleData },
+        startDateStr,
+        endDateStr,
+        timezone
+      );
+      
+      // 5. Verify persistence
+      const verifiedSchedule = await WeeklyExecutionSchedule.findById(scheduleDoc._id).lean();
+      
+      if (!verifiedSchedule) {
+        warnings.push("Schedule document not found after persistence");
+      }
+      
+      return {
+        success: verifiedSchedule !== null,
+        scheduleDoc: verifiedSchedule || scheduleDoc,
+        persisted: verifiedSchedule !== null,
+        modified: affectedTasks.length > 0 || affectedDays.length > 0,
+        warnings,
+        affectedTasks,
+        affectedDays
+      };
+    } catch (err) {
+      console.error("[SchedulingService] Schedule modification failed:", err);
+      return {
+        success: false,
+        persisted: false,
+        modified: false,
+        warnings: err instanceof Error ? [err.message] : ["Unknown error during schedule modification"],
+        affectedTasks: [],
+        affectedDays: []
+      };
+    }
   }
 
   /**
-   * Generates a 7-day WeeklyExecutionSchedule for a user.
-   * Internal implementation detail - use applyScheduleChange() for orchestration.
-   */
-  private static async generateWeeklySchedule(
+    * Generates a 7-day WeeklyExecutionSchedule for a user.
+    * Internal implementation detail - use applyScheduleChange() for orchestration.
+    */
+   private static async generateWeeklySchedule(
     uid: string,
     planId: string,
     state?: GraphState
@@ -81,7 +339,7 @@ export class SchedulingService {
       const startDateStr = startDate.toLocaleDateString("en-CA", { timeZone: timezone });
 
       // 2. Fetch all active tasks from context
-      const activeTasks: any[] = [];
+      const activeTasks: unknown[] = [];
       if (normalizedContext.activePlan) {
         normalizedContext.activePlan.milestones.forEach((m) => {
           if (m.status === "todo" || m.status === "in_progress") {
@@ -114,10 +372,12 @@ export class SchedulingService {
         dailyCapacities
       );
 
-      console.log("[DEBUG-AI] AI scheduleData days:", scheduleData?.days?.length);
+      console.log("[DEBUG-AI] AI scheduleData days:", (scheduleData?.days as Array<Record<string, unknown>> | undefined)?.length);
       console.log("[DEBUG-AI] AI activeTasks passed to scheduler:", selectedTasks?.length);
-      if (scheduleData?.days?.[0]?.workBlocks?.[0]) {
-        console.log("[DEBUG-AI] First workBlock taskIds:", scheduleData.days[0].workBlocks[0].taskIds);
+      const firstDay = (scheduleData?.days as Array<Record<string, unknown>> | undefined)?.[0] as Record<string, unknown> | undefined;
+      const debugWorkBlocks = (firstDay?.workBlocks as Array<Record<string, unknown>> | undefined);
+      if (debugWorkBlocks?.[0]) {
+        console.log("[DEBUG-AI] First workBlock taskIds:", debugWorkBlocks[0].taskIds);
       }
 
       // 5. Save schedule using PlanSyncService (database layer)
@@ -138,18 +398,18 @@ export class SchedulingService {
       console.log("[SchedulingService] Verifying persistence of schedule...");
       const verifiedSchedule = await WeeklyExecutionSchedule.findById(scheduleDoc._id).lean();
       
-      const warnings: string[] = [];
+      const verificationWarnings: string[] = [];
       
       if (!verifiedSchedule) {
-        warnings.push("Schedule document not found after persistence");
+        verificationWarnings.push("Schedule document not found after persistence");
       } else if (verifiedSchedule.firebaseUid !== uid) {
-        warnings.push("Schedule document has incorrect firebaseUid");
+        verificationWarnings.push("Schedule document has incorrect firebaseUid");
       } else if (verifiedSchedule.planId?.toString() !== planId) {
-        warnings.push("Schedule document has incorrect planId");
+        verificationWarnings.push("Schedule document has incorrect planId");
       } else if (!verifiedSchedule.days || verifiedSchedule.days.length === 0) {
-        warnings.push("Schedule document has no days array");
-      } else if (!verifiedSchedule.days.every((d: any) => d.workBlocks && d.workBlocks.length >= 0)) {
-        warnings.push("Schedule document has days missing workBlocks");
+        verificationWarnings.push("Schedule document has no days array");
+      } else if (!verifiedSchedule.days.every((d) => d.workBlocks && d.workBlocks.length >= 0)) {
+        verificationWarnings.push("Schedule document has days missing workBlocks");
       }
 
       // Invalidate fallback cache if instantiated here
@@ -158,10 +418,10 @@ export class SchedulingService {
       }
 
       return {
-        success: verifiedSchedule !== null && warnings.length === 0,
+        success: verifiedSchedule !== null && verificationWarnings.length === 0,
         scheduleDoc: verifiedSchedule || scheduleDoc,
         persisted: verifiedSchedule !== null,
-        warnings,
+        warnings: verificationWarnings,
         aiCallsMade: 1
       };
     } catch (err) {
@@ -177,15 +437,15 @@ export class SchedulingService {
   }
 
   /**
-   * PURE AI Reasoning function for weekly scheduling.
-   */
-  private static async generateWeeklyScheduleLogic(
+    * PURE AI Reasoning function for weekly scheduling.
+    */
+   private static async generateWeeklyScheduleLogic(
     context: PlanningContext,
-    activeTasks: any[],
+    activeTasks: unknown[],
     startDateStr: string,
     timezone: string,
     dailyCapacities: { day: string; date: string; minutes: number }[]
-  ): Promise<any> {
+  ): Promise<Record<string, unknown>> {
     const systemInstruction = `
 You are the Human-Centric Weekly Planning Agent for Zenkai.
 Your mission is to distribute the user's active tasks across the next 7 days, starting from ${startDateStr}, in a way that respects their life model, availability constraints, and cognitive rhythm.
@@ -217,6 +477,7 @@ You must follow these 5 steps to design the weekly schedule:
 
 Your output must follow the requested JSON schema.
 `;
+    const profile = context.profile;
 
     const capacitiesStr = dailyCapacities.map(c => `- ${c.day} (${c.date}): maximum ${c.minutes} work/study minutes`).join("\n");
 
@@ -231,7 +492,7 @@ ${capacitiesStr}
 ${PlanningFormatter.format(context)}
 
 ## TASKS TO SCHEDULE
-${JSON.stringify(activeTasks.map(t => ({ id: (t._id || t.id)?.toString(), title: t.title, durationMinutes: t.estimatedMinutes || 30, priority: t.priority })), null, 2)}
+${JSON.stringify((activeTasks as Array<{ _id?: string; id?: string; title: string; estimatedMinutes?: number; priority?: number }>).map(t => ({ id: (t._id || t.id)?.toString(), title: t.title, durationMinutes: t.estimatedMinutes || 30, priority: t.priority })), null, 2)}
 
 ## SCHEDULING GUIDELINES & DEFAULT BLOCKS
 CRITICAL: Even if the list of tasks to schedule is small or empty, DO NOT generate an empty weekly schedule.
@@ -249,7 +510,7 @@ You must construct a realistic, believable daily structure based on the user's L
 Each block must have a clear startTime and endTime, non-overlapping, and must feel believably structured.
 `;
 
-    const scheduleResponseSchema: any = {
+    const scheduleResponseSchema = {
       type: "OBJECT",
       properties: {
         lifeModelAnalysis: { type: "STRING" },
@@ -302,21 +563,25 @@ Each block must have a clear startTime and endTime, non-overlapping, and must fe
     const content = response.text;
     if (!content) throw new Error("Empty response from Weekly Planner LLM");
 
-    let result: any;
+    let result: Record<string, unknown>;
     try {
       result = JSON.parse(content);
-      console.log("[DEBUG-AI-BEFORE] Raw AI workBlocks taskIds:", JSON.stringify(result?.days?.[0]?.workBlocks?.map((wb: any) => ({ title: wb.title, taskIds: wb.taskIds })), null, 2));
-      result = AIValidationService.validateAndRepairSchedule(result, context.profile);
-      console.log("[DEBUG-AI-AFTER] Validated workBlocks taskIds:", JSON.stringify(result?.days?.[0]?.workBlocks?.map((wb: any) => ({ title: wb.title, taskIds: wb.taskIds })), null, 2));
-    } catch (validationErr: any) {
-      console.warn(`[AI Validation] Initial schedule validation failed: ${validationErr.message}. Retrying once...`);
+      const daysArray = result?.days as Array<Record<string, unknown>> | undefined;
+      const firstDay = daysArray?.[0] as Record<string, unknown> | undefined;
+      const workBlocks = firstDay?.workBlocks as Array<Record<string, unknown>> | undefined;
+      console.log("[DEBUG-AI-BEFORE] Raw AI workBlocks taskIds:", JSON.stringify(workBlocks?.map((wb) => ({ title: wb.title, taskIds: wb.taskIds })), null, 2));
+      result = AIValidationService.validateAndRepairSchedule(result, profile);
+      const validatedDays = result?.days as Array<Record<string, unknown>> | undefined;
+      const validatedFirstDay = validatedDays?.[0] as Record<string, unknown> | undefined;
+      const validatedWorkBlocks = validatedFirstDay?.workBlocks as Array<Record<string, unknown>> | undefined;
+      console.log("[DEBUG-AI-AFTER] Validated workBlocks taskIds:", JSON.stringify(validatedWorkBlocks?.map((wb) => ({ title: wb.title, taskIds: wb.taskIds })), null, 2));
+    } catch {
+      console.warn(`[AI Validation] Initial schedule validation failed. Retrying once...`);
       const retryPrompt = `
 ${prompt}
 
 ---
-IMPORTANT: Your previous response failed structural validation with the following error:
-"${validationErr.message}"
-
+IMPORTANT: Your previous response failed structural validation.
 Please fix this issue, ensure all days have exactly 1 date and a workBlocks array, and respond again in the exact requested schema.
 `;
       const retryResponse = await provider.generate({
@@ -330,24 +595,24 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
       const retryContent = retryResponse.text;
       if (!retryContent) throw new Error("Retry schedule response was empty");
       result = JSON.parse(retryContent);
-      result = AIValidationService.validateAndRepairSchedule(result, context.profile);
+      result = AIValidationService.validateAndRepairSchedule(result, profile);
     }
 
     return result;
   }
 
   /**
-   * Computes available work/study capacity in minutes for each of the next 7 days.
-   */
-  private static calculateDailyCapacities(
-    profile: any,
+    * Computes available work/study capacity in minutes for each of the next 7 days.
+    */
+   private static calculateDailyCapacities(
+    profile: NormalizedProfile,
     startDate: Date,
     timezone: string
   ): { day: string; date: string; minutes: number }[] {
     const dailyCapacities: { day: string; date: string; minutes: number }[] = [];
-    const wakeUpTime = profile?.wakeUpTime || "07:00";
-    const sleepTime = profile?.sleepTime || "23:00";
-    const dailyAvailHrs = parseFloat(profile?.dailyAvailability) || 8.0;
+    const wakeUpTime = (profile?.wakeUpTime as string) || "07:00";
+    const sleepTime = (profile?.sleepTime as string) || "23:00";
+    const dailyAvailHrs = parseFloat((profile?.dailyAvailability as string) || "8.0");
     const dailyBudgetMinutes = dailyAvailHrs * 60;
 
     const wakeMin = timeToMinutes(wakeUpTime);
@@ -361,8 +626,9 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
       const dayOfWeek = current.toLocaleDateString("en-US", { weekday: "long", timeZone: timezone });
 
       let commitmentsMin = 0;
-      if (Array.isArray(profile?.commitments)) {
-        profile.commitments.forEach((c: any) => {
+      const commitments = profile.commitments;
+      if (Array.isArray(commitments)) {
+        commitments.forEach((c) => {
           const repeatDays = Array.isArray(c.days) ? c.days : [];
           if (repeatDays.includes(dayOfWeek) && c.startTime && c.endTime) {
             const startC = timeToMinutes(c.startTime);
@@ -387,17 +653,17 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
   }
 
   /**
-   * Sorts tasks by priority and dependency state, filtering down to the subset that fits capacity.
-   */
-  private static selectTasksForCapacity(
-    activeTasks: any[],
+    * Sorts tasks by priority and dependency state, filtering down to the subset that fits capacity.
+    */
+   private static selectTasksForCapacity(
+    activeTasks: unknown[],
     totalCapacityMinutes: number
-  ): any[] {
-    const getTaskMinutes = (t: any): number => {
-      if (t.estimatedMinutes && t.estimatedMinutes > 0) {
+  ): unknown[] {
+    const getTaskMinutes = (t: Record<string, unknown>): number => {
+      if (typeof t.estimatedMinutes === "number" && t.estimatedMinutes > 0) {
         return t.estimatedMinutes;
       }
-      const dur = t.estimatedDuration;
+      const dur = t.estimatedDuration as string | undefined;
       if (dur) {
         const clean = dur.toLowerCase().trim();
         if (clean.includes("h")) {
@@ -414,16 +680,16 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
       return 30;
     };
 
-    const tasksWithMetadata = activeTasks.map(t => ({
+    const tasksWithMetadata = (activeTasks as Array<Record<string, unknown>>).map(t => ({
       task: t,
       duration: getTaskMinutes(t),
       priority: typeof t.priority === "number" ? t.priority : 3,
-      id: (t._id || t.id)?.toString()
+      id: (t._id || t.id) as string
     }));
 
     tasksWithMetadata.sort((a, b) => a.priority - b.priority);
 
-    const selectedTasks: any[] = [];
+    const selectedTasks: unknown[] = [];
     const selectedTaskIds = new Set<string>();
     let scheduledMinutes = 0;
 
@@ -439,8 +705,9 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
         }
 
         let dependenciesMet = true;
-        if (Array.isArray(item.task.dependencies)) {
-          for (const dep of item.task.dependencies) {
+        const deps = item.task.dependencies as string[] | undefined;
+        if (Array.isArray(deps)) {
+          for (const dep of deps) {
             if (activeTaskIds.has(dep) && !selectedTaskIds.has(dep)) {
               dependenciesMet = false;
               break;

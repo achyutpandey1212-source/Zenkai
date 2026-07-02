@@ -42,29 +42,20 @@ function buildRoutingDecision(
         reasoning: "User updated a task. Rebalancing agenda in foreground, evolution in background.",
       };
 
+    case "schedule_modification":
+      return {
+        foreground: ["companion", "execution"],
+        background: ["memory"],
+        subGraph: "schedule",
+        reasoning: "User wants to modify their schedule directly. Running execution only.",
+      };
+
     case "execution_inquiry":
       return {
         foreground: ["companion", "execution"],
         background: ["memory"],
         subGraph: "planning",
         reasoning: "User asked what to do today. Loading agenda in foreground.",
-      };
-
-    case "general_companion":
-      if (lifeEventsSuggestPlanning) {
-        return {
-          foreground: ["companion", "planning", "execution"],
-          background: ["memory", "identity", "reflection"],
-          subGraph: "mixed",
-          reasoning: "General conversation with embedded life signals. Running planning in foreground.",
-        };
-      }
-
-      return {
-        foreground: ["companion"],
-        background: ["memory"],
-        subGraph: "conversation",
-        reasoning: "General conversation. Companion foreground, memory-only background.",
       };
 
     case "none":
@@ -128,6 +119,15 @@ export async function routerNode(
     console.log(
       `[Router] Decision reasoning: ${routingDecision.reasoning} | Foreground: [${routingDecision.foreground.join(",")}] | BG: [${routingDecision.background.join(",")}]`
     );
+
+    // [ScheduleDebug] Router Output
+    if (intent.type === "schedule_modification") {
+      console.log(`[ScheduleDebug] [1] Router Output`);
+      console.log(`[ScheduleDebug] Detected intent: ${intent.type}`);
+      console.log(`[ScheduleDebug] Operation: ${intent.operation}`);
+      console.log(`[ScheduleDebug] Extracted scheduleDetails: ${intent.scheduleDetails}`);
+      console.log(`[ScheduleDebug] Routing decision - foreground: [${routingDecision.foreground.join(",")}] | background: [${routingDecision.background.join(",")}] | subGraph: ${routingDecision.subGraph}`);
+    }
 
     const emittedEvents: InternalEvent[] = [
       {

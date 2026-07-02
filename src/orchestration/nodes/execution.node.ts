@@ -14,7 +14,7 @@
 
 import type { NodeResult } from "../graph/types";
 import type { GraphState } from "../graph/state";
-import { SchedulingService } from "@/services/scheduling.service";
+import { SchedulingService, type ScheduleChangeIntent } from "@/services/scheduling.service";
 import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
@@ -90,7 +90,7 @@ export async function executionNode(
 
     let schedule: unknown | null = null;
     let agendaBuilt = false;
-    let agendaAction: "created" | "regenerated" = "created";
+    let agendaAction: "created" | "regenerated" | "modified" = "created";
     let callsMade = 0;
 
     // Helper to get active plan ID for schedule generation
@@ -115,14 +115,74 @@ export async function executionNode(
           { type: "create_workspace", userId: uid, planId },
           state
         );
-        schedule = result?.success ? result.scheduleDoc : null;
-        agendaBuilt = result?.success ?? false;
+        const schedulingResult = result as { success: boolean; scheduleDoc: unknown };
+        schedule = schedulingResult.success ? schedulingResult.scheduleDoc : null;
+        agendaBuilt = schedulingResult.success ?? false;
         agendaAction = "regenerated";
         callsMade = agendaBuilt ? 1 : 0;
       }
     }
 
-    // ── Branch 2: Task update intent — deterministically reload schedule from DB
+    // ── Branch 2: Schedule modification intent — modify existing schedule directly
+    else if (intentType === "schedule_modification" && state.intent) {
+      console.log(`[ExecutionNode] Schedule modification detected — applying change.`);
+      
+      console.log(`[ScheduleDebug] [2] Execution Node`);
+      console.log(`[ScheduleDebug] Payload received from router: intent.type=${intentType}, operation=${state.intent.operation}, scheduleDetails=${state.intent.scheduleDetails}`);
+      
+      emitStatusToStream(
+        state,
+        "execution",
+        "running",
+        "Updating your schedule…"
+      );
+
+      const planId = await getActivePlanId();
+      if (planId) {
+        const operation = state.intent.operation ?? "add_recurring_habit";
+        const scheduleDetails = state.intent.scheduleDetails ?? state.userMessage;
+        
+        const scheduleChangePayload: ScheduleChangeIntent = { 
+          type: "modify_schedule", 
+          userId: uid, 
+          planId, 
+          context: {
+            operation,
+            payload: {
+              scheduleDetails,
+              title: state.intent.scheduleDetails
+            }
+          }
+        };
+        console.log(`[ScheduleDebug] Exact object passed into SchedulingService.applyScheduleChange(): ${JSON.stringify(scheduleChangePayload)}`);
+        
+        const result = await SchedulingService.applyScheduleChange(scheduleChangePayload, state);
+        
+        const modResult = result as { success: boolean; scheduleDoc?: unknown; modified: boolean; warnings: string[]; affectedDays?: string[] };
+        if (modResult.success) {
+          schedule = modResult.scheduleDoc;
+          agendaBuilt = true;
+          agendaAction = "modified";
+          callsMade = 0;
+          
+          // [ScheduleDebug] Persistence Summary
+          if (modResult.scheduleDoc) {
+            const daysModified = modResult.affectedDays?.length ?? 0;
+            const scheduleDoc = modResult.scheduleDoc as Record<string, unknown>;
+            const scheduleId = scheduleDoc._id ?? "unknown";
+            console.log(`[ScheduleDebug] [4] Persistence Summary`);
+            console.log(`[ScheduleDebug] Schedule ID: ${scheduleId}`);
+            console.log(`[ScheduleDebug] Days modified: ${daysModified}`);
+            console.log(`[ScheduleDebug] Work blocks added/updated: ${daysModified}`);
+            console.log(`[ScheduleDebug] Diff: Added recurring habit '${scheduleDetails}' to schedule`);
+          }
+        } else {
+          console.warn(`[ExecutionNode] Schedule modification failed: ${modResult.warnings.join("; ")}`);
+        }
+      }
+    }
+
+    // ── Branch 3: Task update intent — deterministically reload schedule from DB
     else if (intentType === "task_update") {
       console.log(`[ExecutionNode] Task update detected — reloading schedule.`);
       emitStatusToStream(
@@ -137,7 +197,7 @@ export async function executionNode(
       callsMade = 0;
     }
 
-    // ── Branch 3: Execution inquiry + no schedule yet — lazy-load schedule
+    // ── Branch 4: Execution inquiry + no schedule yet — lazy-load schedule
     else if (intentType === "execution_inquiry" && state.todaySchedule === null) {
       console.log(`[ExecutionNode] Execution inquiry — loading schedule.`);
       const exists = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" }).lean();
@@ -149,7 +209,8 @@ export async function executionNode(
             { type: "create_workspace", userId: uid, planId },
             state
           );
-          schedule = result?.success ? result.scheduleDoc : null;
+          const schedulingResult = result as { success: boolean; scheduleDoc: unknown };
+          schedule = schedulingResult.success ? schedulingResult.scheduleDoc : null;
         }
       } else {
         schedule = exists;
@@ -160,7 +221,7 @@ export async function executionNode(
       callsMade = exists ? 0 : (agendaBuilt ? 1 : 0);
     }
 
-    // ── Branch 4: Schedule already in state — nothing to do
+    // ── Branch 5: Schedule already in state — nothing to do
     else if (state.todaySchedule !== null) {
       console.log(`[ExecutionNode] Schedule already loaded — no action needed.`);
     }
