@@ -320,7 +320,9 @@ export async function POST(request: Request) {
           if (!activeSchedule && activePlanId) {
             send({ stage: "weekly_schedule", status: "running", message: "Planning your week..." });
             try {
-              const result = await SchedulingService.generateWeeklySchedule(uid, activePlanId);
+              const result = await SchedulingService.applyScheduleChange(
+                { type: "create_workspace", userId: uid, planId: activePlanId }
+              );
               if (!result?.success) {
                 console.warn("[Onboarding] Schedule generation returned success=false:", result?.warnings);
               }
@@ -421,7 +423,9 @@ export async function POST(request: Request) {
 
               activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
               if (!activeSchedule && activePlanId) {
-                await SchedulingService.generateWeeklySchedule(uid, activePlanId);
+                await SchedulingService.applyScheduleChange(
+                  { type: "create_workspace", userId: uid, planId: activePlanId }
+                );
                 activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
               }
 
@@ -430,7 +434,9 @@ export async function POST(request: Request) {
 
                 if (scheduleDays < 7 && activePlanId) {
                   await WeeklyExecutionSchedule.deleteOne({ _id: activeSchedule._id });
-                  const regenResult = await SchedulingService.generateWeeklySchedule(uid, activePlanId);
+                  const regenResult = await SchedulingService.applyScheduleChange(
+                    { type: "create_workspace", userId: uid, planId: activePlanId }
+                  );
                   if (!regenResult?.success) {
                     console.warn("[Onboarding] Regeneration returned success=false:", regenResult?.warnings);
                   }
@@ -445,7 +451,9 @@ export async function POST(request: Request) {
 
                   if (todayBlocksCount === 0 && activePlanId) {
                     await WeeklyExecutionSchedule.deleteOne({ _id: activeSchedule._id });
-                    const retryResult = await SchedulingService.generateWeeklySchedule(uid, activePlanId);
+                    const retryResult = await SchedulingService.applyScheduleChange(
+                      { type: "create_workspace", userId: uid, planId: activePlanId }
+                    );
                     if (!retryResult?.success) {
                       console.warn("[Onboarding] Retry regeneration returned success=false:", retryResult?.warnings);
                     }

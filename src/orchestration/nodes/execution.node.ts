@@ -111,7 +111,10 @@ export async function executionNode(
       
       const planId = await getActivePlanId();
       if (planId) {
-        const result = await SchedulingService.generateWeeklySchedule(uid, planId, state);
+        const result = await SchedulingService.applyScheduleChange(
+          { type: "create_workspace", userId: uid, planId },
+          state
+        );
         schedule = result?.success ? result.scheduleDoc : null;
         agendaBuilt = result?.success ?? false;
         agendaAction = "regenerated";
@@ -142,7 +145,10 @@ export async function executionNode(
       if (!exists) {
         const planId = await getActivePlanId();
         if (planId) {
-          const result = await SchedulingService.generateWeeklySchedule(uid, planId, state);
+          const result = await SchedulingService.applyScheduleChange(
+            { type: "create_workspace", userId: uid, planId },
+            state
+          );
           schedule = result?.success ? result.scheduleDoc : null;
         }
       } else {

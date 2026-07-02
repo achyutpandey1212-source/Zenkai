@@ -7,6 +7,13 @@ import { PlanningFormatter } from "@/formatters/prompt-formatters";
 import type { GraphState } from "@/orchestration/graph/state";
 import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 
+export type ScheduleChangeIntent = {
+  type: "create_workspace" | "modify_schedule" | "calendar_import" | "recurring_habit";
+  userId: string;
+  planId: string;
+  context?: any;
+};
+
 export type SchedulingResult = {
   success: boolean;
   scheduleDoc: any;
@@ -17,8 +24,160 @@ export type SchedulingResult = {
 
 export class SchedulingService {
   /**
+   * Unified entry point for all schedule change operations.
+   * Orchestrates: fetch context -> generate schedule -> persist -> verify.
+   */
+  static async applyScheduleChange(
+    intent: ScheduleChangeIntent,
+    state?: GraphState
+  ): Promise<SchedulingResult> {
+    const { type, userId, planId } = intent;
+    
+    console.log(`[SchedulingService] applyScheduleChange called with type=${type} for user ${userId}`);
+    
+    // Currently only support create_workspace
+    if (type !== "create_workspace") {
+      return {
+        success: false,
+        scheduleDoc: null,
+        persisted: false,
+        warnings: [`Schedule change type '${type}' is not yet implemented`],
+        aiCallsMade: 0
+      };
+    }
+    
+    return SchedulingService.generateWeeklySchedule(userId, planId, state);
+  }
+
+  /**
+   * Generates a 7-day WeeklyExecutionSchedule for a user.
+   * Internal implementation detail - use applyScheduleChange() for orchestration.
+   */
+  private static async generateWeeklySchedule(
+    uid: string,
+    planId: string,
+    state?: GraphState
+  ): Promise<SchedulingResult> {
+    try {
+      console.log(`[SchedulingService] Generating weekly schedule for plan ${planId}`);
+      const workflowId = state?.workflowId || `fallback-scheduling-${uid}-${Date.now()}`;
+
+      // 1. Resolve normalized user context
+      let normalizedContext: PlanningContext;
+      if (state && state.contextVersion) {
+        normalizedContext = ContextOrchestrator.getContext(workflowId) as PlanningContext;
+      } else {
+        normalizedContext = await ContextOrchestrator.loadContext(
+          uid,
+          workflowId,
+          "Fallback weekly schedule shell execution",
+          undefined,
+          "planning"
+        ) as PlanningContext;
+      }
+
+      const timezone = normalizedContext.profile.timezone || "UTC";
+      const startDate = new Date();
+      const startDateStr = startDate.toLocaleDateString("en-CA", { timeZone: timezone });
+
+      // 2. Fetch all active tasks from context
+      const activeTasks: any[] = [];
+      if (normalizedContext.activePlan) {
+        normalizedContext.activePlan.milestones.forEach((m) => {
+          if (m.status === "todo" || m.status === "in_progress") {
+            m.goals.forEach((g) => {
+              if (g.status === "active") {
+                g.tasks.forEach((t) => {
+                  if (t.status === "todo" || t.status === "in_progress") {
+                    activeTasks.push(t);
+                  }
+                });
+              }
+            });
+          }
+        });
+      }
+
+      // 3. Compute capacities and select subset of tasks
+      const dailyCapacities = SchedulingService.calculateDailyCapacities(normalizedContext.profile, startDate, timezone);
+      const totalCapacityMinutes = dailyCapacities.reduce((sum, d) => sum + d.minutes, 0);
+      const selectedTasks = SchedulingService.selectTasksForCapacity(activeTasks, totalCapacityMinutes);
+
+      console.log(`[SchedulingService] Capacity computed: ${totalCapacityMinutes} mins. Active tasks: ${activeTasks.length}. Selected tasks fitting capacity: ${selectedTasks.length}`);
+
+      // 4. Call Pure AI Weekly Schedule reasoning logic
+      const scheduleData = await SchedulingService.generateWeeklyScheduleLogic(
+        normalizedContext,
+        selectedTasks,
+        startDateStr,
+        timezone,
+        dailyCapacities
+      );
+
+      console.log("[DEBUG-AI] AI scheduleData days:", scheduleData?.days?.length);
+      console.log("[DEBUG-AI] AI activeTasks passed to scheduler:", selectedTasks?.length);
+      if (scheduleData?.days?.[0]?.workBlocks?.[0]) {
+        console.log("[DEBUG-AI] First workBlock taskIds:", scheduleData.days[0].workBlocks[0].taskIds);
+      }
+
+      // 5. Save schedule using PlanSyncService (database layer)
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 6);
+      const endDateStr = endDate.toLocaleDateString("en-CA", { timeZone: timezone });
+
+      const scheduleDoc = await PlanSyncService.persistWeeklySchedule(
+        uid,
+        planId,
+        scheduleData,
+        startDateStr,
+        endDateStr,
+        timezone
+      );
+
+      // 6. Verify persistence by reloading from database
+      console.log("[SchedulingService] Verifying persistence of schedule...");
+      const verifiedSchedule = await WeeklyExecutionSchedule.findById(scheduleDoc._id).lean();
+      
+      const warnings: string[] = [];
+      
+      if (!verifiedSchedule) {
+        warnings.push("Schedule document not found after persistence");
+      } else if (verifiedSchedule.firebaseUid !== uid) {
+        warnings.push("Schedule document has incorrect firebaseUid");
+      } else if (verifiedSchedule.planId?.toString() !== planId) {
+        warnings.push("Schedule document has incorrect planId");
+      } else if (!verifiedSchedule.days || verifiedSchedule.days.length === 0) {
+        warnings.push("Schedule document has no days array");
+      } else if (!verifiedSchedule.days.every((d: any) => d.workBlocks && d.workBlocks.length >= 0)) {
+        warnings.push("Schedule document has days missing workBlocks");
+      }
+
+      // Invalidate fallback cache if instantiated here
+      if (!state || !state.contextVersion) {
+        ContextOrchestrator.invalidateCache(workflowId);
+      }
+
+      return {
+        success: verifiedSchedule !== null && warnings.length === 0,
+        scheduleDoc: verifiedSchedule || scheduleDoc,
+        persisted: verifiedSchedule !== null,
+        warnings,
+        aiCallsMade: 1
+      };
+    } catch (err) {
+      console.error("[SchedulingService] Weekly Schedule generation failed:", err);
+      return {
+        success: false,
+        scheduleDoc: null,
+        persisted: false,
+        warnings: err instanceof Error ? [err.message] : ["Unknown error during schedule generation"],
+        aiCallsMade: 0
+      };
+    }
+  }
+
+  /**
    * PURE AI Reasoning function for weekly scheduling.
-   * Consumes only typed contracts and active tasks, returning the generated schedule days.
    */
   private static async generateWeeklyScheduleLogic(
     context: PlanningContext,
@@ -175,134 +334,6 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
     }
 
     return result;
-  }
-
-  /**
-   * Generates a 7-day WeeklyExecutionSchedule for a user.
-   * Orchestration layer that fetches context, computes capacities, and persists schedule.
-   */
-  static async generateWeeklySchedule(
-    uid: string,
-    planId: string,
-    state?: GraphState
-  ): Promise<SchedulingResult | null> {
-    try {
-      console.log(`[SchedulingService] Generating weekly schedule for plan ${planId}`);
-      const workflowId = state?.workflowId || `fallback-scheduling-${uid}-${Date.now()}`;
-
-      // 1. Resolve normalized user context
-      let normalizedContext: PlanningContext;
-      if (state && state.contextVersion) {
-        normalizedContext = ContextOrchestrator.getContext(workflowId) as PlanningContext;
-      } else {
-        // Fallback loading — must pass "planning" as parentIntent
-        normalizedContext = await ContextOrchestrator.loadContext(
-          uid,
-          workflowId,
-          "Fallback weekly schedule shell execution",
-          undefined,
-          "planning"
-        ) as PlanningContext;
-      }
-
-      const timezone = normalizedContext.profile.timezone || "UTC";
-      const startDate = new Date();
-      const startDateStr = startDate.toLocaleDateString("en-CA", { timeZone: timezone });
-
-      // 2. Fetch all active tasks from context
-      const activeTasks: any[] = [];
-      if (normalizedContext.activePlan) {
-        normalizedContext.activePlan.milestones.forEach((m) => {
-          if (m.status === "todo" || m.status === "in_progress") {
-            m.goals.forEach((g) => {
-              if (g.status === "active") {
-                g.tasks.forEach((t) => {
-                  if (t.status === "todo" || t.status === "in_progress") {
-                    activeTasks.push(t);
-                  }
-                });
-              }
-            });
-          }
-        });
-      }
-
-      // 3. Compute capacities and select subset of tasks
-      const dailyCapacities = SchedulingService.calculateDailyCapacities(normalizedContext.profile, startDate, timezone);
-      const totalCapacityMinutes = dailyCapacities.reduce((sum, d) => sum + d.minutes, 0);
-      const selectedTasks = SchedulingService.selectTasksForCapacity(activeTasks, totalCapacityMinutes);
-
-      console.log(`[SchedulingService] Capacity computed: ${totalCapacityMinutes} mins. Active tasks: ${activeTasks.length}. Selected tasks fitting capacity: ${selectedTasks.length}`);
-
-      // 4. Call Pure AI Weekly Schedule reasoning logic
-      const scheduleData = await SchedulingService.generateWeeklyScheduleLogic(
-        normalizedContext,
-        selectedTasks,
-        startDateStr,
-        timezone,
-        dailyCapacities
-      );
-
-      console.log("[DEBUG-AI] AI scheduleData days:", scheduleData?.days?.length);
-      console.log("[DEBUG-AI] AI activeTasks passed to scheduler:", selectedTasks?.length);
-      if (scheduleData?.days?.[0]?.workBlocks?.[0]) {
-        console.log("[DEBUG-AI] First workBlock taskIds:", scheduleData.days[0].workBlocks[0].taskIds);
-      }
-
-      // 5. Save schedule using PlanSyncService (database layer)
-      const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + 6);
-      const endDateStr = endDate.toLocaleDateString("en-CA", { timeZone: timezone });
-
-      const scheduleDoc = await PlanSyncService.persistWeeklySchedule(
-        uid,
-        planId,
-        scheduleData,
-        startDateStr,
-        endDateStr,
-        timezone
-      );
-
-      // 6. Verify persistence by reloading from database
-      console.log("[SchedulingService] Verifying persistence of schedule...");
-      const verifiedSchedule = await WeeklyExecutionSchedule.findById(scheduleDoc._id).lean();
-      
-      const warnings: string[] = [];
-      
-      if (!verifiedSchedule) {
-        warnings.push("Schedule document not found after persistence");
-      } else if (verifiedSchedule.firebaseUid !== uid) {
-        warnings.push("Schedule document has incorrect firebaseUid");
-      } else if (verifiedSchedule.planId?.toString() !== planId) {
-        warnings.push("Schedule document has incorrect planId");
-      } else if (!verifiedSchedule.days || verifiedSchedule.days.length === 0) {
-        warnings.push("Schedule document has no days array");
-      } else if (!verifiedSchedule.days.every((d: any) => d.workBlocks && d.workBlocks.length >= 0)) {
-        warnings.push("Schedule document has days missing workBlocks");
-      }
-
-      // Invalidate fallback cache if instantiated here
-      if (!state || !state.contextVersion) {
-        ContextOrchestrator.invalidateCache(workflowId);
-      }
-
-      return {
-        success: verifiedSchedule !== null && warnings.length === 0,
-        scheduleDoc: verifiedSchedule || scheduleDoc,
-        persisted: verifiedSchedule !== null,
-        warnings,
-        aiCallsMade: 1
-      };
-    } catch (err) {
-      console.error("[SchedulingService] Weekly Schedule generation failed:", err);
-      return {
-        success: false,
-        scheduleDoc: null,
-        persisted: false,
-        warnings: err instanceof Error ? [err.message] : ["Unknown error during schedule generation"],
-        aiCallsMade: 0
-      };
-    }
   }
 
   /**

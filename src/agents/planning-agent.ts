@@ -1225,10 +1225,13 @@ const retryResponse = await provider.generate({
 
 /**
     * Generates a 7-day WeeklyExecutionSchedule using Gemini.
-    * Delegates to SchedulingService for orchestration.
+    * Delegates to SchedulingService.applyScheduleChange() for orchestration.
     */
   static async generateWeeklySchedule(uid: string, planId: string, state?: GraphState): Promise<any> {
-    const result = await SchedulingService.generateWeeklySchedule(uid, planId, state);
-    return result?.scheduleDoc ?? null;
+    const result = await SchedulingService.applyScheduleChange(
+      { type: "create_workspace", userId: uid, planId },
+      state
+    );
+    return result.scheduleDoc ?? null;
   }
 }
