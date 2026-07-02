@@ -1,7 +1,7 @@
 /**
  * Execution Node
  *
- * Foreground node responsible for building or rebalancing the user's weekly schedule.
+ * Calls SchedulingService to build or rebalance the user's weekly schedule.
  * Only runs when the routing decision includes "execution" in the foreground list.
  *
  * Responsibilities:
@@ -14,7 +14,7 @@
 
 import type { NodeResult } from "../graph/types";
 import type { GraphState } from "../graph/state";
-import { PlanningAgent } from "@/agents/planning-agent";
+import { SchedulingService } from "@/services/scheduling.service";
 import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
@@ -111,8 +111,9 @@ export async function executionNode(
       
       const planId = await getActivePlanId();
       if (planId) {
-        schedule = await PlanningAgent.generateWeeklySchedule(uid, planId);
-        agendaBuilt = schedule !== null;
+        const result = await SchedulingService.generateWeeklySchedule(uid, planId, state);
+        schedule = result?.scheduleDoc ?? null;
+        agendaBuilt = result !== null;
         agendaAction = "regenerated";
         callsMade = agendaBuilt ? 1 : 0;
       }
@@ -141,7 +142,8 @@ export async function executionNode(
       if (!exists) {
         const planId = await getActivePlanId();
         if (planId) {
-          schedule = await PlanningAgent.generateWeeklySchedule(uid, planId);
+          const result = await SchedulingService.generateWeeklySchedule(uid, planId, state);
+          schedule = result?.scheduleDoc ?? null;
         }
       } else {
         schedule = exists;

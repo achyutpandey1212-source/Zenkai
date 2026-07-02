@@ -22,6 +22,7 @@ import { PlanRepository } from "@/repositories/plan.repository";
 import { Milestone } from "@/models/Milestone";
 import { CalendarSyncService } from "@/services/calendar-sync.service";
 import { PlanSyncService } from "@/services/plan-sync.service";
+import { SchedulingService } from "@/services/scheduling.service";
 export const dynamic = "force-dynamic";
 
 function parseDaysFromText(dateStr: string): string[] {
@@ -319,7 +320,7 @@ export async function POST(request: Request) {
           if (!activeSchedule && activePlanId) {
             send({ stage: "weekly_schedule", status: "running", message: "Planning your week..." });
             try {
-              await PlanningAgent.generateWeeklySchedule(uid, activePlanId);
+              await SchedulingService.generateWeeklySchedule(uid, activePlanId);
               send({ stage: "weekly_schedule", status: "success", message: "Weekly schedule prepared." });
             } catch (e) {
               console.error("Failed to generate weekly schedule during onboarding:", e);
@@ -417,7 +418,7 @@ export async function POST(request: Request) {
 
               activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
               if (!activeSchedule && activePlanId) {
-                await PlanningAgent.generateWeeklySchedule(uid, activePlanId);
+                await SchedulingService.generateWeeklySchedule(uid, activePlanId);
                 activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
               }
 
@@ -426,7 +427,7 @@ export async function POST(request: Request) {
 
                 if (scheduleDays < 7 && activePlanId) {
                   await WeeklyExecutionSchedule.deleteOne({ _id: activeSchedule._id });
-                  await PlanningAgent.generateWeeklySchedule(uid, activePlanId);
+                  await SchedulingService.generateWeeklySchedule(uid, activePlanId);
                   activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
                   scheduleDays = activeSchedule?.days?.length || 0;
                 }
@@ -438,7 +439,7 @@ export async function POST(request: Request) {
 
                   if (todayBlocksCount === 0 && activePlanId) {
                     await WeeklyExecutionSchedule.deleteOne({ _id: activeSchedule._id });
-                    await PlanningAgent.generateWeeklySchedule(uid, activePlanId);
+                    await SchedulingService.generateWeeklySchedule(uid, activePlanId);
                     activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
                     const updatedTodayDay = activeSchedule?.days.find((d: any) => d.date === todayStr) || activeSchedule?.days[0];
                     todayBlocksCount = updatedTodayDay?.workBlocks?.length || 0;
