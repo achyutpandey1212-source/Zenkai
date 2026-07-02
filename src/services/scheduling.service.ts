@@ -5,6 +5,7 @@ import { PlanSyncService } from "@/services/plan-sync.service";
 import { provider } from "@/services/llm/provider";
 import { PlanningFormatter } from "@/formatters/prompt-formatters";
 import type { GraphState } from "@/orchestration/graph/state";
+import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
 
 export type SchedulingResult = {
   success: boolean;
@@ -262,16 +263,34 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
         timezone
       );
 
+      // 6. Verify persistence by reloading from database
+      console.log("[SchedulingService] Verifying persistence of schedule...");
+      const verifiedSchedule = await WeeklyExecutionSchedule.findById(scheduleDoc._id).lean();
+      
+      const warnings: string[] = [];
+      
+      if (!verifiedSchedule) {
+        warnings.push("Schedule document not found after persistence");
+      } else if (verifiedSchedule.firebaseUid !== uid) {
+        warnings.push("Schedule document has incorrect firebaseUid");
+      } else if (verifiedSchedule.planId?.toString() !== planId) {
+        warnings.push("Schedule document has incorrect planId");
+      } else if (!verifiedSchedule.days || verifiedSchedule.days.length === 0) {
+        warnings.push("Schedule document has no days array");
+      } else if (!verifiedSchedule.days.every((d: any) => d.workBlocks && d.workBlocks.length >= 0)) {
+        warnings.push("Schedule document has days missing workBlocks");
+      }
+
       // Invalidate fallback cache if instantiated here
       if (!state || !state.contextVersion) {
         ContextOrchestrator.invalidateCache(workflowId);
       }
 
       return {
-        success: true,
-        scheduleDoc,
-        persisted: true,
-        warnings: [],
+        success: verifiedSchedule !== null && warnings.length === 0,
+        scheduleDoc: verifiedSchedule || scheduleDoc,
+        persisted: verifiedSchedule !== null,
+        warnings,
         aiCallsMade: 1
       };
     } catch (err) {
