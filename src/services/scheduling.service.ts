@@ -7,7 +7,10 @@ import { PlanningFormatter } from "@/formatters/prompt-formatters";
 import type { GraphState } from "@/orchestration/graph/state";
 
 export type SchedulingResult = {
+  success: boolean;
   scheduleDoc: any;
+  persisted: boolean;
+  warnings: string[];
   aiCallsMade: number;
 };
 
@@ -265,12 +268,21 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
       }
 
       return {
+        success: true,
         scheduleDoc,
+        persisted: true,
+        warnings: [],
         aiCallsMade: 1
       };
     } catch (err) {
       console.error("[SchedulingService] Weekly Schedule generation failed:", err);
-      return null;
+      return {
+        success: false,
+        scheduleDoc: null,
+        persisted: false,
+        warnings: err instanceof Error ? [err.message] : ["Unknown error during schedule generation"],
+        aiCallsMade: 0
+      };
     }
   }
 

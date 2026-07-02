@@ -320,7 +320,10 @@ export async function POST(request: Request) {
           if (!activeSchedule && activePlanId) {
             send({ stage: "weekly_schedule", status: "running", message: "Planning your week..." });
             try {
-              await SchedulingService.generateWeeklySchedule(uid, activePlanId);
+              const result = await SchedulingService.generateWeeklySchedule(uid, activePlanId);
+              if (!result?.success) {
+                console.warn("[Onboarding] Schedule generation returned success=false:", result?.warnings);
+              }
               send({ stage: "weekly_schedule", status: "success", message: "Weekly schedule prepared." });
             } catch (e) {
               console.error("Failed to generate weekly schedule during onboarding:", e);
@@ -427,7 +430,10 @@ export async function POST(request: Request) {
 
                 if (scheduleDays < 7 && activePlanId) {
                   await WeeklyExecutionSchedule.deleteOne({ _id: activeSchedule._id });
-                  await SchedulingService.generateWeeklySchedule(uid, activePlanId);
+                  const regenResult = await SchedulingService.generateWeeklySchedule(uid, activePlanId);
+                  if (!regenResult?.success) {
+                    console.warn("[Onboarding] Regeneration returned success=false:", regenResult?.warnings);
+                  }
                   activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
                   scheduleDays = activeSchedule?.days?.length || 0;
                 }
@@ -439,7 +445,10 @@ export async function POST(request: Request) {
 
                   if (todayBlocksCount === 0 && activePlanId) {
                     await WeeklyExecutionSchedule.deleteOne({ _id: activeSchedule._id });
-                    await SchedulingService.generateWeeklySchedule(uid, activePlanId);
+                    const retryResult = await SchedulingService.generateWeeklySchedule(uid, activePlanId);
+                    if (!retryResult?.success) {
+                      console.warn("[Onboarding] Retry regeneration returned success=false:", retryResult?.warnings);
+                    }
                     activeSchedule = await WeeklyExecutionSchedule.findOne({ firebaseUid: uid, status: "ACTIVE" });
                     const updatedTodayDay = activeSchedule?.days.find((d: any) => d.date === todayStr) || activeSchedule?.days[0];
                     todayBlocksCount = updatedTodayDay?.workBlocks?.length || 0;
