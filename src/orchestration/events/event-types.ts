@@ -42,6 +42,10 @@ export enum ZenkaiEvent {
   AgendaCreated = "AgendaCreated",
   TimelineUpdated = "TimelineUpdated",
 
+  // Pending Action lifecycle
+  PendingActionCreated = "PendingActionCreated",
+  PendingActionConfirmed = "PendingActionConfirmed",
+
   // Workflow lifecycle
   WorkflowStarted = "WorkflowStarted",
   WorkflowCompleted = "WorkflowCompleted",

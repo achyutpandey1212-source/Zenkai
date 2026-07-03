@@ -24,6 +24,7 @@ import { MessageRepository } from "@/repositories/message.repository";
 import { createInitialState } from "@/orchestration/graph/state";
 import { invokeMainGraph } from "@/orchestration/graphs/main.graph";
 import { dbConnect } from "@/lib/mongodb";
+import { PendingActionService } from "@/services/pending-action.service";
 
 // ── Route config ───────────────────────────────────────────────────────────────
 export const dynamic = "force-dynamic";
@@ -155,6 +156,12 @@ export async function POST(request: Request) {
 
     console.log(`[Chat] New workflow: ${workflowId} | uid=${user.firebaseUid}`);
 
+    // ── 7. Load pending action for conversation ────────────────────────────────────
+    const pendingAction = await PendingActionService.getActive(conversationId);
+    if (pendingAction) {
+      console.log(`[Chat] Loaded pending action: ${pendingAction.type}`);
+    }
+
     // ── 8. Build streaming response ─────────────────────────────────────────────
     const encoder = new TextEncoder();
     const customStream = new ReadableStream({
@@ -170,6 +177,7 @@ export async function POST(request: Request) {
             history,
             streamController: controller,
             encoder,
+            pendingAction: pendingAction,
           });
 
           // Invoke the main graph

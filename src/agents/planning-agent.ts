@@ -23,6 +23,34 @@ export type LifeEventExtraction = {
   detectedEvents: LifeEvent[];
 };
 
+export type ScheduleOperation =
+  | {
+      type: "add_block";
+      date: string;
+      title: string;
+      startTime: string;
+      endTime: string;
+    }
+  | {
+      type: "move_block";
+      date: string;
+      blockTitle: string;
+      startTime: string;
+      endTime: string;
+    }
+  | {
+      type: "resize_block";
+      date: string;
+      blockTitle: string;
+      startTime: string;
+      endTime: string;
+    }
+  | {
+      type: "delete_block";
+      date: string;
+      blockTitle: string;
+    };
+
 export type PlanningIntent = {
   type: "create_or_modify" | "task_update" | "schedule_modification" | "execution_inquiry" | "none";
   taskTitle?: string;
@@ -33,7 +61,8 @@ export type PlanningIntent = {
   isOnboarding?: boolean;
   reasoning?: string;
   operation?: "add_recurring_habit" | "move_task" | "delete_task" | "reschedule_task";
-  scheduleDetails?: string;
+  scheduleOperation?: ScheduleOperation;
+  scheduleDetails?: string; // Kept for backward compatibility with existing flows
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,7 +113,7 @@ CRITICAL RULE: If the request is generic (e.g. "Plan My Week", "Plan my schedule
 
 For "task_update": extract the EXACT taskTitle and taskStatus ("completed" | "in_progress" | "todo"). Leave taskTitle empty string if no specific task name is mentioned.
 
-For "schedule_modification": extract operation type ("add_recurring_habit") and details (title, days, startTime, endTime, duration) from the natural language request. Do NOT implement natural language parsing — just indicate the operation type.
+For "schedule_modification": extract a structured scheduleOperation with type ("add_block" | "move_block" | "resize_block" | "delete_block") and the required fields (date, title/blockTitle, startTime, endTime) directly. Do NOT output natural language descriptions — output structured JSON.
 
 Return a JSON object matching the requested schema.
 `;
@@ -109,7 +138,7 @@ CRITICAL RULE: If the request is generic (e.g. "Plan My Week", "Plan my schedule
 
 For "task_update": extract the EXACT taskTitle and taskStatus ("completed" | "in_progress" | "todo"). Leave taskTitle empty string if no specific task name is mentioned.
 
-For "schedule_modification": extract operation type ("add_recurring_habit") and details (title, days, startTime, endTime, duration) from the natural language request. Do NOT implement natural language parsing — just indicate the operation type.
+For "schedule_modification": extract a structured scheduleOperation with type ("add_block" | "move_block" | "resize_block" | "delete_block") and the required fields (date, title/blockTitle, startTime, endTime) directly. Do NOT output natural language descriptions — output structured JSON.
 
 PART 2: LIFE EVENT EXTRACTION
 Silently determine whether the message contains structured, actionable life information that Zenkai should autonomously act on — WITHOUT the user explicitly asking for a plan.
@@ -364,34 +393,8 @@ export class PlanningAgent {
       }
     }
 
-    // Deterministic schedule modifications
-    const scheduleModPatterns = [
-      /^(?:from\s+(tomorrow|now)|i want to run every (morning|evening))$/i,
-      /^(?:add|schedule)\s+(?:gym|exercise|workout|run|jog)\s+from\s+\d/i,
-      /^(?:don't|do\s+not)\s+schedule\s+(?:work|tasks|study)/i,
-      /^my\s+(?:exam|exams|tests|assessments)\s+start/i,
-    ];
-
-    for (const pat of scheduleModPatterns) {
-      const match = text.match(pat);
-      if (match) {
-        return {
-          intent: {
-            type: "schedule_modification",
-            operation: "add_recurring_habit",
-            scheduleDetails: match[0],
-            details: "Deterministic schedule modification bypass"
-          },
-          lifeEvents: {
-            hasActionableContent: false,
-            suggestsPlanning: false,
-            extractionReason: "Deterministic schedule modification bypass",
-            detectedEvents: []
-          },
-          budget: 3 // Schedule modifications are general chat level budget
-        };
-      }
-    }
+    // Schedule modifications now require structured operations - let them flow to Gemini
+    // Deterministic patterns removed since they cannot produce structured scheduleOperation
 
     return null;
   }
@@ -420,54 +423,64 @@ User: \${message}
 Determine the intent and extract any life events:
 `;
 
-const response = await provider.generate({
-          prompt,
-          systemInstruction: MERGED_ROUTER_SYSTEM_PROMPT.trim(),
-          temperature: 0.1,
-          responseMimeType: "application/json",
-          responseSchema: {
+    const response = await provider.generate({
+      prompt,
+      systemInstruction: MERGED_ROUTER_SYSTEM_PROMPT.trim(),
+      temperature: 0.1,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          intentType: {
+            type: "STRING",
+            enum: ["create_or_modify", "task_update", "schedule_modification", "execution_inquiry", "none"],
+          },
+          taskTitle: { type: "STRING" },
+          taskStatus: { type: "STRING" },
+          planType: { type: "STRING" },
+          goalTitle: { type: "STRING" },
+          details: { type: "STRING" },
+          operation: { type: "STRING" },
+          scheduleOperation: {
             type: "OBJECT",
             properties: {
-              intentType: {
-                type: "STRING",
-                enum: ["create_or_modify", "task_update", "schedule_modification", "execution_inquiry", "none"],
-              },
-              taskTitle: { type: "STRING" },
-              taskStatus: { type: "STRING" },
-              planType: { type: "STRING" },
-              goalTitle: { type: "STRING" },
-              details: { type: "STRING" },
-              operation: { type: "STRING" },
-              scheduleDetails: { type: "STRING" },
-              lifeEvents: {
-                type: "OBJECT",
-                properties: {
-                  hasActionableContent: { type: "BOOLEAN" },
-                  suggestsPlanning: { type: "BOOLEAN" },
-                  extractionReason: { type: "STRING" },
-                  detectedEvents: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        type: {
-                          type: "STRING",
-                          enum: ["exam", "deadline", "project", "goal", "event", "constraint", "career", "habit"],
-                        },
-                        title: { type: "STRING" },
-                        date: { type: "STRING" },
-                        description: { type: "STRING" },
-                      },
-                      required: ["type", "title", "description"],
+              type: { type: "STRING", enum: ["add_block", "move_block", "resize_block", "delete_block"] },
+              date: { type: "STRING" },
+              title: { type: "STRING" },
+              blockTitle: { type: "STRING" },
+              startTime: { type: "STRING" },
+              endTime: { type: "STRING" },
+            },
+          },
+          lifeEvents: {
+            type: "OBJECT",
+            properties: {
+              hasActionableContent: { type: "BOOLEAN" },
+              suggestsPlanning: { type: "BOOLEAN" },
+              extractionReason: { type: "STRING" },
+              detectedEvents: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    type: {
+                      type: "STRING",
+                      enum: ["exam", "deadline", "project", "goal", "event", "constraint", "career", "habit"],
                     },
+                    title: { type: "STRING" },
+                    date: { type: "STRING" },
+                    description: { type: "STRING" },
                   },
+                  required: ["type", "title", "description"],
                 },
-                required: ["hasActionableContent", "suggestsPlanning", "extractionReason", "detectedEvents"],
               },
             },
-            required: ["intentType", "lifeEvents"],
+            required: ["hasActionableContent", "suggestsPlanning", "extractionReason", "detectedEvents"],
           },
-        });
+        },
+        required: ["intentType", "lifeEvents"],
+      },
+    });
 
        const text = response.text;
       if (!text) {
@@ -486,7 +499,7 @@ const response = await provider.generate({
         goalTitle?: string;
         details?: string;
         operation?: "add_recurring_habit" | "move_task" | "delete_task" | "reschedule_task";
-        scheduleDetails?: string;
+        scheduleOperation?: ScheduleOperation;
         lifeEvents?: {
           hasActionableContent: boolean;
           suggestsPlanning: boolean;
@@ -519,9 +532,11 @@ const response = await provider.generate({
           : undefined,
       };
 
-      if (intentType === "schedule_modification" && parsed.operation) {
+      if (intentType === "schedule_modification") {
         intent.operation = parsed.operation;
-        intent.scheduleDetails = parsed.scheduleDetails;
+        if (parsed.scheduleOperation) {
+          intent.scheduleOperation = parsed.scheduleOperation;
+        }
       }
 
       // Safety guard: task_update requires a non-empty taskTitle

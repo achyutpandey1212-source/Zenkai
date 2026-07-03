@@ -1,5 +1,7 @@
 import mongoose, { Schema, Model, Document } from "mongoose";
 
+export type WorkBlockOrigin = "system" | "ai" | "user";
+
 export interface IWorkBlock {
   title: string;
   startTime: string; // HH:mm
@@ -10,6 +12,7 @@ export interface IWorkBlock {
   priority: number;
   eventHash?: string; // used for differential calendar sync
   googleCalendarEventId?: string; // stored for block-level sync
+  origin?: WorkBlockOrigin; // source of this block: system, ai, or user
 }
 
 export interface IDaySchedule {
@@ -43,6 +46,7 @@ const WorkBlockSchema = new Schema<IWorkBlock>(
     priority: { type: Number, default: 0 },
     eventHash: { type: String },
     googleCalendarEventId: { type: String },
+    origin: { type: String, enum: ["system", "ai", "user"], default: "ai" },
   },
   { _id: false }
 );

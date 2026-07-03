@@ -5,7 +5,7 @@ import { PlanSyncService } from "@/services/plan-sync.service";
 import { provider } from "@/services/llm/provider";
 import { PlanningFormatter } from "@/formatters/prompt-formatters";
 import type { GraphState } from "@/orchestration/graph/state";
-import { WeeklyExecutionSchedule } from "@/models/WeeklyExecutionSchedule";
+import { WeeklyExecutionSchedule, type WorkBlockOrigin } from "@/models/WeeklyExecutionSchedule";
 
 export type ScheduleChangeIntent = {
   type: "create_workspace" | "modify_schedule" | "calendar_import" | "recurring_habit";
@@ -56,6 +56,7 @@ type LeanWorkBlock = {
   duration: number;
   priority: number;
   tasks?: string[];
+  origin?: WorkBlockOrigin;
 };
 
 type LeanDaySchedule = {
@@ -437,6 +438,182 @@ private static async modifySchedule(
   }
 
   /**
+    * Builds structured unavailable time windows for the scheduling prompt.
+    * Combines sleep boundaries and recurring commitments into explicit time blocks.
+    */
+   private static buildUnavailableWindows(
+     profile: NormalizedProfile,
+     timezone: string,
+     startDate: Date
+   ): { day: string; date: string; unavailableWindows: { name: string; startTime: string; endTime: string }[] }[] {
+     const unavailableWindows: { day: string; date: string; unavailableWindows: { name: string; startTime: string; endTime: string }[] }[] = [];
+     const wakeTime = profile.wakeUpTime || "07:00";
+     const sleepTime = profile.sleepTime || "23:00";
+     
+     for (let i = 0; i < 7; i++) {
+       const current = new Date(startDate);
+       current.setDate(startDate.getDate() + i);
+       const dateStr = current.toLocaleDateString("en-CA", { timeZone: timezone });
+       const dayOfWeek = current.toLocaleDateString("en-US", { weekday: "long", timeZone: timezone });
+       
+       const windows: { name: string; startTime: string; endTime: string }[] = [];
+       
+       // Sleep window - generic "Sleep" block outside wake/sleep times
+       const wakeMin = timeToMinutes(wakeTime);
+       const sleepMin = timeToMinutes(sleepTime);
+       if (wakeMin > sleepMin) {
+         // Sleep spans midnight
+         windows.push({ name: "Sleep", startTime: "00:00", endTime: sleepTime });
+         windows.push({ name: "Sleep", startTime: wakeTime, endTime: "23:59" });
+       } else {
+         // Sleep is continuous block
+         windows.push({ name: "Sleep", startTime: "00:00", endTime: wakeTime });
+         windows.push({ name: "Sleep", startTime: sleepTime, endTime: "23:59" });
+       }
+       
+       // Add recurring commitments as unavailable
+       const commitments = profile.commitments || [];
+       commitments.forEach((commitment) => {
+         if (commitment.days?.includes(dayOfWeek)) {
+           windows.push({
+             name: commitment.name,
+             startTime: commitment.startTime,
+             endTime: commitment.endTime
+           });
+         }
+       });
+       
+       unavailableWindows.push({
+         day: dayOfWeek,
+         date: dateStr,
+         unavailableWindows: windows
+       });
+     }
+     
+return unavailableWindows;
+    }
+
+   /**
+    * Builds the base timeline from wake/sleep + commitments.
+    * These blocks are automatically generated from profile and DO NOT go through AI.
+    */
+private static buildBaseTimeline(
+      profile: NormalizedProfile,
+      startDate: Date,
+      timezone: string
+    ): Array<{
+      date: string;
+      dayNumber: number;
+      dayOfWeek: string;
+      baseBlocks: Array<{ title: string; startTime: string; endTime: string; duration: number; priority: number; taskIds: string[]; origin: WorkBlockOrigin }>;
+    }> {
+const baseTimeline: Array<{
+        date: string;
+        dayNumber: number;
+        dayOfWeek: string;
+        baseBlocks: Array<{ title: string; startTime: string; endTime: string; duration: number; priority: number; taskIds: string[]; origin: WorkBlockOrigin }>;
+      }> = [];
+     
+     const wakeTime = profile.wakeUpTime || "07:00";
+     const sleepTime = profile.sleepTime || "23:00";
+     
+     for (let i = 0; i < 7; i++) {
+       const current = new Date(startDate);
+       current.setDate(startDate.getDate() + i);
+       const dateStr = current.toLocaleDateString("en-CA", { timeZone: timezone });
+       const dayOfWeek = current.toLocaleDateString("en-US", { weekday: "long", timeZone: timezone });
+       
+const baseBlocks: Array<{ title: string; startTime: string; endTime: string; duration: number; priority: number; taskIds: string[]; origin: WorkBlockOrigin; }> = [];
+      
+        // Wake block (morning routine time before first commitment)
+        baseBlocks.push({
+          title: "Wake & Morning Routine",
+          startTime: "00:00",
+          endTime: wakeTime,
+          duration: timeToMinutes(wakeTime),
+          priority: 5, // Low priority - just structure
+          taskIds: [], // Structure-only block, no tasks
+          origin: "system"
+        });
+        
+        // Add commitments as structure blocks
+        const commitments = profile.commitments || [];
+        commitments.forEach((commitment) => {
+          if (commitment.days?.includes(dayOfWeek) && commitment.startTime && commitment.endTime) {
+            baseBlocks.push({
+              title: commitment.name,
+              startTime: commitment.startTime,
+              endTime: commitment.endTime,
+              duration: timeToMinutes(commitment.endTime) - timeToMinutes(commitment.startTime),
+              priority: 4, // Medium priority - fixed
+              taskIds: [], // Structure-only block
+              origin: "system"
+            });
+          }
+        });
+        
+        // Sleep block
+        baseBlocks.push({
+          title: "Rest & Sleep",
+          startTime: sleepTime,
+          endTime: "23:59",
+          duration: (24 * 60 - timeToMinutes(sleepTime)),
+          priority: 5, // Low priority - just structure
+          taskIds: [], // Structure-only block
+          origin: "system"
+        });
+       
+       baseTimeline.push({
+         date: dateStr,
+         dayNumber: i,
+         dayOfWeek,
+         baseBlocks
+       });
+     }
+     
+     return baseTimeline;
+   }
+
+   /**
+    * Merges AI-generated work blocks with base timeline, sorted chronologically.
+    * Filters out empty work blocks (those with no tasks).
+    */
+private static mergeTimelineWithAI(
+      baseTimeline: Array<{
+        date: string;
+        dayNumber: number;
+        dayOfWeek: string;
+        baseBlocks: Array<{ title: string; startTime: string; endTime: string; duration: number; priority: number; taskIds: string[]; origin: WorkBlockOrigin }>;
+      }>,
+      aiDays: Array<Record<string, unknown>>
+    ): Array<Record<string, unknown>> {
+      return baseTimeline.map((day, idx) => {
+        const aiDay = aiDays[idx] || {};
+        const aiBlocks = (aiDay.workBlocks as Array<{ title: string; startTime: string; endTime: string; duration: number; priority: number; taskIds: string[]; origin?: WorkBlockOrigin }> | undefined) || [];
+        
+        // Filter out empty work blocks (no tasks) and ensure origin: "ai" for AI-generated blocks
+        const validAIBlocks = aiBlocks
+          .filter(b => (b.taskIds?.length ?? 0) > 0)
+          .map(b => ({ ...b, origin: "ai" as const }));
+       
+       // Merge all blocks
+       const allBlocks = [...day.baseBlocks, ...validAIBlocks];
+       
+       // Sort chronologically by startTime
+       allBlocks.sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+       
+       return {
+         date: day.date,
+         dayNumber: day.dayNumber,
+         focusTheme: aiDay.focusTheme || "Task Execution",
+         estimatedWorkload: aiDay.estimatedWorkload || "Medium",
+         plannedFocusHours: aiDay.plannedFocusHours || allBlocks.reduce((sum, b) => sum + b.duration, 0) / 60,
+         workBlocks: allBlocks
+       };
+     });
+   }
+
+  /**
     * PURE AI Reasoning function for weekly scheduling.
     */
    private static async generateWeeklyScheduleLogic(
@@ -446,6 +623,15 @@ private static async modifySchedule(
     timezone: string,
     dailyCapacities: { day: string; date: string; minutes: number }[]
   ): Promise<Record<string, unknown>> {
+    const profile = context.profile;
+    
+    // Preprocess: Build structured unavailable windows
+    const startDate = new Date(startDateStr);
+    const unavailableWindows = SchedulingService.buildUnavailableWindows(profile, timezone, startDate);
+    const unavailableWindowsStr = unavailableWindows.map(uw => 
+      `${uw.date} (${uw.day}): ${uw.unavailableWindows.map(w => `${w.name}: ${w.startTime}-${w.endTime}`).join(", ")}`
+    ).join("\n");
+
     const systemInstruction = `
 You are the Human-Centric Weekly Planning Agent for Zenkai.
 Your mission is to distribute the user's active tasks across the next 7 days, starting from ${startDateStr}, in a way that respects their life model, availability constraints, and cognitive rhythm.
@@ -477,12 +663,20 @@ You must follow these 5 steps to design the weekly schedule:
 
 Your output must follow the requested JSON schema.
 `;
-    const profile = context.profile;
-
+    
     const capacitiesStr = dailyCapacities.map(c => `- ${c.day} (${c.date}): maximum ${c.minutes} work/study minutes`).join("\n");
+    
+    // Preprocess: Extract existing commitment names to prevent duplication
+    const existingCommitmentNames = (profile.commitments || []).map(c => c.name.toLowerCase());
+    const commitmentDeduplicationGuide = existingCommitmentNames.length > 0
+      ? `\nCRITICAL: The user already has these commitments: ${existingCommitmentNames.join(", ")}. DO NOT create duplicate work blocks with different names for these activities.`
+      : "";
 
     const prompt = `
 Create a realistic, human-centric 7-day schedule. Start Date: ${startDateStr}. Timezone: ${timezone}.
+
+## UNAVAILABLE TIME WINDOWS (DO NOT SCHEDULE WORK IN THESE)
+${unavailableWindowsStr}
 
 ## DAILY WORK/STUDY CAPACITY CONSTRAINTS
 CRITICAL: You MUST respect these daily work/study capacity limits. Under no circumstances should the combined duration of work/study blocks (excluding sleep, meals, and recurring commitments) on any given day exceed these available minutes:
@@ -498,14 +692,15 @@ ${JSON.stringify((activeTasks as Array<{ _id?: string; id?: string; title: strin
 CRITICAL: Even if the list of tasks to schedule is small or empty, DO NOT generate an empty weekly schedule.
 You must construct a realistic, believable daily structure based on the user's Life Model inputs:
 1. **Sleep boundaries**: Schedule rest and sleep blocks outside their wake/sleep times.
-2. **Fixed Obligations**: Always include their fixed recurring commitments (e.g., Office, Gym, College, Classes) at their specified start/end times.
+2. **Fixed Obligations**: Always include their fixed recurring commitments at their specified start/end times. DO NOT recreate them with different names.
 3. **Buffer & Routine Blocks**: Insert standard routine blocks:
    - "Travel / Transition Buffer" before and after fixed commitments if needed.
    - "Meals & Rest Buffers" (Lunch, Dinner).
-   - "Daily Study / Review Block" (e.g. 1.5 - 2 hours) for their long-term goal/focus (e.g. studying, placements, project building) during their preferred deep work time.
+   - "Daily Study / Review Block" (e.g. 1.5 - 2 hours) for their long-term goal/focus during their preferred deep work time.
    - "Daily Consistency / Habit Block" (e.g. 30 mins) for focus consistency.
    - "Rest & Recharge" blocks on weekends or evenings.
-4. If tasks are provided, schedule them inside the appropriate Daily Study, Routine, or Project work blocks (populating the \`taskIds\` array). If no tasks are provided or tasks are empty, create the work blocks anyway (e.g. "Focus Session" or "Gym Workout") and leave the \`taskIds\` array empty.
+4. **EMPTY WORK BLOCKS FORBIDDEN**: Every generated work block MUST contain at least one task in its \`taskIds\` array. If no tasks are relevant for a time slot, DO NOT create a work block there.
+${commitmentDeduplicationGuide}
 
 Each block must have a clear startTime and endTime, non-overlapping, and must feel believably structured.
 `;
@@ -598,7 +793,11 @@ Please fix this issue, ensure all days have exactly 1 date and a workBlocks arra
       result = AIValidationService.validateAndRepairSchedule(result, profile);
     }
 
-    return result;
+    // Build base timeline from profile and merge with AI output
+    const baseTimeline = SchedulingService.buildBaseTimeline(profile, startDate, timezone);
+    const mergedDays = SchedulingService.mergeTimelineWithAI(baseTimeline, result.days as Array<Record<string, unknown>>);
+    
+    return { ...result, days: mergedDays };
   }
 
   /**

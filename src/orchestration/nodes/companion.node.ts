@@ -27,6 +27,7 @@ import { BehaviorEngine } from "@/services/behavior-engine.service";
 import { ZenkaiEvent } from "../events/event-types";
 import type { InternalEvent } from "../events/event-types";
 import { ContextOrchestrator } from "@/services/context-orchestrator.service";
+import { PendingActionService } from "@/services/pending-action.service";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Streaming protocol helper — null-byte delimited control events
@@ -97,27 +98,6 @@ Focus on outcomes: celebrate progress briefly, reassure them that this moves the
 `.trim();
 }
 
-function buildExecutionAgendaPrompt(agenda: Record<string, unknown>): string {
-  const formattedBlocks = (agenda.formattedBlocks as string[]) ?? [];
-
-  return `
-## Today's Daily Agenda (Execution Plan):
-Date: ${agenda.date as string}
-Focus Theme: "${agenda.focusTheme as string}"
-Estimated Workload: "${agenda.estimatedWorkload as string}"
-Planned Focus Time: ${agenda.plannedFocusHours as number} hours
-
-Suggested Work Blocks & Tasks:
-${formattedBlocks.join("\n\n")}
-
-INSTRUCTIONS FOR COMPANION AGENT:
-- Address the user's execution query by explaining what is on their agenda today.
-- Reference their focus theme, workload, work blocks, and task priorities.
-- Do NOT talk about long-term roadmaps. Keep attention on "Today's Agenda".
-- Speak naturally. Do NOT say "according to the execution agent" or "your daily agenda".
-`.trim();
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Companion Node Function
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,6 +149,51 @@ export async function companionNode(
         goalToPlan,
         lifeEvents?.detectedEvents
       );
+    }
+
+    // ── 1b. schedule_modification — ask confirmation and save pending action
+    if (intentType === "schedule_modification" && intent?.scheduleOperation) {
+      const op = intent.scheduleOperation;
+
+      // Validate required fields based on operation type
+      const hasRequiredFields = op.type === "add_block"
+        ? !!(op.date && op.title && op.startTime && op.endTime)
+        : op.type === "delete_block"
+          ? !!(op.date && op.blockTitle)
+          : !!(op.date && op.blockTitle && op.startTime && op.endTime);
+
+      if (!hasRequiredFields) {
+        console.log(`[CompanionNode] ScheduleOperation missing required fields - skipping pending action`);
+      } else {
+        console.log(
+          `[CompanionNode] Schedule modification proposed — saving pending action before asking confirmation.`
+        );
+
+        // Store pending action for later confirmation
+        await PendingActionService.create(
+          state.conversationId,
+          "schedule_operation",
+          { scheduleOperation: op }
+        );
+
+        const opDescription = op.type === "add_block" ? (op.title ?? "work block") : (op.blockTitle ?? "work block");
+        const timeInfo = op.type !== "delete_block" && op.startTime && op.endTime ? `from ${op.startTime} to ${op.endTime}` : "";
+
+        planPromptText = `
+## Schedule Modification Proposed (Ask for Confirmation)
+The user has requested to modify their schedule. You must ask for explicit confirmation before proceeding.
+
+Requested change:
+- Type: ${op.type}
+- Date: ${op.date}
+- Details: ${opDescription}${timeInfo ? ` (${timeInfo})` : ""}
+
+Your response should:
+1. Confirm you understood the request
+2. Ask "Would you like me to add it?" or similar confirmation
+3. NOT proceed with the change yet
+`.trim();
+      }
     }
 
     // ── 1b. task_update ───────────────────────────────────────────────────────
@@ -362,6 +387,13 @@ IMPORTANT MEMORY & REFLECTION USAGE DIRECTIVES:
         streamController,
         encoder,
         makeStatusEvent("execution", "completed", "Scheduled today's work blocks.")
+      );
+    } else if (intentType === "schedule_modification" && intent?.scheduleOperation) {
+      // For schedule_modification, execution will run only after confirmation
+      enqueueEvent(
+        streamController,
+        encoder,
+        makeStatusEvent("execution", "skipped", "Waiting for your confirmation.")
       );
     } else if (intentType !== "create_or_modify") {
       enqueueEvent(

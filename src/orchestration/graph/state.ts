@@ -16,6 +16,7 @@ import type { IMemory } from "@/models/Memory";
 import type { NodeMetadata } from "./types";
 import type { InternalEvent } from "../events/event-types";
 import type { AICall } from "@/lib/telemetry-context";
+import type { PendingAction } from "@/models/PendingAction";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Routing Decision
@@ -104,8 +105,13 @@ export interface GraphState {
   graphVersion: string;
 
   // ── User Identity ────────────────────────────────────────────────────────
+  /** Unique ID for this workflow execution run — present in every log line */
   uid: string;
   conversationId: string;
+
+  // ── Pending Action ────────────────────────────────────────────────────────
+  /** Action awaiting user confirmation, stored before asking "Would you like me to add it?" */
+  pendingAction: PendingAction | null;
 
   // ── Input ────────────────────────────────────────────────────────────────
   userMessage: string;
@@ -219,6 +225,7 @@ export function createInitialState(overrides: Partial<GraphState> & {
     intent: null,
     lifeEvents: null,
     routingDecision: null,
+    pendingAction: null,
     memoryContext: null,
     activeTraits: [],
     activeReflections: [],
