@@ -55,7 +55,7 @@ export default function ProfileTab({ profile, onUpdate }: ProfileTabProps) {
 
     if (section === "identity") {
       setTempIdentity({
-        primaryIdentity: profile.primaryIdentity || "",
+        primaryIdentity: profile.primaryIdentity || profile.profession || "",
         country: profile.country || "India",
         state: profile.state || "",
         branchContext: profile.branchContext || {},
@@ -106,6 +106,7 @@ export default function ProfileTab({ profile, onUpdate }: ProfileTabProps) {
       if (editingSection === "identity") {
         await onUpdate({
           primaryIdentity: tempIdentity.primaryIdentity,
+          profession: IDENTITY_OPTIONS.find((o) => o.id === tempIdentity.primaryIdentity)?.label || tempIdentity.primaryIdentity,
           country: tempIdentity.country,
           state: tempIdentity.state,
           branchContext: tempIdentity.branchContext,
@@ -173,7 +174,10 @@ export default function ProfileTab({ profile, onUpdate }: ProfileTabProps) {
               <div className="flex justify-between items-baseline border-b border-border/40 pb-2">
                 <span className="text-muted-foreground">Primary Identity</span>
                 <span className="font-semibold text-foreground capitalize">
-                  {IDENTITY_OPTIONS.find((o) => o.id === profile?.primaryIdentity)?.label || profile?.primaryIdentity || "Not configured"}
+                  {(() => {
+                    const ident = profile?.primaryIdentity || profile?.profession;
+                    return IDENTITY_OPTIONS.find((o) => o.id === ident)?.label || ident || "Not configured";
+                  })()}
                 </span>
               </div>
               {profile?.branchContext && Object.keys(profile.branchContext).length > 0 && (

@@ -150,7 +150,7 @@ export default function You({ userName, initialTab = "overview", onNavigate }: Y
         </header>
 
         {/* Tab Selection Header bar */}
-        <div className="flex border-b border-border/45 gap-1 text-xs select-none">
+        <div className="flex border-b border-border/45 gap-1 text-xs select-none overflow-x-auto whitespace-nowrap scrollbar-none py-1 w-full max-w-full">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -158,7 +158,7 @@ export default function You({ userName, initialTab = "overview", onNavigate }: Y
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  "px-4 py-2.5 font-sans font-semibold border-b-2 tracking-wider uppercase transition-all duration-200 cursor-pointer outline-none",
+                  "px-4 py-2.5 font-sans font-semibold border-b-2 tracking-wider uppercase transition-all duration-200 cursor-pointer outline-none inline-block whitespace-nowrap shrink-0",
                   isActive
                     ? "border-accent text-foreground font-bold"
                     : "border-transparent text-muted-foreground hover:text-foreground"
