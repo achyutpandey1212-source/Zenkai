@@ -155,7 +155,7 @@ export default function Chat({
         }}
       >
         <Image
-          src="/assets/temples/temple_1_focus.png"
+          src="/assets/temples/temple_1_focus.webp"
           alt="Temple of Focus"
           fill
           priority
