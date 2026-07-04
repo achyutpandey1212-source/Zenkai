@@ -310,7 +310,7 @@ export default function Home({
               orbState === "idle" || orbState === "completion" ? "text-accent/50" : "text-accent animate-pulse"
             }`}
           >
-            {orbState === "idle" && "Zenkai Listening"}
+            {orbState === "idle" && "Zen Is Listening"}
             {orbState === "completion" && "Day Complete"}
             {orbState === "execution" && "Thinking..."}
             {orbState === "listening" && "Listening..."}

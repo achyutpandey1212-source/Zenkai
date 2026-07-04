@@ -183,9 +183,9 @@ export default function Chat({
                 : "text-accent animate-pulse"
             }`}
           >
-            {orbState === "idle" && "Zenkai Listening"}
-            {orbState === "listening" && "Zenkai Listening..."}
-            {orbState === "typing" && "Zenkai Listening..."}
+            {orbState === "idle" && "Zen Is Listening"}
+            {orbState === "listening" && "Zen Is Listening..."}
+            {orbState === "typing" && "Zen Is Listening..."}
             {orbState === "thinking" && (statusMessage || "Understanding your request...")}
             {orbState === "memory_retrieval" && "Memory retrieval..."}
             {orbState === "planning" && "Designing Roadmap..."}

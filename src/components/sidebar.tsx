@@ -18,6 +18,8 @@ import {
   PanelLeftClose,
   TrendingUp,
   User,
+  CreditCard,
+  LogOut,
 } from "lucide-react";
 
 export type ScreenType =
@@ -41,6 +43,8 @@ interface SidebarProps {
   onNewChat: () => void;
   userName?: string;
   userEmail?: string;
+  openSettingsModal?: (tab: "general" | "companion" | "integrations" | "billing" | "account" | "about") => void;
+  onSignOut?: () => void;
 }
 
 export default function Sidebar({
@@ -53,6 +57,8 @@ export default function Sidebar({
   onNewChat,
   userName = "",
   userEmail = "",
+  openSettingsModal,
+  onSignOut,
 }: SidebarProps) {
   interface SidebarConversation {
     _id: string;
@@ -65,6 +71,7 @@ export default function Sidebar({
   const [conversations, setConversations] = useState<SidebarConversation[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   // Load conversations on mount and when active conversation changes
   useEffect(() => {
@@ -90,7 +97,6 @@ export default function Sidebar({
     { id: "plans" as const, label: "Plans", icon: TrendingUp },
     { id: "tasks" as const, label: "Tasks", icon: CheckSquare },
     { id: "you" as const, label: "You", icon: User },
-    { id: "settings" as const, label: "Settings", icon: Settings },
   ];
 
   const menuItems = [
@@ -240,7 +246,9 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`fixed left-0 top-0 z-40 h-screen bg-secondary border-r border-border flex flex-col justify-between py-6 transition-all duration-300 ease-in-out overflow-x-hidden overflow-y-hidden ${
+      className={`fixed left-0 top-0 z-40 h-screen bg-secondary border-r border-border flex flex-col justify-between py-6 transition-all duration-300 ease-in-out ${
+        showProfileMenu ? "overflow-visible" : "overflow-x-hidden overflow-y-hidden"
+      } ${
         isExpanded ? "w-56 md:w-60" : "w-14 md:w-16"
       }`}
     >
@@ -419,23 +427,103 @@ export default function Sidebar({
           )}
         </button>
 
-        {/* User avatar */}
-        <div
-          className={`flex items-center gap-2.5 p-2 rounded-lg bg-background/30 overflow-hidden ${
-            isExpanded ? "px-3" : "justify-center"
-          }`}
-        >
-          <div className="h-7 w-7 rounded-full bg-accent/20 flex items-center justify-center text-accent font-heading font-bold text-xs shrink-0 uppercase">
-            {userName ? userName.charAt(0) : userEmail ? userEmail.charAt(0) : "U"}
-          </div>
-          {isExpanded && (
-            <div className="flex flex-col min-w-0">
-              <span className="font-sans text-xs font-medium text-foreground truncate">
-                {userName || "User"}
-              </span>
-              <span className="font-sans text-[10px] text-muted-foreground truncate">
-                {userEmail || "User Profile"}
-              </span>
+        {/* Profile Backdrop Click Close */}
+        {showProfileMenu && (
+          <div 
+            className="fixed inset-0 z-40 bg-transparent" 
+            onClick={() => setShowProfileMenu(false)}
+          />
+        )}
+
+        {/* User avatar / Clickable profile card */}
+        <div className="relative z-55">
+          <button
+            onClick={() => setShowProfileMenu(!showProfileMenu)}
+            className={`w-full flex items-center gap-2.5 p-2 rounded-lg bg-background/30 hover:bg-background/50 border border-border/10 cursor-pointer overflow-hidden transition-all ${
+              isExpanded ? "px-3" : "justify-center"
+            }`}
+          >
+            <div className="h-7 w-7 rounded-full bg-accent/20 flex items-center justify-center text-accent font-heading font-bold text-xs shrink-0 uppercase">
+              {userName ? userName.charAt(0) : userEmail ? userEmail.charAt(0) : "U"}
+            </div>
+            {isExpanded && (
+              <div className="flex flex-col min-w-0 text-left">
+                <span className="font-sans text-xs font-medium text-foreground truncate">
+                  {userName || "User"}
+                </span>
+                <span className="font-sans text-[10px] text-muted-foreground truncate">
+                  {userEmail || "User Profile"}
+                </span>
+              </div>
+            )}
+          </button>
+
+          {/* Context Dropdown Menu */}
+          {showProfileMenu && (
+            <div
+              className={`absolute bottom-full z-50 mb-2 w-52 bg-card border border-border rounded-xl shadow-xl p-2 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-150 ${
+                isExpanded ? "left-0" : "left-2"
+              }`}
+            >
+              <div className="px-2.5 py-2 border-b border-border/40 pb-2.5 mb-1.5 flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-full bg-accent/25 flex items-center justify-center text-accent font-heading font-bold text-xs shrink-0 uppercase">
+                  {userName ? userName.charAt(0) : userEmail ? userEmail.charAt(0) : "U"}
+                </div>
+                <div className="flex flex-col min-w-0 text-left">
+                  <span className="font-sans text-xs font-semibold text-foreground truncate block">
+                    {userName || "User"}
+                  </span>
+                  <span className="font-sans text-[9px] text-muted-foreground truncate block">
+                    {userEmail || ""}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowProfileMenu(false);
+                  openSettingsModal?.("account");
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg font-sans text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors text-left cursor-pointer"
+              >
+                <User size={13} className="text-muted-foreground/75" />
+                Manage Account
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowProfileMenu(false);
+                  openSettingsModal?.("general");
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg font-sans text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors text-left cursor-pointer"
+              >
+                <Settings size={13} className="text-muted-foreground/75" />
+                Settings
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowProfileMenu(false);
+                  openSettingsModal?.("billing");
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg font-sans text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors text-left cursor-pointer"
+              >
+                <CreditCard size={13} className="text-muted-foreground/75" />
+                Billing & Plans
+              </button>
+
+              <div className="border-t border-border/40 my-1" />
+
+              <button
+                onClick={() => {
+                  setShowProfileMenu(false);
+                  if (onSignOut) onSignOut();
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg font-sans text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 transition-colors font-semibold text-left cursor-pointer"
+              >
+                <LogOut size={13} className="text-red-500/80" />
+                Sign Out
+              </button>
             </div>
           )}
         </div>

@@ -7,11 +7,12 @@ import Chat from "./screens/chat";
 import Tasks from "./screens/tasks";
 import Identity from "./screens/identity";
 import Reflection from "./screens/reflection";
-import Settings from "./screens/settings";
 import You from "./screens/you";
 import Onboarding from "./onboarding";
 import MemoryDebug from "./screens/memory-debug";
 import Plans from "./screens/plans";
+import SettingsModal from "./settings/SettingsModal";
+import { SettingsTabType } from "./settings/SettingsSidebar";
 
 import { OrbState } from "./ui/companion-orb";
 
@@ -29,6 +30,8 @@ export default function Shell({ initialUser }: ShellProps) {
   const [tourStep, setTourStep] = useState<number | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [themeInitialized, setThemeInitialized] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabType>("general");
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(
     initialUser ? initialUser.onboardingCompleted : null
   );
@@ -191,7 +194,18 @@ export default function Shell({ initialUser }: ShellProps) {
     identity: { status: "idle" as const, message: "Waiting..." },
     reflection: { status: "idle" as const, message: "Waiting..." },
   });
-
+  const refreshUserData = async () => {
+    try {
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user?.name) setUserName(data.user.name);
+        if (data.user?.email) setUserEmail(data.user.email);
+      }
+    } catch (err) {
+      console.error("Failed to refresh user details:", err);
+    }
+  };
   // On mount: read onboardingCompleted from MongoDB (via /api/auth/me)
   // On mount: read onboardingCompleted and initialize theme settings
   useEffect(() => {
@@ -578,7 +592,7 @@ export default function Shell({ initialUser }: ShellProps) {
       case "you":
         return <You userName={userName} initialTab="overview" onNavigate={changeScreen} />;
       case "settings":
-        return <Settings />;
+        return null;
       case "memory":
         return <MemoryDebug />;
       default:
@@ -615,6 +629,26 @@ export default function Shell({ initialUser }: ShellProps) {
         onNewChat={handleNewChat}
         userName={userName}
         userEmail={userEmail}
+        openSettingsModal={(tab) => {
+          setActiveSettingsTab(tab);
+          setIsSettingsOpen(true);
+        }}
+        onSignOut={async () => {
+          try {
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("zenkai_onboarding_draft");
+              localStorage.removeItem("has_seen_tour");
+              localStorage.removeItem("show_first_draft_card");
+            }
+            const { signOut: firebaseSignOut } = await import("firebase/auth");
+            const { auth: firebaseAuth } = await import("@/lib/firebase");
+            await firebaseSignOut(firebaseAuth);
+            await fetch("/api/auth/logout", { method: "POST" });
+            window.location.href = "/login";
+          } catch (e) {
+            console.error("Signout error from sidebar trigger:", e);
+          }
+        }}
       />
       
       {/* Main Content Area */}
@@ -626,6 +660,19 @@ export default function Shell({ initialUser }: ShellProps) {
 
       {/* Product Tour Overlay */}
       {tourStep !== null && renderTourStep()}
+
+      {/* Global Center Overlay Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        activeTab={activeSettingsTab}
+        setActiveTab={setActiveSettingsTab}
+        isDarkMode={isDarkMode}
+        onToggleTheme={toggleTheme}
+        userName={userName}
+        userEmail={userEmail}
+        onRefreshUser={refreshUserData}
+      />
     </div>
   );
 }

@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { briefSettings, googleCalendarSettings } = body;
+    const { briefSettings, googleCalendarSettings, name } = body;
 
     await dbConnect();
 
@@ -123,6 +123,11 @@ export async function POST(request: Request) {
       if (googleCalendarSettings.deleteTasksAutomatically !== undefined) {
         updateFields["googleCalendarSettings.deleteTasksAutomatically"] = googleCalendarSettings.deleteTasksAutomatically;
       }
+    }
+
+    // 3. Map display name changes if provided
+    if (name !== undefined) {
+      updateFields["name"] = name;
     }
 
     if (Object.keys(updateFields).length === 0) {
