@@ -17,6 +17,7 @@ import {
   PanelLeftOpen,
   PanelLeftClose,
   TrendingUp,
+  User,
 } from "lucide-react";
 
 export type ScreenType =
@@ -27,7 +28,8 @@ export type ScreenType =
   | "identity"
   | "reflection"
   | "settings"
-  | "memory";
+  | "memory"
+  | "you";
 
 interface SidebarProps {
   currentScreen: ScreenType;
@@ -87,8 +89,7 @@ export default function Sidebar({
     { id: "chat" as const, label: "Companion Chat", icon: MessageSquare },
     { id: "plans" as const, label: "Plans", icon: TrendingUp },
     { id: "tasks" as const, label: "Tasks", icon: CheckSquare },
-    { id: "identity" as const, label: "Identity", icon: Compass },
-    { id: "reflection" as const, label: "Reflection", icon: BookOpen },
+    { id: "you" as const, label: "You", icon: User },
     { id: "settings" as const, label: "Settings", icon: Settings },
   ];
 

@@ -109,6 +109,7 @@ export async function POST(request: Request) {
               firebaseUid: uid,
               profession: resolvedProfession,
               primaryIdentity: profile.primaryIdentity || resolvedProfession,
+              state: profile.state || "",
               branchContext: profile.branchContext || {},
               longTermGoal: profile.longTermGoal || "",
               currentFocus: profile.currentFocus || "",

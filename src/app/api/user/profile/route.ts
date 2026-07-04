@@ -67,3 +67,40 @@ export async function GET() {
     );
   }
 }
+
+export async function POST(request: Request) {
+  try {
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get("session")?.value;
+
+    if (!sessionToken) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const user = await verifySession(sessionToken);
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+    const profile = await ProfileRepository.upsert({
+      ...body,
+      firebaseUid: user.firebaseUid,
+    });
+
+    return NextResponse.json({ success: true, profile });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Internal Server Error";
+    console.error("POST /api/user/profile error:", error);
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: 500 }
+    );
+  }
+}

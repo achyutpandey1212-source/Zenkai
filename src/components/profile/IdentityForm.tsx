@@ -523,5 +523,22 @@ export default function IdentityForm({ value, onChange, showBranchOnly = false }
     }
   };
 
-  return showBranchOnly ? renderBranchQuestions() : renderIdentitySelect();
+  if (showBranchOnly) {
+    return renderBranchQuestions();
+  }
+
+  return value.primaryIdentity ? (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={() => handleIdentitySelect("")}
+        className="text-xs text-accent hover:underline mb-2 flex items-center gap-1 font-semibold"
+      >
+        ← Change role selection ({IDENTITY_OPTIONS.find((o) => o.id === value.primaryIdentity)?.label})
+      </button>
+      {renderBranchQuestions()}
+    </div>
+  ) : (
+    renderIdentitySelect()
+  );
 }

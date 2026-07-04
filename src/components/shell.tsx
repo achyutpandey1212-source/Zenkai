@@ -8,6 +8,7 @@ import Tasks from "./screens/tasks";
 import Identity from "./screens/identity";
 import Reflection from "./screens/reflection";
 import Settings from "./screens/settings";
+import You from "./screens/you";
 import Onboarding from "./onboarding";
 import MemoryDebug from "./screens/memory-debug";
 import Plans from "./screens/plans";
@@ -571,9 +572,11 @@ export default function Shell({ initialUser }: ShellProps) {
       case "tasks":
         return <Tasks userName={userName} />;
       case "identity":
-        return <Identity />;
+        return <You userName={userName} initialTab="identity" onNavigate={changeScreen} />;
       case "reflection":
-        return <Reflection userName={userName} />;
+        return <You userName={userName} initialTab="reflection" onNavigate={changeScreen} />;
+      case "you":
+        return <You userName={userName} initialTab="overview" onNavigate={changeScreen} />;
       case "settings":
         return <Settings />;
       case "memory":

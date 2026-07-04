@@ -43,6 +43,7 @@ export interface IProfile extends Document {
   focusAreas?: string[];
   productivityChallenges?: string[];
   primaryIdentity?: string;
+  state?: string;
   branchContext?: Record<string, string>;
   createdAt: Date;
   updatedAt: Date;
@@ -93,6 +94,7 @@ const ProfileSchema = new Schema<IProfile>(
     focusAreas: { type: [String], default: [] },
     productivityChallenges: { type: [String], default: [] },
     primaryIdentity: { type: String },
+    state: { type: String },
     branchContext: { type: Schema.Types.Map, of: String, default: {} },
   },
   {

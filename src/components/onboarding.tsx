@@ -199,6 +199,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       profile: {
         primaryIdentity: identityValues.primaryIdentity,
         profession: IDENTITY_OPTIONS.find((o) => o.id === identityValues.primaryIdentity)?.label || "Other",
+        state: identityValues.state,
         branchContext: identityValues.branchContext,
         longTermGoal: goals.length > 0 ? goals[0].title : "Success",
         currentFocus: goals.length > 0 ? goals[0].title : "Success",
@@ -391,6 +392,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                     name,
                     primaryIdentity: identityValues.primaryIdentity,
                     profession: IDENTITY_OPTIONS.find((o) => o.id === identityValues.primaryIdentity)?.label || "Other",
+                    state: identityValues.state,
                     branchContext: identityValues.branchContext,
                     commitments,
                     longTermGoal: goals.length > 0 ? goals[0].title : "Success",

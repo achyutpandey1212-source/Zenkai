@@ -25,6 +25,7 @@ export type ProfileCreateInput = {
   focusAreas?: string[];
   productivityChallenges?: string[];
   primaryIdentity?: string;
+  state?: string;
   branchContext?: Record<string, string>;
 };
 
