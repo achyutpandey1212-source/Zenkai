@@ -255,27 +255,30 @@ export class ContextOrchestrator {
     // 5. Normalization mapping
     // timezone is already declared above
 
-    const normalizedProfile: NormalizedProfile = {
-      profession: profileDoc?.profession,
-      longTermGoal: profileDoc?.longTermGoal,
-      currentFocus: profileDoc?.currentFocus,
-      motivation: profileDoc?.motivation,
-      dailyAvailability: profileDoc?.dailyAvailability,
-      workStyle: profileDoc?.workStyle,
-      biggestChallenge: profileDoc?.biggestChallenge,
-      timezone,
-      calendarSynced: userDoc?.googleCalendarSettings?.connected === true,
-      age: profileDoc?.age,
-      country: profileDoc?.country,
-      locale: profileDoc?.locale,
-      commitments: profileDoc?.commitments,
-      wakeUpTime: profileDoc?.wakeUpTime,
-      sleepTime: profileDoc?.sleepTime,
-      goals: profileDoc?.goals,
-      schedulingStyle: profileDoc?.schedulingStyle,
-      focusDuration: profileDoc?.focusDuration,
-      deepWorkTime: profileDoc?.deepWorkTime,
-    };
+const normalizedProfile: NormalizedProfile = {
+       profession: profileDoc?.profession,
+       longTermGoal: profileDoc?.longTermGoal,
+       currentFocus: profileDoc?.currentFocus,
+       motivation: profileDoc?.motivation,
+       dailyAvailability: profileDoc?.dailyAvailability,
+       workStyle: profileDoc?.workStyle,
+       biggestChallenge: profileDoc?.biggestChallenge,
+       timezone,
+       calendarSynced: userDoc?.googleCalendarSettings?.connected === true,
+       age: profileDoc?.age,
+       country: profileDoc?.country,
+       locale: profileDoc?.locale,
+       commitments: profileDoc?.commitments,
+       wakeUpTime: profileDoc?.wakeUpTime,
+       sleepTime: profileDoc?.sleepTime,
+       goals: profileDoc?.goals,
+       schedulingStyle: profileDoc?.schedulingStyle,
+       focusDuration: profileDoc?.focusDuration,
+       deepWorkTime: profileDoc?.deepWorkTime,
+       roles: profileDoc?.roles,
+       focusAreas: profileDoc?.focusAreas,
+       productivityChallenges: profileDoc?.productivityChallenges,
+     };
 
     const activeTraitsList: NormalizedIdentityTrait[] = [];
     const candidateTraitsList: NormalizedIdentityTrait[] = [];

@@ -37,6 +37,9 @@ export interface IProfile extends Document {
   schedulingStyle?: "Strict" | "Flexible" | "Balanced";
   focusDuration?: number;
   deepWorkTime?: "Morning" | "Afternoon" | "Evening" | "Night";
+  roles?: string[];
+  focusAreas?: string[];
+  productivityChallenges?: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -80,6 +83,9 @@ const ProfileSchema = new Schema<IProfile>(
     schedulingStyle: { type: String, enum: ["Strict", "Flexible", "Balanced"], default: "Balanced" },
     focusDuration: { type: Number, default: 45 },
     deepWorkTime: { type: String, enum: ["Morning", "Afternoon", "Evening", "Night"], default: "Morning" },
+    roles: { type: [String], default: [] },
+    focusAreas: { type: [String], default: [] },
+    productivityChallenges: { type: [String], default: [] },
   },
   {
     timestamps: true,  // auto-manages createdAt + updatedAt

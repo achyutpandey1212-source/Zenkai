@@ -55,6 +55,9 @@ export async function POST(request: Request) {
       dailyAvailability,
       workStyle,
       biggestChallenge,
+      roles,
+      focusAreas,
+      productivityChallenges,
     } = body;
 
     // Validate required fields
@@ -82,6 +85,9 @@ export async function POST(request: Request) {
         dailyAvailability: dailyAvailability ?? "",
         workStyle: workStyle ?? "",
         biggestChallenge: biggestChallenge ?? "",
+        roles: roles || [],
+        focusAreas: focusAreas || [],
+        productivityChallenges: productivityChallenges || [],
       }),
       // 2. Update user name if provided, and mark onboarding complete
       name ? UserRepository.updateName(uid, name) : Promise.resolve(),

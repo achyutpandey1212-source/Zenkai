@@ -21,6 +21,9 @@ export type ProfileCreateInput = {
   schedulingStyle?: "Strict" | "Flexible" | "Balanced";
   focusDuration?: number;
   deepWorkTime?: "Morning" | "Afternoon" | "Evening" | "Night";
+  roles?: string[];
+  focusAreas?: string[];
+  productivityChallenges?: string[];
 };
 
 export type ProfileUpdateInput = Partial<Omit<ProfileCreateInput, "firebaseUid">>;

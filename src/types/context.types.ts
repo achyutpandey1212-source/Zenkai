@@ -162,6 +162,9 @@ export interface NormalizedProfile {
   schedulingStyle?: "Strict" | "Flexible" | "Balanced";
   focusDuration?: number;
   deepWorkTime?: "Morning" | "Afternoon" | "Evening" | "Night";
+  roles?: string[];
+  focusAreas?: string[];
+  productivityChallenges?: string[];
 }
 
 // ── The Consolidated Normalized Cache Package ──────────────────────────────
