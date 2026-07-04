@@ -60,7 +60,7 @@ export default function LoadingStep({
       <div className="relative w-36 h-36">
         <div className="absolute -inset-10 rounded-full bg-accent/20 blur-3xl opacity-80 animate-pulse" />
         <Image
-          src="/assets/orbs/companion_orb.png"
+          src="/assets/orbs/companion_orb.webp"
           alt="Companion Orb"
           fill
           priority

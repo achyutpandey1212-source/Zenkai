@@ -119,7 +119,7 @@ export default function SignupForm() {
         {/* Companion Orb Mini-Visual */}
         <div className="relative w-16 h-16 animate-float">
           <Image
-            src="/assets/orbs/companion_orb.png"
+            src="/assets/orbs/companion_orb.webp"
             alt="Companion Orb"
             fill
             sizes="64px"

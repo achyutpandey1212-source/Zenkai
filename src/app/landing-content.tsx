@@ -398,7 +398,7 @@ export default function LandingContent() {
           {/* Breathing Core Orb */}
           <div className={`relative w-[240px] h-[240px] ${orbClasses}`}>
             <Image
-              src="/assets/orbs/companion_orb.png"
+              src="/assets/orbs/companion_orb.webp"
               alt="Zen Intelligent Core"
               fill
               sizes="240px"
@@ -1499,7 +1499,7 @@ export default function LandingContent() {
           {/* Subtle Silhouette Background */}
           <div className="absolute inset-0 opacity-10 pointer-events-none select-none z-0">
             <Image
-              src="/assets/temples/temple_5_mastery.png"
+              src="/assets/temples/temple_5_mastery.webp"
               alt="Temple of Mastery"
               fill
               className="object-cover object-bottom"

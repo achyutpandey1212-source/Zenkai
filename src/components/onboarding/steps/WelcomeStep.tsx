@@ -14,7 +14,7 @@ export default function WelcomeStep({ name, onNameChange, onNext }: WelcomeStepP
     <div className="space-y-6 flex flex-col items-center max-w-md mx-auto text-center py-8 animate-in fade-in duration-500">
       <div className="relative w-28 h-28 mb-2 animate-float">
         <Image
-          src="/assets/orbs/companion_orb.png"
+          src="/assets/orbs/companion_orb.webp"
           alt="Companion Orb"
           fill
           priority

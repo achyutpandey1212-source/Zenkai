@@ -289,7 +289,7 @@ Treat it as a character.
 
 Files:
 
-companion_orb.png
+companion_orb.webp
 
 Location:
 

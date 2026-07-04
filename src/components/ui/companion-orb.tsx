@@ -69,7 +69,7 @@ export default function CompanionOrb({ state, size = "md", className = "" }: Com
       {/* Orb Image with state-dependent animation */}
       <div className={`relative w-full h-full transition-transform duration-1000 ${orbClasses}`}>
         <Image
-          src="/assets/orbs/companion_orb.png"
+          src="/assets/orbs/companion_orb.webp"
           alt="Zenkai Companion Orb"
           fill
           priority
