@@ -10,6 +10,8 @@ export interface ICommitment {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   days: string[]; // e.g. ["Monday", "Tuesday"]
+  type?: string;
+  location?: string;
 }
 
 export interface IProfileGoal {
@@ -40,6 +42,8 @@ export interface IProfile extends Document {
   roles?: string[];
   focusAreas?: string[];
   productivityChallenges?: string[];
+  primaryIdentity?: string;
+  branchContext?: Record<string, string>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -50,6 +54,8 @@ const CommitmentSchema = new Schema<ICommitment>(
     startTime: { type: String, required: true },
     endTime: { type: String, required: true },
     days: { type: [String], required: true },
+    type: { type: String },
+    location: { type: String },
   },
   { _id: false }
 );
@@ -86,6 +92,8 @@ const ProfileSchema = new Schema<IProfile>(
     roles: { type: [String], default: [] },
     focusAreas: { type: [String], default: [] },
     productivityChallenges: { type: [String], default: [] },
+    primaryIdentity: { type: String },
+    branchContext: { type: Schema.Types.Map, of: String, default: {} },
   },
   {
     timestamps: true,  // auto-manages createdAt + updatedAt

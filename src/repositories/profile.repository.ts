@@ -24,6 +24,8 @@ export type ProfileCreateInput = {
   roles?: string[];
   focusAreas?: string[];
   productivityChallenges?: string[];
+  primaryIdentity?: string;
+  branchContext?: Record<string, string>;
 };
 
 export type ProfileUpdateInput = Partial<Omit<ProfileCreateInput, "firebaseUid">>;

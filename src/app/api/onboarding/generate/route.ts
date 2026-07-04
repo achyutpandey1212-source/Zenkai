@@ -104,30 +104,33 @@ export async function POST(request: Request) {
             await Memory.deleteMany({ firebaseUid: uid, reason: "Seeded from onboarding profile" });
           }
 
-await ProfileRepository.upsert({
-             firebaseUid: uid,
-             profession: profile.profession || "Other",
-             longTermGoal: profile.longTermGoal || "",
-             currentFocus: profile.currentFocus || "",
-             motivation: profile.motivation || "",
-             dailyAvailability: profile.dailyAvailability || "",
-             workStyle: profile.workStyle || "",
-             biggestChallenge: profile.biggestChallenge || "",
-             timezone,
-             age: profile.age ? Number(profile.age) : undefined,
-             country: profile.country || undefined,
-             locale: profile.locale || undefined,
-             commitments: commitments || [],
-             wakeUpTime: profile.wakeUpTime || "07:00",
-             sleepTime: profile.sleepTime || "23:00",
-             goals: goals || [],
-             schedulingStyle: profile.schedulingStyle || "Balanced",
-             focusDuration: profile.focusDuration ? Number(profile.focusDuration) : 45,
-             deepWorkTime: profile.deepWorkTime || "Morning",
-             roles: profile.roles || [],
-             focusAreas: profile.focusAreas || [],
-             productivityChallenges: profile.productivityChallenges || [],
-           });
+            const resolvedProfession = profile.primaryIdentity || profile.profession || "Other";
+            await ProfileRepository.upsert({
+              firebaseUid: uid,
+              profession: resolvedProfession,
+              primaryIdentity: profile.primaryIdentity || resolvedProfession,
+              branchContext: profile.branchContext || {},
+              longTermGoal: profile.longTermGoal || "",
+              currentFocus: profile.currentFocus || "",
+              motivation: profile.motivation || "",
+              dailyAvailability: profile.dailyAvailability || "",
+              workStyle: profile.workStyle || "",
+              biggestChallenge: profile.biggestChallenge || "",
+              timezone,
+              age: profile.age ? Number(profile.age) : undefined,
+              country: profile.country || undefined,
+              locale: profile.locale || undefined,
+              commitments: commitments || [],
+              wakeUpTime: profile.wakeUpTime || "07:00",
+              sleepTime: profile.sleepTime || "23:00",
+              goals: goals || [],
+              schedulingStyle: profile.schedulingStyle || "Balanced",
+              focusDuration: profile.focusDuration ? Number(profile.focusDuration) : 45,
+              deepWorkTime: profile.deepWorkTime || "Morning",
+              roles: profile.roles || [],
+              focusAreas: profile.focusAreas || [],
+              productivityChallenges: profile.productivityChallenges || [],
+            });
 
           // Insert goals (if not already seeded)
           const existingGoalsCount = await Goal.countDocuments({ firebaseUid: uid });

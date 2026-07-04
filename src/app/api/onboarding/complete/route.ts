@@ -49,6 +49,9 @@ export async function POST(request: Request) {
     const {
       name,
       profession,
+      primaryIdentity,
+      branchContext,
+      commitments,
       longTermGoal,
       currentFocus,
       motivation,
@@ -60,12 +63,14 @@ export async function POST(request: Request) {
       productivityChallenges,
     } = body;
 
+    const resolvedProfession = primaryIdentity || profession;
+
     // Validate required fields
-    if (!profession || !longTermGoal || !currentFocus) {
+    if (!resolvedProfession || !longTermGoal || !currentFocus) {
       return NextResponse.json(
         {
           success: false,
-          error: "Missing required fields: profession, longTermGoal, currentFocus",
+          error: "Missing required fields: profession/primaryIdentity, longTermGoal, currentFocus",
         },
         { status: 400 }
       );
@@ -78,7 +83,10 @@ export async function POST(request: Request) {
       // 1. Create or update profile document
       ProfileRepository.upsert({
         firebaseUid: uid,
-        profession,
+        profession: resolvedProfession,
+        primaryIdentity: primaryIdentity || resolvedProfession,
+        branchContext: branchContext || {},
+        commitments: commitments || [],
         longTermGoal,
         currentFocus,
         motivation: motivation ?? "",
