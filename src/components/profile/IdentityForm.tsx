@@ -19,9 +19,10 @@ interface IdentityFormProps {
   // During onboarding, we might want to split this form into multiple sub-steps/views (e.g. Identity choice first, then details)
   // We can pass `showOnly` prop to control which part is visible, or let it handle its own internal state.
   showBranchOnly?: boolean;
+  disableInlineSwitch?: boolean;
 }
 
-export default function IdentityForm({ value, onChange, showBranchOnly = false }: IdentityFormProps) {
+export default function IdentityForm({ value, onChange, showBranchOnly = false, disableInlineSwitch = false }: IdentityFormProps) {
   const [showCountryInput, setShowCountryInput] = useState(
     value.country && value.country.toLowerCase() !== "india"
   );
@@ -525,6 +526,10 @@ export default function IdentityForm({ value, onChange, showBranchOnly = false }
 
   if (showBranchOnly) {
     return renderBranchQuestions();
+  }
+
+  if (disableInlineSwitch) {
+    return renderIdentitySelect();
   }
 
   return value.primaryIdentity ? (

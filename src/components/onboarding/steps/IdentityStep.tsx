@@ -22,7 +22,7 @@ export default function IdentityStep({ value, onChange, onNext, onBack }: Identi
       onBack={onBack}
       nextDisabled={isNextDisabled}
     >
-      <IdentityForm value={value} onChange={onChange} />
+      <IdentityForm value={value} onChange={onChange} disableInlineSwitch={true} />
     </StepLayout>
   );
 }
