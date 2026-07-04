@@ -5,7 +5,7 @@ import Image from "next/image";
 
 export default function AboutSettings() {
   const handleSayHello = () => {
-    window.location.href = "mailto:achyutpandey1212@gmail.com?subject=Hello%20from%20Zen";
+    window.location.href = "achyutpandey1212@gmail.com?subject=Hello%20from%20Zen";
   };
 
   const lookingForRoles = [
@@ -222,7 +222,7 @@ export default function AboutSettings() {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md mx-auto">
           {/* GitHub Button */}
           <a
-            href="https://github.com/achyutpandey1212"
+            href="https://github.com/achyutpandey1212-source"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full sm:flex-1 py-2.5 px-4 rounded-xl border border-border/60 bg-card hover:bg-secondary/40 hover:border-accent/40 font-sans text-xs text-muted-foreground hover:text-foreground transition-all duration-200 flex items-center justify-center gap-2 group active:scale-95"
@@ -239,7 +239,7 @@ export default function AboutSettings() {
 
           {/* LinkedIn Button */}
           <a
-            href="https://linkedin.com"
+            href="https://www.linkedin.com/in/achyut-pandey-122a87323/"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full sm:flex-1 py-2.5 px-4 rounded-xl border border-border/60 bg-card hover:bg-secondary/40 hover:border-accent/40 font-sans text-xs text-muted-foreground hover:text-foreground transition-all duration-200 flex items-center justify-center gap-2 group active:scale-95"
