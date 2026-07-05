@@ -6,6 +6,8 @@ import CompanionOrb, { OrbState } from "../ui/companion-orb";
 import { Sparkles, ChevronDown, ChevronRight, CheckCircle2, Circle, AlertCircle, Compass } from "lucide-react";
 import MarkdownRenderer from "../ui/markdown-renderer";
 
+import CommandPalette from "../ui/command-palette";
+
 interface AgentWorkflowItem {
   status: "idle" | "running" | "completed" | "skipped";
   message: string;
@@ -26,6 +28,8 @@ interface ChatProps {
     reflection: AgentWorkflowItem;
   };
   onNavigate: (screen: "home" | "chat" | "plans" | "tasks" | "identity" | "reflection" | "settings") => void;
+  pendingAction: any | null;
+  onActionRespond: (decision: "yes" | "no" | "later" | "replace" | "reorganize") => Promise<void>;
 }
 
 const quickActions = [
@@ -44,8 +48,11 @@ export default function Chat({
   userName,
   workflow,
   onNavigate,
+  pendingAction,
+  onActionRespond,
 }: ChatProps) {
   const [inputText, setInputText] = useState("");
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [workflowExpanded, setWorkflowExpanded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -68,6 +75,7 @@ export default function Chat({
     const val = e.target.value;
     setInputText(val);
     setOrbState(val.trim() ? "typing" : "idle");
+    setIsPaletteOpen(val.startsWith("/"));
   };
 
   const handleSend = async (e?: React.FormEvent) => {
@@ -76,10 +84,18 @@ export default function Chat({
     const textToSend = inputText;
     setInputText("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
+    setIsPaletteOpen(false);
     await sendMessage(textToSend);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isPaletteOpen && ["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) {
+      e.preventDefault();
+      const event = new CustomEvent("command-palette-key", { detail: e.key });
+      window.dispatchEvent(event);
+      return;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -413,8 +429,97 @@ export default function Chat({
         {/* ─── Input Area ─── */}
         <div className="w-full max-w-4xl px-4 shrink-0 pt-3 pb-7 z-10">
 
+          {/* Confirmation Action Chips */}
+          {pendingAction && pendingAction.type === "schedule_conflict" ? (
+            <div className="flex flex-col gap-4 bg-card border border-red-500/20 hover:border-red-500/40 rounded-2xl p-5 max-w-md mx-auto shadow-xl transition-all duration-300 animate-slide-down-fade font-sans mb-4">
+              <div className="flex items-center gap-2 text-red-500 font-bold text-xs tracking-wider uppercase">
+                ⚠️ Conflict Detected
+              </div>
+              
+              <div className="flex flex-col gap-1.5 border-t border-b border-border/25 py-3">
+                <span className="text-[9px] font-bold text-muted-foreground uppercase">New Block</span>
+                <span className="text-xs font-semibold text-foreground px-1">
+                  • {pendingAction.payload?.scheduleOperation?.title || pendingAction.payload?.scheduleOperation?.blockTitle || "Suggested Block"}
+                </span>
+                <span className="text-[10px] text-muted-foreground/80 px-4 font-mono">
+                  {pendingAction.payload?.scheduleOperation?.date} ({pendingAction.payload?.scheduleOperation?.startTime || pendingAction.payload?.scheduleOperation?.newStartTime} — {pendingAction.payload?.scheduleOperation?.endTime || pendingAction.payload?.scheduleOperation?.newEndTime})
+                </span>
+
+                <span className="text-[9px] font-bold text-muted-foreground uppercase mt-2">Conflicts with</span>
+                {pendingAction.payload?.conflicts?.map((conflict: any) => (
+                  <div key={conflict.title + conflict.startTime} className="flex flex-col px-1 gap-0.5">
+                    <span className="text-xs font-medium text-foreground">• {conflict.title}</span>
+                    <span className="text-[10px] text-muted-foreground/85 font-mono px-3">({conflict.startTime} — {conflict.endTime})</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-[10px] text-muted-foreground/85 text-center leading-relaxed">
+                Choose what Zen should do:
+              </div>
+
+              <div className="flex gap-2 flex-col w-full">
+                <button
+                  type="button"
+                  onClick={() => onActionRespond("replace")}
+                  className="w-full py-2 rounded-xl bg-accent text-accent-foreground text-xs font-bold hover:bg-accent/85 transition-all duration-200 shadow-sm cursor-pointer"
+                >
+                  Replace Block
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onActionRespond("reorganize")}
+                  className="w-full py-2 rounded-xl border border-border bg-background hover:bg-secondary text-xs font-bold transition-all duration-200 cursor-pointer text-foreground"
+                >
+                  Move Everything Else
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onActionRespond("no")}
+                  className="w-full py-1.5 rounded-xl bg-secondary/40 text-muted-foreground hover:text-foreground text-xs font-semibold transition-all duration-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : pendingAction && (
+            <div className="flex flex-col gap-2.5 items-center justify-center mb-4 transition-all duration-300 animate-slide-down-fade bg-card border border-accent/30 rounded-2xl p-4 max-w-md mx-auto shadow-md">
+              <span className="text-[10px] font-sans text-accent tracking-widest font-bold uppercase">
+                Confirmation Required
+              </span>
+              <span className="text-xs font-sans text-foreground/80 font-medium text-center px-2 leading-relaxed">
+                {pendingAction.type === "schedule_modification" 
+                  ? `Apply this block suggestion: "${pendingAction.payload?.scheduleOperation?.title || pendingAction.payload?.scheduleOperation?.blockTitle || 'suggested block'}" on ${pendingAction.payload?.scheduleOperation?.date}?`
+                  : "Would you like to execute the proposed changes?"}
+              </span>
+              <div className="flex gap-2 justify-center w-full mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => onActionRespond("yes")}
+                  className="px-5 py-1.5 rounded-full bg-accent text-accent-foreground text-xs font-semibold hover:bg-accent/85 transition-all duration-200 shadow-sm cursor-pointer"
+                >
+                  Yes, Apply
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onActionRespond("no")}
+                  className="px-5 py-1.5 rounded-full border border-border bg-background hover:bg-secondary text-xs font-semibold transition-all duration-200 cursor-pointer"
+                >
+                  No, Decline
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onActionRespond("later")}
+                  className="px-4 py-1.5 rounded-full bg-secondary/40 text-muted-foreground hover:text-foreground text-xs font-semibold transition-all duration-200 cursor-pointer"
+                >
+                  Maybe Later
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Quick action chips */}
-          {((messages.length === 0) || (orbState === "idle" && messages[messages.length - 1]?.role === "assistant")) && (
+          {!pendingAction && ((messages.length === 0) || (orbState === "idle" && messages[messages.length - 1]?.role === "assistant")) && (
             <div className="flex flex-wrap gap-2 justify-center mb-4 transition-all duration-300">
               {quickActions.map((action) => (
                 <button
@@ -431,12 +536,24 @@ export default function Chat({
 
           {/* Input form */}
           <form onSubmit={handleSend} className="relative w-full">
+            {/* Command Palette Overlay */}
+            <CommandPalette
+              isOpen={isPaletteOpen}
+              onClose={() => setIsPaletteOpen(false)}
+              onExecute={async (cmdText) => {
+                setInputText("");
+                await sendMessage(cmdText);
+              }}
+              inputValue={inputText}
+              setInputValue={setInputText}
+            />
+
             <div className="w-full bg-secondary/80 hover:bg-secondary focus-within:bg-secondary border border-border/50 focus-within:border-accent/40 focus-within:ring-1 focus-within:ring-accent/30 rounded-2xl shadow-sm focus-within:shadow-md transition-all duration-300 flex flex-col px-5 pt-4 pb-3 gap-3">
               
               <textarea
                 ref={textareaRef}
                 rows={1}
-                placeholder="Speak with Zenkai..."
+                placeholder='Speak with Zen... or type "/" to see commands'
                 value={inputText}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}

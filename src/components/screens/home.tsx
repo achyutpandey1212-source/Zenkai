@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import CompanionOrb, { OrbState } from "../ui/companion-orb";
 import { Sparkles, ArrowRight, BookOpen, CheckSquare, Compass, Calendar as CalendarIcon, Check } from "lucide-react";
+import CommandPalette from "../ui/command-palette";
 
 interface HomeProps {
   sendMessage: (text: string) => Promise<void>;
@@ -30,6 +31,7 @@ export default function Home({
   onNavigate,
 }: HomeProps) {
   const [query, setQuery] = useState("");
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [proactiveData, setProactiveData] = useState<ProactiveData | null>(null);
   
   // Weekly Schedule State
@@ -217,6 +219,7 @@ export default function Home({
     const val = e.target.value;
     setQuery(val);
     setOrbState(val.trim() ? "typing" : "idle");
+    setIsPaletteOpen(val.startsWith("/"));
   };
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -225,6 +228,7 @@ export default function Home({
     const textToSend = query;
     setQuery("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
+    setIsPaletteOpen(false);
 
     if (onNavigate) {
       onNavigate("chat");
@@ -233,6 +237,13 @@ export default function Home({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isPaletteOpen && ["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) {
+      e.preventDefault();
+      const event = new CustomEvent("command-palette-key", { detail: e.key });
+      window.dispatchEvent(event);
+      return;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -557,12 +568,27 @@ export default function Home({
           </div>
 
           <form onSubmit={handleSubmit} className="relative w-full">
+            {/* Command Palette Overlay */}
+            <CommandPalette
+              isOpen={isPaletteOpen}
+              onClose={() => setIsPaletteOpen(false)}
+              onExecute={async (cmdText) => {
+                setQuery("");
+                if (onNavigate) {
+                  onNavigate("chat");
+                }
+                await sendMessage(cmdText);
+              }}
+              inputValue={query}
+              setInputValue={setQuery}
+            />
+
             <div className="w-full bg-secondary/80 hover:bg-secondary focus-within:bg-secondary border border-border/50 focus-within:border-accent/40 focus-within:ring-1 focus-within:ring-accent/30 rounded-2xl shadow-sm focus-within:shadow-md transition-all duration-300 flex flex-col px-5 pt-4 pb-3 gap-3">
               
               <textarea
                 ref={textareaRef}
                 rows={1}
-                placeholder="Speak with Zenkai..."
+                placeholder='Speak with Zen... or type "/" to see commands'
                 value={query}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}

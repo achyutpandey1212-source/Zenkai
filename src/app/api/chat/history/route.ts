@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth-service";
 import { MessageRepository } from "@/repositories/message.repository";
+import { PendingActionService } from "@/services/pending-action.service";
 
 export const dynamic = "force-dynamic";
 
@@ -62,10 +63,14 @@ export async function GET(request: Request) {
     // 3. Load all messages in chronological order
     const messages = await MessageRepository.findMessagesByConversation(conversationId);
 
+    // 4. Load active pending action
+    const pendingAction = await PendingActionService.getActive(conversationId);
+
     return NextResponse.json({
       success: true,
       conversation: activeConversation,
       messages: messages,
+      pendingAction: pendingAction
     });
   } catch (error) {
     console.error("GET /api/chat/history Error:", error);

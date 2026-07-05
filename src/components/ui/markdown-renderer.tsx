@@ -38,16 +38,16 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
           blockquote: ({ ...props }) => (
             <blockquote className="pl-4 border-l-2 border-accent/60 italic text-muted-foreground my-4 bg-secondary/20 py-1 pr-2 rounded-r" {...props} />
           ),
+          pre: ({ ...props }) => (
+            <pre className="my-4 p-4 rounded-xl bg-secondary border border-border/40 overflow-x-auto font-mono text-[13px] leading-relaxed text-foreground scrollbar-custom" {...props} />
+          ),
           code({ inline, className, children, ...props }: any) {
-            const match = /language-(\w+)/.exec(className || "");
-            return !inline ? (
-              <pre className="my-4 p-4 rounded-xl bg-secondary border border-border/40 overflow-x-auto font-mono text-[13px] leading-relaxed text-foreground scrollbar-custom">
-                <code className={className} {...props}>
-                  {children}
-                </code>
-              </pre>
-            ) : (
+            return inline ? (
               <code className="px-1.5 py-0.5 rounded-md bg-secondary text-accent font-mono text-[12.5px] font-medium" {...props}>
+                {children}
+              </code>
+            ) : (
+              <code className={className} {...props}>
                 {children}
               </code>
             );

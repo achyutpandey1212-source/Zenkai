@@ -25,6 +25,8 @@ import { createInitialState } from "@/orchestration/graph/state";
 import { invokeMainGraph } from "@/orchestration/graphs/main.graph";
 import { dbConnect } from "@/lib/mongodb";
 import { PendingActionService } from "@/services/pending-action.service";
+import { CommandParser } from "@/lib/command-parser";
+import { CommandDispatcher } from "@/lib/command-dispatcher";
 
 // ── Route config ───────────────────────────────────────────────────────────────
 export const dynamic = "force-dynamic";
@@ -155,6 +157,86 @@ export async function POST(request: Request) {
     await MessageRepository.addMessage(conversationId, "user", message);
 
     console.log(`[Chat] New workflow: ${workflowId} | uid=${user.firebaseUid}`);
+
+    // ── 6a. Check for Slash Command ─────────────────────────────────────────────
+    if (CommandParser.isCommand(message)) {
+      console.log(`[Command] Detected command message: ${message}`);
+      const parsed = CommandParser.parse(message);
+      const encoder = new TextEncoder();
+
+      const customStream = new ReadableStream({
+        async start(controller) {
+          try {
+            if (!parsed) {
+              const statusEvent = `\0${JSON.stringify({
+                __type: "status",
+                agent: "execution",
+                status: "skipped",
+                message: "Invalid command syntax."
+              })}\0`;
+              controller.enqueue(encoder.encode(statusEvent));
+              const reply = "Sorry, that command syntax was not recognized. Please type `/` to see the available commands.";
+              await MessageRepository.addMessage(parsedConversationId, "assistant", reply);
+              controller.enqueue(encoder.encode(reply));
+              controller.close();
+              return;
+            }
+
+            // Stream running status
+            const category = parsed.commandId.split(".")[0];
+            const startStatus = `\0${JSON.stringify({
+              __type: "status",
+              agent: category,
+              status: "running",
+              message: `Executing ${parsed.commandId}...`
+            })}\0`;
+            controller.enqueue(encoder.encode(startStatus));
+
+            // Dispatch command
+            const result = await CommandDispatcher.dispatch(
+              user.firebaseUid,
+              parsed.commandId,
+              parsed.args,
+              parsedConversationId
+            );
+
+            // Stream completion status
+            const finalStatus = `\0${JSON.stringify({
+              __type: "status",
+              agent: category,
+              status: result.success ? "completed" : "skipped",
+              message: result.success ? "Success" : result.message
+            })}\0`;
+            controller.enqueue(encoder.encode(finalStatus));
+
+            // Persist output message to database
+            await MessageRepository.addMessage(parsedConversationId, "assistant", result.message);
+
+            // Stream final text chunk
+            controller.enqueue(encoder.encode(result.message));
+            controller.close();
+          } catch (err: any) {
+            console.error("[Command] Critical route failure:", err);
+            const errReply = "An error occurred during command execution.";
+            controller.enqueue(encoder.encode(errReply));
+            controller.close();
+          } finally {
+            if (lockAcquired && parsedConversationId) {
+              activeLocks.delete(parsedConversationId);
+            }
+          }
+        }
+      });
+
+      return new Response(customStream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Transfer-Encoding": "chunked",
+          "x-conversation-id": conversationId,
+          "x-workflow-id": workflowId,
+        },
+      });
+    }
 
     // ── 7. Load pending action for conversation ────────────────────────────────────
     const pendingAction = await PendingActionService.getActive(conversationId);

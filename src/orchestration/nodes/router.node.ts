@@ -177,6 +177,7 @@ export async function routerNode(
     }
 
     // 1. Try deterministic local shortcuts first
+    console.log(`[Conversation] AI request: "${state.userMessage}"`);
     const shortcut = PlanningAgent.detectLocalIntentShortcut(state.userMessage, state.history);
 
     if (shortcut) {
@@ -192,6 +193,10 @@ export async function routerNode(
       maxAiCallsAllowed = merged.budget;
       callsMade = 1;
       console.log(`[Router] Gemini unified routing complete. Intent: ${intent.type} | Life signals: ${lifeEvents.suggestsPlanning} | Budget: ${maxAiCallsAllowed}`);
+    }
+
+    if (intent.type === "create_or_modify") {
+      console.log(`[Planner] Weekly planning/roadmap evolution initiated.`);
     }
 
     const routingDecision = buildRoutingDecision(

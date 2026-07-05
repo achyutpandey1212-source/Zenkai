@@ -180,6 +180,7 @@ export default function Shell({ initialUser }: ShellProps) {
     tasksCreated: number;
     agendaBuilt: boolean;
   } | null>(null);
+  const [pendingAction, setPendingAction] = useState<any | null>(null);
 
   // Tracks the last plan version the frontend has acknowledged.
   // When the stream emits plan_version: N and N > lastKnownPlanVersion,
@@ -194,6 +195,55 @@ export default function Shell({ initialUser }: ShellProps) {
     identity: { status: "idle" as const, message: "Waiting..." },
     reflection: { status: "idle" as const, message: "Waiting..." },
   });
+
+  const onActionRespond = async (decision: "yes" | "no" | "later" | "replace" | "reorganize") => {
+    if (!activeConversation) return;
+    setOrbState("thinking");
+    setStatusMessage("Applying decision...");
+
+    try {
+      const res = await fetch("/api/actions/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision,
+          conversationId: activeConversation._id,
+          actionId: pendingAction?._id
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("Confirmation request failed");
+      }
+
+      const data = await res.json();
+      
+      if (decision === "yes" || decision === "no" || decision === "replace" || decision === "reorganize") {
+        setPendingAction(null);
+      }
+
+      setOrbState("completion");
+      setStatusMessage("Done ✓");
+      setTimeout(() => {
+        setOrbState("idle");
+        setStatusMessage("");
+      }, 1000);
+
+      // Re-fetch conversation history
+      const historyRes = await fetch(`/api/chat/history?conversationId=${activeConversation._id}`);
+      if (historyRes.ok) {
+        const historyData = await historyRes.json();
+        if (historyData.success) {
+          setMessages(historyData.messages || []);
+          setPendingAction(historyData.pendingAction || null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to respond to pending action:", err);
+      setOrbState("idle");
+      setStatusMessage("Response failed.");
+    }
+  };
   const refreshUserData = async () => {
     try {
       const res = await fetch("/api/auth/me");
@@ -254,6 +304,7 @@ export default function Shell({ initialUser }: ShellProps) {
             setActiveConversation(data.conversation);
             const loadedMessages = data.messages || [];
             setMessages(loadedMessages);
+            setPendingAction(data.pendingAction || null);
             if (loadedMessages.length > 0) {
               setHasStartedChat(true);
             }
@@ -463,12 +514,13 @@ export default function Shell({ initialUser }: ShellProps) {
       }, 1200);
 
       // 5. Fetch fresh canonical messages list with exact database IDs and timestamps
-      const historyRes = await fetch("/api/chat/history");
+      const historyRes = await fetch("/api/chat/history" + (activeConversation ? `?conversationId=${activeConversation._id}` : ""));
       if (historyRes.ok) {
         const historyData = await historyRes.json();
         if (historyData.success && historyData.conversation) {
           setActiveConversation(historyData.conversation);
           setMessages(historyData.messages || []);
+          setPendingAction(historyData.pendingAction || null);
         }
       }
     } catch (err) {
@@ -579,6 +631,8 @@ export default function Shell({ initialUser }: ShellProps) {
             userName={userName}
             workflow={workflow}
             onNavigate={changeScreen}
+            pendingAction={pendingAction}
+            onActionRespond={onActionRespond}
           />
         );
       case "plans":
