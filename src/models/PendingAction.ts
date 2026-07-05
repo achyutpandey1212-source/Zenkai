@@ -55,7 +55,6 @@ const PendingActionSchema = new Schema<IPendingAction>(
 );
 
 PendingActionSchema.index({ conversationId: 1, type: 1 });
-PendingActionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const PendingActionModel: Model<IPendingAction> =
   mongoose.models.PendingAction ||
