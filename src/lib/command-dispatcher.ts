@@ -52,20 +52,30 @@ export class CommandDispatcher {
     if (validation.hasConflict) {
       console.log(`[Command] Conflict detected. Creating schedule_conflict PendingAction.`);
       
-      const opType = commandId.startsWith("schedule.add") 
-        ? "add_block" 
-        : commandId.startsWith("schedule.move") 
-          ? "move_block" 
-          : "resize_block";
+      let opType: "add_block" | "move_block" | "resize_block" | "delete_block" | "create_task" | "edit_task";
+      if (commandId === "task.create") {
+        opType = "create_task";
+      } else if (commandId === "task.edit") {
+        opType = "edit_task";
+      } else if (commandId.startsWith("schedule.move")) {
+        opType = "move_block";
+      } else if (commandId.startsWith("schedule.resize")) {
+        opType = "resize_block";
+      } else {
+        opType = "add_block";
+      }
 
       await PendingActionService.create(conversationId, "schedule_conflict", {
         scheduleOperation: {
           type: opType,
           date: args.date,
           title: args.title || args.blockTitle,
-          blockTitle: args.title || args.blockTitle,
+          blockTitle: args.id || args.title || args.blockTitle,
           startTime: args.startTime || args.newStartTime,
           endTime: args.endTime || args.newEndTime,
+          description: args.description,
+          priority: args.priority,
+          estimatedMinutes: args.estimatedMinutes,
         },
         conflicts: validation.conflicts
       });

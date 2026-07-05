@@ -49,6 +49,28 @@ export type ScheduleOperation =
       type: "delete_block";
       date: string;
       blockTitle: string;
+    }
+  | {
+      type: "create_task";
+      date: string;
+      title: string;
+      blockTitle?: string;
+      startTime: string;
+      endTime: string;
+      description?: string;
+      priority?: number;
+      estimatedMinutes?: number;
+    }
+  | {
+      type: "edit_task";
+      date: string;
+      title?: string;
+      blockTitle: string;
+      startTime: string;
+      endTime: string;
+      description?: string;
+      priority?: number;
+      estimatedMinutes?: number;
     };
 
 export type PlanningIntent = {
