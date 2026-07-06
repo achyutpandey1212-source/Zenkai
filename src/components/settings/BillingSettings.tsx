@@ -9,47 +9,60 @@ export default function BillingSettings() {
   const pricingPlans = [
     {
       name: "Zenkai Flow",
-      level: "Basic",
-      price: "$0",
-      desc: "Essential tools to organize your days and reflect on consistency.",
+      level: "Explorer",
+      price: "₹0",
+      desc: "Perfect for trying Zen. Includes core daily routines and basic features.",
       current: true,
       features: [
-        "1 Active Roadmap Goal",
-        "Standard Companion Chat",
-        "Daily Availability Slots",
-        "Basic Memory Storage",
+        "One roadmap goal",
+        "Companion chat basics",
+        "Daily availability planning",
+        "Identity profile basics",
       ],
       buttonText: "Current Plan",
     },
     {
       name: "Zenkai Ascent",
-      level: "Pro",
-      price: "$12",
-      desc: "Advanced re-balancing, calendar syncing, and cognitive depth.",
+      level: "Student",
+      price: "₹99",
+      desc: "The everyday plan. Unlocks advanced scheduling, memory patterns, and calendar sync.",
       current: false,
       popular: true,
       features: [
-        "Unlimited Roadmap Goals",
-        "Deep-Logic Companion",
-        "Automated Re-balancing",
+        "Unlimited plans and roadmaps",
         "Google Calendar Sync",
-        "Evolving Cognitive Profiling",
+        "Smarter Adaptive Planning",
+        "Reflection & identity evolution",
       ],
-      buttonText: "Upgrade to Pro",
+      buttonText: "Go Student",
+    },
+    {
+      name: "Zenkai Professional",
+      level: "Builder",
+      price: "₹299",
+      desc: "For creators, freelancers, founders, and professionals requiring priority scheduling.",
+      current: false,
+      features: [
+        "Everything in Student",
+        "Higher reasoning limits",
+        "Priority roadmap updates",
+        "Advanced integrations & memory",
+      ],
+      buttonText: "Go Builder",
     },
     {
       name: "Zenkai Apex",
-      level: "Elite",
-      price: "$29",
-      desc: "Custom cognitive parameters, executive briefs, and priority support.",
+      level: "Infinite",
+      price: "₹799",
+      desc: "For power users seeking custom cognitive reasoning profiles and early agent releases.",
       current: false,
       features: [
-        "Everything in Ascent Pro",
-        "Custom Cognitive Tuning",
-        "Proactive SMS Check-ins",
-        "Weekly Executive Briefs",
+        "Highest priority updates",
+        "Future premium agents access",
+        "Custom reasoning profiles",
+        "Highest AI resource limit",
       ],
-      buttonText: "Go Elite",
+      buttonText: "Go Infinite",
     },
   ];
 
@@ -72,7 +85,7 @@ export default function BillingSettings() {
             <div className="w-full bg-secondary/80 h-1 rounded-full overflow-hidden">
               <div className="bg-accent h-full rounded-full" style={{ width: "100%" }} />
             </div>
-            <span className="text-[9px] text-muted-foreground/60">100% of basic tier capacity</span>
+            <span className="text-[9px] text-muted-foreground/60">100% of free tier capacity</span>
           </div>
 
           <div className="flex flex-col gap-1.5 font-sans">
@@ -97,11 +110,11 @@ export default function BillingSettings() {
 
       {/* Pricing Comparison Grid */}
       <div className="space-y-4">
-        <span className="font-sans text-[10px] tracking-[0.2em] text-accent/80 font-bold uppercase block select-none">
+            <span className="font-sans text-[10px] tracking-[0.2em] text-accent/80 font-bold uppercase block select-none">
           Available Subscription Tiers
         </span>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-stretch">
           {pricingPlans.map((plan) => (
             <div
               key={plan.name}
