@@ -15,6 +15,7 @@ import CommitmentsStep from "./onboarding/steps/CommitmentsStep";
 import GoalsStep from "./onboarding/steps/GoalsStep";
 import ChallengesStep from "./onboarding/steps/ChallengesStep";
 import SummaryStep from "./onboarding/steps/SummaryStep";
+import IntegrationsStep from "./onboarding/steps/IntegrationsStep";
 import LoadingStep from "./onboarding/steps/LoadingStep";
 
 // layouts
@@ -124,7 +125,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
   // Auto-save draft when state changes
   useEffect(() => {
-    if (step > 0 && step < 10) {
+    if (step > 0 && step < 11) {
       const draft = {
         name,
         motivationIds,
@@ -184,7 +185,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     setBackendError(null);
     setCurrentStage("learning");
     setShowRerunModal(false);
-    setStep(10); // Go to loading step
+    setStep(11); // Go to loading step
 
     const resolvedMotivation = motivationIds
       .map((id) => {
@@ -361,6 +362,13 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         );
       case 9:
         return (
+          <IntegrationsStep
+            onNext={handleNext}
+            onBack={handleBack}
+          />
+        );
+      case 10:
+        return (
           <SummaryStep
             primaryIdentity={identityValues.primaryIdentity}
             branchContext={identityValues.branchContext}
@@ -375,7 +383,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             onBack={handleBack}
           />
         );
-      case 10:
+      case 11:
         return (
           <LoadingStep
             currentStage={currentStage}
@@ -435,8 +443,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-accent/5 blur-[120px] pointer-events-none" />
 
       {/* Progress header */}
-      {step < 10 && (
-        <ProgressHeader currentStep={step} totalSteps={10} />
+      {step < 11 && (
+        <ProgressHeader currentStep={step} totalSteps={11} />
       )}
 
       {/* Conversational step viewport */}
